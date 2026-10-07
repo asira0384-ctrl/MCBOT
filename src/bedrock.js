@@ -7,11 +7,14 @@ const physics=require('../vendor/bedrockflayer/lib/physics/engine');
 const controls=require('../vendor/bedrockflayer/lib/plugins/controls');
 const pathfinder=require('../vendor/bedrockflayer/lib/plugins/pathfinder');
 class BedrockBot extends EventEmitter {
- constructor(config,authCallback){super();this.setMaxListeners(60);this.config=config;this.username=config.name;this.items=Array(36).fill(null);this.quickBarSlot=0;this.tick=0;this.physicsEnabled=true;this.players=new Map();this.health=null;this.connected=false;this.dead=false;this.window=null;this.requestId=-1;this.abortVersion=0;this.dimensionId=0;
+ constructor(config,authCallback){super();this.setMaxListeners(60);this.config=config;this.username=config.name;this.items=Array(36).fill(null);this.quickBarSlot=0;this.tick=0;this.physicsEnabled=true;this.players=new Map();this.health=null;this.connected=false;this.dead=false;this.window=null;this.requestId=-1;this.abortVersion=0;this.dimensionId=0;this.ended=false;this.connectionPhase='Microsoft/Xbox認証中';
   fs.mkdirSync(config.authDir,{recursive:true,mode:0o700});
   this.client=bedrock.createClient({host:config.host,port:config.port,username:`asira-bot-${config.id}`,offline:false,
    ...(config.version?{version:config.version}:{}),profilesFolder:config.authDir,raknetBackend:'jsp-raknet',followPort:false,
-   onMsaCode:authCallback,conLog:()=>{},connectTimeout:20000});
+   onMsaCode:data=>{if(!this.ended&&!this.client?._closed){this.connectionPhase='Microsoft認証待ち';authCallback(data);}},conLog:()=>{},connectTimeout:60000,transport:'raknet'});
+  this.client.on('session',()=>{if(this.ended)return;this.connectionPhase='サーバーへUDP接続中';this.emit('authComplete');});
+  this.client.on('loggingIn',()=>{if(this.ended)return;this.connectionPhase='サーバーログイン中';this.emit('connectionStage',this.connectionPhase);});
+  this.client.on('join',()=>{if(this.ended)return;this.connectionPhase='ワールド読み込み中';this.emit('connectionStage',this.connectionPhase);});
   const queue=this.client.queue.bind(this.client);
   this.client.queue=(name,data)=>{if(name==='player_auth_input'){if(!this.registry)return;data=adaptInput(this,data);}return queue(name,data);};
   this.worldMirror=new World(this);this.blockAt=p=>this.worldMirror.get(p);
@@ -27,7 +30,7 @@ class BedrockBot extends EventEmitter {
   this.client.on('update_block',p=>this.worldMirror.update(p));this.client.on('update_block_synced',p=>this.worldMirror.update(p));
   this.client.on('spawn',()=>{const actual=this.client.profile?.name||this.client.username;
    if(norm(actual)!==norm(config.name)){this.emit('error',Error(`ログインしたゲーマータグが違います: ${actual} / 設定 ${config.name}`));this.disconnect();return;}
-   this.username=actual;this.connected=true;this.client.queue('request_chunk_radius',{chunk_radius:4,max_radius:4});this.emit('spawn');});
+   this.username=actual;this.connected=true;this.connectionPhase='接続済み';this.client.queue('request_chunk_radius',{chunk_radius:4,max_radius:4});this.emit('spawn');});
   this.client.on('text',p=>this.emit('chat',p));
   this.client.on('player_list',p=>{const payload=p.records;if(!payload)return;const records=Array.isArray(payload)?payload:payload.records||[];for(const v of records){const action=Array.isArray(payload)?v.type:payload.type;if(action==='add'){if(v.username&&v.xbox_user_id)this.players.set(norm(v.username),{name:v.username,xuid:String(v.xbox_user_id),uuid:v.uuid});}else if(action==='remove')for(const[k,a]of this.players)if(a.uuid===v.uuid)this.players.delete(k);}});
   this.client.on('inventory_content',p=>{const wid=p.window_id;const type=p.container?.container_id;if(wid==='inventory'||wid===0||type==='inventory'){this.setItems(p.input||[]);}else if(this.window&&wid===this.window.id){this.window.items=(p.input||[]).map(i=>i.network_id?i:null);this.window.ready=true;this.emit('windowContent');}});
@@ -38,7 +41,7 @@ class BedrockBot extends EventEmitter {
   this.client.on('respawn',p=>{if(p.state===0||p.state==='searching')return;if(p.position&&this.entity){this.entity.position=new Vec3(p.position.x,p.position.y-1.62,p.position.z);this.entity.velocity=new Vec3(0,0,0);this.position=this.entity.position;}if(p.state===1||p.state==='ready'){this.respawnPacket=p;this.emit('respawnReady');}});
   this.client.on('change_dimension',()=>{this.halt();this.emit('error',Error('ディメンションが変わりました。再接続して範囲を設定してください'));});
   this.client.on('error',e=>this.emit('error',e));this.client.on('kick',p=>this.emit('error',Error(String(p.message||p.reason||'切断'))));
-  this.client.on('close',()=>{this.connected=false;this.halt();this.emit('end');});
+  this.client.on('close',()=>this.finish());
  }
  decode(fn){this.worldMirror.loading=this.worldMirror.loading.then(fn).catch(e=>{this.emit('error',Error('地形デコード: '+e.message));});}
  setItems(items){const old=this.items;this.items=Array.from({length:36},(_,i)=>items[i]?.network_id?items[i]:null);for(let i=0;i<36;i++)if((this.items[i]?.count||0)>(old[i]?.count||0)||this.items[i]?.network_id!==old[i]?.network_id)this.emit('inventory',old[i],this.items[i]);}
@@ -74,7 +77,8 @@ class BedrockBot extends EventEmitter {
  }
  async waitUntil(fn,ms=5000,signal){const start=Date.now();const epoch=this.abortVersion;while(Date.now()-start<ms){if(signal?.aborted||epoch!==this.abortVersion||!this.connected)throw Error('停止・切断しました');if(fn())return;await sleep(50);}throw Error('サーバーの確認がタイムアウトしました');}
  halt(){this.abortVersion++;this.pathfinder?.stop();this.clearControlStates?.();if(this.mining)this.breakAction={action:'abort_break',position:this.mining,face:1};this.mining=null;this.usingItem=false;}
- disconnect(){this.halt();try{this.closeContainer();this.client.disconnect('Stopping');}catch{}this.connected=false;this.emit('end');}
+ finish(){if(this.ended)return;this.ended=true;this.connected=false;this.connectionPhase='切断済み';this.halt();this.emit('end');}
+ disconnect(){if(this.ended)return;this.halt();try{this.closeContainer();}catch{}try{this.client.disconnect('Stopping');}catch{}finally{try{this.client.close();}catch{}this.finish();}}
  chat(text){if(this.connected)this.client.queue('text',{type:'chat',needs_translation:false,source_name:this.username,message:text.slice(0,220),xuid:'',platform_chat_id:'',filtered_message:''});}
  reach(block){const p=this.entity?.position;if(!p||!block)return false;return p.offset(0,1.62,0).distanceTo(block.position.offset(.5,.5,.5))<=4.4;}
  visible(block){const eye=this.entity.position.offset(0,1.62,0);const center=block.position.offset(.5,.5,.5);const d=center.minus(eye);const n=Math.ceil(d.norm()*8);for(let j=1;j<n;j++){const b=this.blockAt(eye.plus(d.scaled(j/n)));if(!b)return false;if(key(b.position)===key(block.position))return true;if(solid(b))return false;}return true;}

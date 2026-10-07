@@ -18,7 +18,7 @@ async function startDiscord(manager){const token=process.env.DISCORD_TOKEN;if(!t
   try{let result;
    switch(i.commandName){
     case 'bot':result=await manager.execute(i.options.getString('target',true),i.options.getString('command',true));break;
-    case 'auth':{const id=i.options.getInteger('target',true),code=manager.auth.get(id);result=code&&code.expires>Date.now()?`Bot${id}: Microsoft公式の ${code.verification_uri||'https://www.microsoft.com/link'} を開き、コード **${code.user_code}** を入力してください。Bot用のアカウントでログインしてください。`: '認証待ちコードはありません。/bot target:1 command:connect を先に実行してください';break;}
+    case 'auth':result=manager.authStatus(i.options.getInteger('target',true));break;
     case 'admin':{const action=i.options.getSubcommand();if(action==='list'){result=manager.store.data.admins.map(a=>`${a.name} / XUID ${a.xuid}`).join('\n')||'登録なし';break;}
      const name=i.options.getString('mcid',true).trim();if(action==='remove'){manager.store.data.admins=manager.store.data.admins.filter(a=>norm(a.name)!==norm(name));manager.store.save();result=`${name} の権限を解除しました`;break;}
      const profile=[...manager.workers.values()].flatMap(w=>[...w.bot.players.values()]).find(p=>norm(p.name)===norm(name));const xuid=i.options.getString('xuid')||profile?.xuid;
