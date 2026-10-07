@@ -1,0 +1,25 @@
+AsiraClearBot v0.1 / 統合版 / 初回テスト用
+
+1. ZIPを展開し、AsiraClearBotの中身をGitHubのルートに入れる。
+   package.jsonとsrcが一番上に見える状態。
+2. RailwayでそのGitHubリポジトリを選ぶ。
+3. Variables:
+   DISCORD_TOKEN = DiscordのBotトークン
+   DISCORD_GUILD_ID = DiscordサーバーID（任意）
+   BOT_NAMES = Aslrq 1st
+   DATA_DIR = /data
+4. Volumeを追加しMount Pathを/dataにする。
+5. Deploy後、Discordで:
+   /bot target:1 command:connect
+   /auth target:1
+6. Microsoft公式リンクでBot用アカウントにログイン。
+7. 自分もマイクラサーバーに入って:
+   /admin add mcid:自分のゲーマータグ
+8. /helpで操作方法を見る。
+
+最初は1体・小さな範囲でテスト。
+まずstatusで座標を確認。補給はsupply offで手渡しから。
+床と範囲を設定し、装備を渡し、start。
+停止: /bot target:all command:stop
+
+2b2eでの実動作は未検証です。詳細と限界はREADME.md。
