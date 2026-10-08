@@ -35,8 +35,8 @@ class Manager{
  }
  worker(id){const w=this.workers.get(id);if(!w||!w.bot.connected)throw Error(`Bot${id}は未接続です`);return w;}
  async execute(target,text,origin='discord'){const ids=this.targets(String(target));const [cmd,...args]=text.trim().split(/\s+/);if(!cmd)throw Error('コマンドを入力してください');
-  if(origin==='game'&&['connect','disconnect','clear-recovery'].includes(cmd))throw Error('この操作はDiscordから行ってください');
-  if(['start','scaffold','area','floor','ceiling','supply','chat','respawn','stats-reset','recover','clear-recovery'].includes(cmd)){
+  if(origin==='game'&&['connect','disconnect','clear-recovery','diagnose'].includes(cmd))throw Error('この操作はDiscordから行ってください');
+  if(['start','scaffold','area','floor','ceiling','supply','chat','respawn','stats-reset','recover','clear-recovery','diagnose'].includes(cmd)){
    // Validate all targets before changing any persistent setting.
    if(['area','floor','ceiling','scaffold'].includes(cmd))for(const id of ids){const w=this.workers.get(id);if(w?.busy&&cmd!=='scaffold')w.stop();}
   }
@@ -53,12 +53,13 @@ class Manager{
     case 'scaffold':{if(args[0]==='receive'){this.worker(id).receive();results.push(`Bot${id}受け取り待ち`);break;}const worker=this.worker(id);worker.stop();let name=itemName(args[0]||'');const alias={slime_block:'slime',スライム:'slime',スライムブロック:'slime',丸石:'cobblestone',砂:'sand',黒曜石:'obsidian'};name=alias[name]||name;
      if(/^\d+$/.test(name))name=worker.bot.registry.blocks[Number(name)]?.name||'';if(!name||!worker.bot.registry.blocksByName[name]||!worker.bot.registry.itemsByName[name])throw Error('ブロック名・対応レジストリの数値IDを指定してください');state.scaffold=name;results.push(`Bot${id}足場 ${name}`);break;}
     case 'supply':case 'chat':case 'respawn':{if(!['on','off'].includes(args[0]))throw Error(`${cmd} on / off`);state[{supply:'autoSupply',chat:'chat',respawn:'respawn'}[cmd]]=args[0]==='on';results.push(`Bot${id} ${cmd}=${args[0]}`);break;}
+    case 'diagnose':results.push(await require('./network').diagnose(process.env.MC_HOST||'2b2e.org',Number(process.env.MC_PORT||19132)));break;
     case 'status':results.push(JSON.stringify(w?.status()||{number:id,name:this.names.get(id),mode:'offline',scaffold:state.scaffold}));break;
     case 'stats':results.push(`Bot${id}: 累計 ${state.stats.total} (黒曜石 ${state.stats.obsidian} / その他 ${state.stats.other}) / 今回 ${state.session.total}`);break;
     case 'stats-reset':state.session=emptyStats();results.push(`Bot${id}今回の数をリセット。累計は保持`);break;
     case 'recover':this.worker(id).stop();results.push(await this.worker(id).recover());break;
     case 'clear-recovery':if(args[0]!=='confirm')throw Error('箱を手動回収した後、clear-recovery confirm を実行');if(w?.busy)throw Error('操作中です');state.supplyPending=null;results.push(`Bot${id}補給待機情報を解除`);break;
-    default:throw Error('connect / start / stop / status / stats / area / floor / ceiling / scaffold / supply / chat / respawn / recover');
+    default:throw Error('diagnose / connect / start / stop / status / stats / area / floor / ceiling / scaffold / supply / chat / respawn / recover');
    }this.store.save();
    if(cmd==='connect'&&ids.length>1)await sleep(1500);
   }

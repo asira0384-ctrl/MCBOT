@@ -195,7 +195,7 @@ Aslrq 1st,AslrqBot02xx,AslrqBot03xx,AslrqBot04xx,AslrqBot05xx,AslrqBot06xx,Aslrq
 
 ## ローカル実行（任意）
 
-Node.js 22、Gitをインストール。PowerShell:
+Node.js 24、Gitをインストール。PowerShell:
 
 ```powershell
 npm ci
@@ -228,3 +228,11 @@ npm start
 更新はこのZIP内の内容をGitHubの既存ファイルへ上書きし、Railwayの新しいデプロイ完了後に /bot target:1 command:connect を実行してください。Microsoft認証待ちの通知が出た場合だけ /auth target:1 を使います。
 
 Microsoft認証後にUDP接続タイムアウトが出る場合、ホストの外向きUDP通信、サーバー側の応答・アクセス制限などを別途調査する必要があります。この修正は実サーバーへの接続成功を保証するものではありません。
+
+## v0.1.2 通信方式修正
+
+前版のjsp-raknetはRakNetのバージョン10を固定で送信していました。今の統合版用にバージョン11を選べるNative RakNetへ切り替えました。サーバー広告の版検出も同じNative RakNetを使います。Linuxのカーネル番号で同梱バイナリが見つからない場合、N-APIバイナリを適切な読込場所へ配置し、ビルド時に読込を確認します。Node.js 24へ更新しました。
+
+Discord専用の通信診断: `/bot target:1 command:diagnose`。DNS、UDP応答、広告プロトコルと対応版を表示します。Minecraftアカウントにログインせず診断できます。応答がないことだけでRailway側のUDP制限とは断定できません。
+
+GitHubではDockerfile、scripts、package.json、package-lock.json、srcも含めて中身を上書きしてください。デプロイ成功後、connectを実行します。実サーバーへの接続はMicrosoft認証を含めて別途確認が必要です。

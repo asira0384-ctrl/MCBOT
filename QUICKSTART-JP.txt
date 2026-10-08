@@ -1,4 +1,4 @@
-AsiraClearBot v0.1 / 統合版 / 初回テスト用
+AsiraClearBot v0.1.2 / 統合版 / 初回テスト用
 
 1. ZIPを展開し、AsiraClearBotの中身をGitHubのルートに入れる。
    package.jsonとsrcが一番上に見える状態。
@@ -23,3 +23,10 @@ AsiraClearBot v0.1 / 統合版 / 初回テスト用
 停止: /bot target:all command:stop
 
 2b2eでの実動作は未検証です。詳細と限界はREADME.md。
+
+接続修正版の更新:
+ZIPの中身を全てGitHubの既存ファイルへ上書き。scriptsフォルダも必要。
+Railwayの新しいデプロイ完了後にconnect。
+認証待ち通知が出た場合だけauth。認証済みなら新しいコードは出ない。
+接続できない場合の診断: /bot target:1 command:diagnose
+Node.js 24必須。DockerはNode.js 24に更新済み。
