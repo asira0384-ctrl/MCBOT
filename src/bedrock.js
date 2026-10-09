@@ -7,12 +7,15 @@ const physics=require('../vendor/bedrockflayer/lib/physics/engine');
 const controls=require('../vendor/bedrockflayer/lib/plugins/controls');
 const pathfinder=require('../vendor/bedrockflayer/lib/plugins/pathfinder');
 class BedrockBot extends EventEmitter {
- constructor(config,authCallback){super();this.setMaxListeners(60);this.config=config;this.username=config.name;this.items=Array(36).fill(null);this.quickBarSlot=0;this.tick=0;this.physicsEnabled=true;this.players=new Map();this.health=null;this.connected=false;this.dead=false;this.window=null;this.requestId=-1;this.abortVersion=0;this.dimensionId=0;this.ended=false;this.connectionPhase='Microsoft/Xbox認証中';
+ constructor(config,authCallback){super();this.setMaxListeners(60);this.config=config;this.username=config.name;this.items=Array(36).fill(null);this.quickBarSlot=0;this.tick=0;this.physicsEnabled=true;this.players=new Map();this.health=null;this.connected=false;this.dead=false;this.window=null;this.requestId=-1;this.abortVersion=0;this.dimensionId=0;this.ended=false;this.connectionPhase='Microsoft/Xbox認証中';this.lastDisconnect='';this.packetCounts={};this.lastPacketAt=0;this.terrainReady=false;
   fs.mkdirSync(config.authDir,{recursive:true,mode:0o700});
   this.client=bedrock.createClient({host:config.host,port:config.port,username:`asira-bot-${config.id}`,offline:false,
    ...(config.version?{version:config.version}:{}),profilesFolder:config.authDir,raknetBackend:'raknet-native',followPort:false,
    onMsaCode:data=>{if(!this.ended&&!this.client?._closed){this.connectionPhase='Microsoft認証待ち';authCallback(data);}},conLog:()=>{},connectTimeout:60000,transport:'raknet'});
-  this.client.on('session',()=>{if(this.ended)return;this.connectionPhase='サーバーへUDP接続中';this.emit('authComplete');});
+  this.client.on('packet',p=>{const name=p?.data?.name;if(!name)return;this.lastPacketAt=Date.now();this.packetCounts[name]=(this.packetCounts[name]||0)+1;});
+  this.client.on('session',()=>{if(this.ended)return;this.connectionPhase='サーバーへUDP接続中';
+   if(this.client.connection){const old=this.client.connection.onCloseConnection;this.client.connection.onCloseConnection=reason=>{this.lastDisconnect=`RakNet切断: ${reason??'理由なし'}`;this.emit('diagnostic',this.lastDisconnect);old?.(reason);};}
+   this.emit('authComplete');});
   this.client.on('loggingIn',()=>{if(this.ended)return;this.connectionPhase='サーバーログイン中';this.emit('connectionStage',this.connectionPhase);});
   this.client.on('join',()=>{if(this.ended)return;this.connectionPhase='ワールド読み込み中';this.emit('connectionStage',this.connectionPhase);});
   const queue=this.client.queue.bind(this.client);
@@ -21,7 +24,7 @@ class BedrockBot extends EventEmitter {
   physics(this);controls(this);pathfinder(this);
   this.client.on('start_game',p=>{try{
    this._runtimeEntityId=p.runtime_entity_id;this.serverBreak=p.server_authoritative_block_breaking!==false;this.dimensionId=typeof p.dimension==='number'?p.dimension:({overworld:0,the_nether:1,the_end:2}[p.dimension]??0);
-   this.entity={position:new Vec3(p.player_position.x,p.player_position.y-1.62,p.player_position.z),velocity:new Vec3(0,0,0),yaw:(p.rotation?.z||0)*Math.PI/180,pitch:(p.rotation?.x||0)*Math.PI/180,onGround:false,effects:{}};this.position=this.entity.position;this.worldMirror.init(p);
+   this.entity={position:new Vec3(p.player_position.x,p.player_position.y-1.62,p.player_position.z),velocity:new Vec3(0,0,0),yaw:(p.rotation?.z||0)*Math.PI/180,pitch:(p.rotation?.x||0)*Math.PI/180,onGround:false,effects:{}};this.position=this.entity.position;this.worldMirror.init(p);this.terrainReady=false;this.emit('diagnostic',`start_game: world=${p.world_name||p.level_id||'不明'} dimension=${this.dimensionId} 座標=${JSON.stringify(p.player_position)}`);
    this.client.queue('client_cache_status',{enabled:false});
   }catch(e){this.emit('error',e);this.disconnect();}});
   this.client.on('item_registry',p=>{if(this.registry&&p.itemstates)this.registry.handleStartGame({...this.client.startGameData,itemstates:p.itemstates});});
@@ -30,8 +33,11 @@ class BedrockBot extends EventEmitter {
   this.client.on('update_block',p=>this.worldMirror.update(p));this.client.on('update_block_synced',p=>this.worldMirror.update(p));
   this.client.on('spawn',()=>{const actual=this.client.profile?.name||this.client.username;
    if(norm(actual)!==norm(config.name)){this.emit('error',Error(`ログインしたゲーマータグが違います: ${actual} / 設定 ${config.name}`));this.disconnect();return;}
-   this.username=actual;this.connected=true;this.connectionPhase='接続済み';this.client.queue('request_chunk_radius',{chunk_radius:4,max_radius:4});this.emit('spawn');});
-  this.client.on('text',p=>this.emit('chat',p));
+   this.username=actual;this.connected=true;this.connectionPhase='接続済み・本ワールド到着は未確認';this.client.queue('request_chunk_radius',{chunk_radius:4,max_radius:4});this.emit('spawn');});
+  this.client.on('text',p=>{const text=String(p.message||'')+(p.parameters?.length?' '+p.parameters.map(String).join(' '):'');if(text)this.emit('serverMessage',`${p.source_name||p.type||'server'}: ${text}`);this.emit('chat',p);});
+  this.client.on('set_title',p=>{if(p.text)this.emit('serverMessage',`title: ${p.text}`);});
+  this.client.on('modal_form_request',p=>this.emit('serverMessage',`form ${p.form_id}: ${p.data||''}`));
+  this.client.on('transfer',p=>{if(this.ended)return;this.halt();this.emit('serverTransfer',p);});
   this.client.on('player_list',p=>{const payload=p.records;if(!payload)return;const records=Array.isArray(payload)?payload:payload.records||[];for(const v of records){const action=Array.isArray(payload)?v.type:payload.type;if(action==='add'){if(v.username&&v.xbox_user_id)this.players.set(norm(v.username),{name:v.username,xuid:String(v.xbox_user_id),uuid:v.uuid});}else if(action==='remove')for(const[k,a]of this.players)if(a.uuid===v.uuid)this.players.delete(k);}});
   this.client.on('inventory_content',p=>{const wid=p.window_id;const type=p.container?.container_id;if(wid==='inventory'||wid===0||type==='inventory'){this.setItems(p.input||[]);}else if(this.window&&wid===this.window.id){this.window.items=(p.input||[]).map(i=>i.network_id?i:null);this.window.ready=true;this.emit('windowContent');}});
   this.client.on('inventory_slot',p=>{if(p.window_id==='inventory'||p.window_id===0||p.container?.container_id==='inventory') {const old=this.items[p.slot];this.items[p.slot]=p.item?.network_id?p.item:null;this.emit('inventory',old,this.items[p.slot]);} else if(this.window&&p.window_id===this.window.id){this.window.items[p.slot]=p.item?.network_id?p.item:null;}});
@@ -40,10 +46,10 @@ class BedrockBot extends EventEmitter {
   this.client.on('update_attributes',p=>{if(String(p.runtime_entity_id)!==String(this._runtimeEntityId))return;for(const a of p.attributes||[])if(a.name==='minecraft:health') {this.health=a.current;if(this.health<=0&&!this.dead){this.dead=true;this.halt();this.emit('death');}this.emit('health');}});
   this.client.on('respawn',p=>{if(p.state===0||p.state==='searching')return;if(p.position&&this.entity){this.entity.position=new Vec3(p.position.x,p.position.y-1.62,p.position.z);this.entity.velocity=new Vec3(0,0,0);this.position=this.entity.position;}if(p.state===1||p.state==='ready'){this.respawnPacket=p;this.emit('respawnReady');}});
   this.client.on('change_dimension',()=>{this.halt();this.emit('error',Error('ディメンションが変わりました。再接続して範囲を設定してください'));});
-  this.client.on('error',e=>this.emit('error',e));this.client.on('kick',p=>this.emit('error',Error(String(p.message||p.reason||'切断'))));
+  this.client.on('error',e=>this.emit('error',e));this.client.on('kick',p=>{this.lastDisconnect=String(p.message||p.reason||'サーバーが理由を表示せず切断');this.emit('error',Error(this.lastDisconnect));});
   this.client.on('close',()=>this.finish());
  }
- decode(fn){this.worldMirror.loading=this.worldMirror.loading.then(fn).catch(e=>{this.emit('error',Error('地形デコード: '+e.message));});}
+ decode(fn){this.worldMirror.loading=this.worldMirror.loading.then(fn).then(()=>{if(!this.ended&&this.entity&&this.worldMirror.get(this.entity.position)){this.terrainReady=true;}}).catch(e=>{this.emit('error',Error('地形デコード: '+e.message));});}
  setItems(items){const old=this.items;this.items=Array.from({length:36},(_,i)=>items[i]?.network_id?items[i]:null);for(let i=0;i<36;i++)if((this.items[i]?.count||0)>(old[i]?.count||0)||this.items[i]?.network_id!==old[i]?.network_id)this.emit('inventory',old[i],this.items[i]);}
  name(item){return item?this.registry?.items[item.network_id]?.name||`unknown_${item.network_id}`:'';}
  list(){return this.items.map((raw,slot)=>raw?{raw,slot,name:this.name(raw),count:raw.count}:null).filter(Boolean);}

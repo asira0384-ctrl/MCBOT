@@ -13,7 +13,7 @@ class Worker {
  }
  notice(text){this.manager.notice(this.id,text);}
  stop(){this.running=false;this.receiving=false;this.receivedBlock=false;this.mode='stopped';this.bot.halt();this.abort?.abort();}
- start(){if(this.busy)throw Error('前の操作が終わるまで少し待ってください');if(!this.state.area||this.state.floor===null)throw Error('area と floor を先に指定してください');if(!this.bot.connected||this.bot.dead)throw Error('Botが接続していません');if(this.state.supplyPending)throw Error('補給途中の箱があります。recover を実行してください');this.running=true;this.mode='running';this.missing='';}
+ start(){if(this.busy)throw Error('前の操作が終わるまで少し待ってください');if(!this.state.area||this.state.floor===null)throw Error('area と floor を先に指定してください');if(this.bot.terrainReady===false)throw Error('Botの足元の地形をまだ受信していません。messagesでサーバー案内を確認してください');if(!this.bot.connected||this.bot.dead)throw Error('Botが接続していません');if(this.state.supplyPending)throw Error('補給途中の箱があります。recover を実行してください');this.running=true;this.mode='running';this.missing='';}
  receive(){this.stop();this.receiving=true;this.mode='receiving';this.lastReceive=0;this.receivedBlock=false;this.notice('足場ブロックを渡してください。最後の受け取りから3秒後に再開します');}
  inArea(p){const a=this.state.area;return a&&p.x>=a.x1&&p.x<=a.x2&&p.z>=a.z1&&p.z<=a.z2&&p.y>this.state.floor&&p.y<=this.state.ceiling;}
  owned(p){return this.state.owned[`${this.bot.dimensionId}:${key(p)}`];}
@@ -116,6 +116,6 @@ class Worker {
    await this.recoverChest(cp,signal);this.state.supplyPending=null;this.manager.store.save();this.mode='stopped';return '補給用の箱を回収しました。startで再開できます';
   }finally{this.busy=false;this.bot.closeContainer();}}
  destroy(){this.stop();clearInterval(this.timer);this.bot.disconnect();}
- status(){return {number:this.id,name:this.bot.username,mode:this.mode,connectionPhase:this.bot.connectionPhase,position:this.bot.entity?.position,health:this.bot.health===null?null:this.bot.health/2,missing:this.missing,scaffold:this.state.scaffold,stats:this.state.stats,session:this.state.session,ownedScaffolds:Object.values(this.state.owned).filter(o=>o.kind==='scaffold').length};}
+ status(){return {number:this.id,name:this.bot.username,mode:this.mode,connectionPhase:this.bot.connectionPhase,endpoint:{host:this.bot.config?.host,port:this.bot.config?.port},terrainReady:this.bot.terrainReady,packets:this.bot.packetCounts,lastDisconnect:this.bot.lastDisconnect,position:this.bot.entity?.position,health:this.bot.health===null?null:this.bot.health/2,missing:this.missing,scaffold:this.state.scaffold,stats:this.state.stats,session:this.state.session,ownedScaffolds:Object.values(this.state.owned).filter(o=>o.kind==='scaffold').length};}
 }
 module.exports={Worker};

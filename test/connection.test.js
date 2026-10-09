@@ -16,3 +16,13 @@ test('pending connection retained; disconnect closes pre-auth client; stale code
  clients[1].emit('error',Error('Connect timed out'));clients[1].close();assert.equal(m.workers.get(1).mode,'disconnected');assert.match(m.authStatus(1),/切断済み/);assert(notices.some(s=>s.includes('Microsoft認証後')));
  await m.execute('1','connect');options[1].onMsaCode({user_code:'LATE',expires_in:900});assert(!m.auth.has(1));
 });
+test('server transfer follows once, messages survive old connection, manual disconnect cancels pending transfer',async t=>{
+ const original=bedrock.createClient,clients=[],options=[];
+ bedrock.createClient=opts=>{options.push(opts);const c=new EventEmitter();c.options={version:'1.26.51'};c.queue=()=>{};c.disconnect=()=>{};c.close=()=>{if(c._closed)return;c._closed=true;c.emit('close');c.removeAllListeners();};clients.push(c);return c;};
+ const dir=fs.mkdtempSync(os.tmpdir()+'/asira-transfer-'),m=new Manager(new Store(dir));t.after(()=>{m.destroy();bedrock.createClient=original;fs.rmSync(dir,{recursive:true,force:true});});
+ await m.execute('1','connect');clients[0].emit('text',{type:'system',message:'Welcome. Join queue'});assert.match(await m.execute('1','messages'),/Join queue/);
+ clients[0].emit('transfer',{server_address:'destination.example',port:19134});assert(clients[0]._closed);
+ await new Promise(r=>setTimeout(r,350));assert.equal(clients.length,2);assert.equal(options[1].host,'destination.example');assert.equal(options[1].port,19134);assert.match(await m.execute('1','messages'),/サーバー転送/);
+ clients[1].emit('transfer',{server_address:'next.example',port:19132});await m.execute('1','disconnect');await new Promise(r=>setTimeout(r,350));assert.equal(clients.length,2,'manual disconnect cancels queued reconnection');
+ await assert.rejects(m.execute('1','say /join','game'));
+});

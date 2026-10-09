@@ -1,4 +1,4 @@
-AsiraClearBot v0.1.2 / 統合版 / 初回テスト用
+AsiraClearBot v0.1.3 / 統合版 / 初回テスト用
 
 1. ZIPを展開し、AsiraClearBotの中身をGitHubのルートに入れる。
    package.jsonとsrcが一番上に見える状態。
@@ -30,3 +30,6 @@ Railwayの新しいデプロイ完了後にconnect。
 認証待ち通知が出た場合だけauth。認証済みなら新しいコードは出ない。
 接続できない場合の診断: /bot target:1 command:diagnose
 Node.js 24必須。DockerはNode.js 24に更新済み。
+
+本ワールドに入らない場合: /bot target:1 command:messages
+接続先と受信状況: /bot target:1 command:status

@@ -236,3 +236,14 @@ Microsoft認証後にUDP接続タイムアウトが出る場合、ホストの�
 Discord専用の通信診断: `/bot target:1 command:diagnose`。DNS、UDP応答、広告プロトコルと対応版を表示します。Minecraftアカウントにログインせず診断できます。応答がないことだけでRailway側のUDP制限とは断定できません。
 
 GitHubではDockerfile、scripts、package.json、package-lock.json、srcも含めて中身を上書きしてください。デプロイ成功後、connectを実行します。実サーバーへの接続はMicrosoft認証を含めて別途確認が必要です。
+
+## v0.1.3 サーバー到着の確認と転送
+
+spawnは接続先が送る初期化通知であり、2b2e本ワールド到着の証明ではありません。待機サーバーでもspawnを受信することがあります。表示を変更し、statusに接続先、地形受信の有無、受信パケット数、最後の切断理由を追加しました。
+
+- `/bot target:1 command:messages`: 最近のサーバー案内、タイトル、フォーム、start_game、転送先、切断記録を表示。内容はRailwayのログにも残ります。
+- `/bot target:1 command:say /コマンド`: サーバーの案内に従って実際に必要なコマンドを手動送信。Discordの所有者専用。架空のjoinコマンドなどは自動送信しません。
+- サーバーからtransferパケットが届いた場合、同じBotアカウントで転送先へ接続。連続3回まで。disconnectまたはサービス停止で転送待ちをキャンセル。採掘は自動再開しません。
+- 足元の地形が未受信ならstartを止めます。地形受信だけでも本ワールド到着は断定できません。
+
+更新後は connect、次に messages と status の結果を確認してください。既存のMC_VERSION指定と認証キャッシュはそのまま使います。本ワールドに入っていない原因の確定には、実際の案内文やパケット状況が必要です。
