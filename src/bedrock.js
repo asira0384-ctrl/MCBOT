@@ -7,7 +7,7 @@ const physics=require('../vendor/bedrockflayer/lib/physics/engine');
 const controls=require('../vendor/bedrockflayer/lib/plugins/controls');
 const pathfinder=require('../vendor/bedrockflayer/lib/plugins/pathfinder');
 class BedrockBot extends EventEmitter {
- constructor(config,authCallback){super();this.setMaxListeners(60);this.config=config;this.username=config.name;this.items=Array(36).fill(null);this.quickBarSlot=0;this.tick=0;this.physicsEnabled=true;this.players=new Map();this.health=null;this.connected=false;this.dead=false;this.window=null;this.requestId=-1;this.abortVersion=0;this.dimensionId=0;this.ended=false;this.connectionPhase='Microsoft/Xbox認証中';this.lastDisconnect='';this.packetCounts={};this.lastPacketAt=0;this.terrainReady=false;
+ constructor(config,authCallback){super();this.setMaxListeners(60);this.config=config;this.username=config.name;this.items=Array(36).fill(null);this.quickBarSlot=0;this.tick=0;this.physicsEnabled=true;this.passivePhysics=true;this.players=new Map();this.health=null;this.connected=false;this.dead=false;this.window=null;this.requestId=-1;this.abortVersion=0;this.dimensionId=0;this.ended=false;this.connectionPhase='Microsoft/Xbox認証中';this.lastDisconnect='';this.packetCounts={};this.lastPacketAt=0;this.terrainReady=false;
   fs.mkdirSync(config.authDir,{recursive:true,mode:0o700});
   this.client=bedrock.createClient({host:config.host,port:config.port,username:`asira-bot-${config.id}`,offline:false,
    ...(config.version?{version:config.version}:{}),profilesFolder:config.authDir,raknetBackend:'raknet-native',followPort:false,
@@ -82,7 +82,7 @@ class BedrockBot extends EventEmitter {
   await this.transaction({type_id:'take',count:n,source:this.slot(fromContainer?'level_entity':'hotbar_and_inventory',from,item),destination:this.slot(toContainer?'level_entity':'hotbar_and_inventory',to,null)},[{array:src,slot:from,item:n===item.count?null:{...item,count:item.count-n}},{array:dst,slot:to,item:{...item,count:n}}]);
  }
  async waitUntil(fn,ms=5000,signal){const start=Date.now();const epoch=this.abortVersion;while(Date.now()-start<ms){if(signal?.aborted||epoch!==this.abortVersion||!this.connected)throw Error('停止・切断しました');if(fn())return;await sleep(50);}throw Error('サーバーの確認がタイムアウトしました');}
- halt(){this.abortVersion++;this.pathfinder?.stop();this.clearControlStates?.();if(this.mining)this.breakAction={action:'abort_break',position:this.mining,face:1};this.mining=null;this.usingItem=false;}
+ halt(){this.passivePhysics=true;this.abortVersion++;this.pathfinder?.stop();this.clearControlStates?.();if(this.mining)this.breakAction={action:'abort_break',position:this.mining,face:1};this.mining=null;this.usingItem=false;}
  finish(){if(this.ended)return;this.ended=true;this.connected=false;this.connectionPhase='切断済み';this.halt();this.emit('end');}
  disconnect(){if(this.ended)return;this.halt();try{this.closeContainer();}catch{}try{this.client.disconnect('Stopping');}catch{}finally{try{this.client.close();}catch{}this.finish();}}
  chat(text){if(this.connected)this.client.queue('text',{type:'chat',needs_translation:false,source_name:this.username,message:text.slice(0,220),xuid:'',platform_chat_id:'',filtered_message:''});}
@@ -108,7 +108,7 @@ class BedrockBot extends EventEmitter {
  async eat(signal){const food=this.find('enchanted_golden_apple');if(!food)throw Error('エンチャント金リンゴがなくなりました');this.clearControlStates();await this.equip(food.slot);const before=this.count('enchanted_golden_apple');this.usingItem=true;
   try{this.client.queue('inventory_transaction',useItem(this,'click_air',{x:0,y:0,z:0},-1));await this.waitUntil(()=>this.count('enchanted_golden_apple')<before,7000,signal);}finally{this.usingItem=false;}
  }
- async go(pos,signal){const goal=new pathfinder.GoalNear(pos.x+.5,pos.y,pos.z+.5,.6);if(goal.isEnd(this.entity.position))return;
+ async go(pos,signal){this.passivePhysics=false;const goal=new pathfinder.GoalNear(pos.x+.5,pos.y,pos.z+.5,.6);if(goal.isEnd(this.entity.position))return;
   let timer;const navigation=this.pathfinder.goto(goal,{maxNodes:1500,tickDelay:1});
   const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>{this.pathfinder.stop();reject(Error('移動がタイムアウトしました'));},15000);});
   try{await Promise.race([navigation,timeout]);if(signal?.aborted)throw Error('停止');}finally{clearTimeout(timer);this.pathfinder.stop();this.clearControlStates();}

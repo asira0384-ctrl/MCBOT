@@ -1,3 +1,4 @@
+v0.1.4: 待機中の落下と位置補正への対応。更新後 connect → status で passivePhysics:true と serverPosition を確認してください。
 AsiraClearBot v0.1.3 / 統合版 / 初回テスト用
 
 1. ZIPを展開し、AsiraClearBotの中身をGitHubのルートに入れる。

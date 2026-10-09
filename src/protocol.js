@@ -15,6 +15,7 @@ function adaptInput(bot,p) {
  }
  flags=Array.isArray(flags)?Object.fromEntries(flags.map(s=>[s,true])):{...flags};
  if(bot.breakAction) { flags.block_action=true; flags.block_breaking_delay_enabled=true;p.block_action=[bot.breakAction];bot.breakAction=null; }
+ if(bot.pendingTeleport){flags.handled_teleport=true;bot.pendingTeleport=false;}
  if(bot.usingItem) flags.start_using_item=true;
  const jumping=!!bot.controlState.jump;flags.start_jumping=jumping&&!bot.lastJump;flags.jump_pressed_raw=jumping&&!bot.lastJump;flags.jump_current_raw=jumping;bot.lastJump=jumping;
  flags.start_sneaking=!!bot.controlState.sneak&&!bot.lastSneak; flags.stop_sneaking=!bot.controlState.sneak&&bot.lastSneak;bot.lastSneak=!!bot.controlState.sneak;

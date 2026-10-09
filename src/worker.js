@@ -6,14 +6,14 @@ class Worker {
    this.lastReceive=Date.now();if(this.receiving){const name=bot.name(item);if(bot.registry?.blocksByName[name]){this.state.scaffold=name;this.receivedBlock=true;manager.store.save();}}
   }});
   bot.on('health',()=>{if(bot.health!==null&&bot.health<12&&bot.health>0&&this.mode!=='healing'){bot.halt();}});
-  bot.on('forcedMove',()=>{this.corrections=this.corrections.filter(t=>Date.now()-t<10000);this.corrections.push(Date.now());if(this.corrections.length>=5){this.stop();this.notice('ロールバックが続いたので停止しました');}});
+  bot.on('forcedMove',()=>{if(bot.passivePhysics&&!this.running)return;this.corrections=this.corrections.filter(t=>Date.now()-t<10000);this.corrections.push(Date.now());if(this.corrections.length>=5){this.stop();this.notice('ロールバックが続いたので停止しました');}});
   bot.on('death',()=>{this.mode='dead';this.running=false;this.notice('死亡しました。装備の補給待ちです');});
   bot.on('respawnReady',()=>{if(this.state.respawn){try{bot.respawn();this.mode='waiting';this.missing='死亡後の装備';}catch(e){this.notice(e.message);}}});
   this.timer=setInterval(()=>this.tick().catch(e=>{this.stop();this.notice(e.message);}),300);
  }
  notice(text){this.manager.notice(this.id,text);}
  stop(){this.running=false;this.receiving=false;this.receivedBlock=false;this.mode='stopped';this.bot.halt();this.abort?.abort();}
- start(){if(this.busy)throw Error('前の操作が終わるまで少し待ってください');if(!this.state.area||this.state.floor===null)throw Error('area と floor を先に指定してください');if(this.bot.terrainReady===false)throw Error('Botの足元の地形をまだ受信していません。messagesでサーバー案内を確認してください');if(!this.bot.connected||this.bot.dead)throw Error('Botが接続していません');if(this.state.supplyPending)throw Error('補給途中の箱があります。recover を実行してください');this.running=true;this.mode='running';this.missing='';}
+ start(){if(this.busy)throw Error('前の操作が終わるまで少し待ってください');if(!this.state.area||this.state.floor===null)throw Error('area と floor を先に指定してください');if(this.bot.terrainReady===false)throw Error('Botの足元の地形をまだ受信していません。messagesでサーバー案内を確認してください');if(!this.bot.connected||this.bot.dead)throw Error('Botが接続していません');if(this.state.supplyPending)throw Error('補給途中の箱があります。recover を実行してください');this.bot.passivePhysics=false;this.running=true;this.mode='running';this.missing='';}
  receive(){this.stop();this.receiving=true;this.mode='receiving';this.lastReceive=0;this.receivedBlock=false;this.notice('足場ブロックを渡してください。最後の受け取りから3秒後に再開します');}
  inArea(p){const a=this.state.area;return a&&p.x>=a.x1&&p.x<=a.x2&&p.z>=a.z1&&p.z<=a.z2&&p.y>this.state.floor&&p.y<=this.state.ceiling;}
  owned(p){return this.state.owned[`${this.bot.dimensionId}:${key(p)}`];}
@@ -30,7 +30,7 @@ class Worker {
     if(Date.now()-this.lastEat>=5000){await this.bot.eat(signal);this.lastEat=Date.now();}return;}
    const missing=!this.bot.tool()?'ピッケル':!this.bot.find('enchanted_golden_apple')?'エンチャント金リンゴ':!this.bot.find(this.state.scaffold)?'足場ブロック':null;
    if(missing){if(this.state.autoSupply&&Date.now()-(this.lastSupply||0)>60000&&this.bot.find('ender_chest')){this.lastSupply=Date.now();await this.supply(signal);}else this.wait(missing);return;}
-   if(this.mode==='waiting'){if(!this.lastReceive||Date.now()-this.lastReceive<3000)return;this.running=true;this.mode='running';this.missing='';this.notice('補給を確認しました。再開します');}
+   if(this.mode==='waiting'){if(!this.lastReceive||Date.now()-this.lastReceive<3000)return;this.bot.passivePhysics=false;this.running=true;this.mode='running';this.missing='';this.notice('補給を確認しました。再開します');}
    if(!this.running)return;this.mode='running';await this.discard(signal);await this.cleanup(signal);
    const target=this.chooseTarget();if(!target){await this.explore(signal);return;}
    const reservation=`${this.bot.dimensionId}:${key(target.position)}`;if(this.manager.claims.has(reservation))return;this.manager.claims.set(reservation,this.id);
@@ -116,6 +116,6 @@ class Worker {
    await this.recoverChest(cp,signal);this.state.supplyPending=null;this.manager.store.save();this.mode='stopped';return '補給用の箱を回収しました。startで再開できます';
   }finally{this.busy=false;this.bot.closeContainer();}}
  destroy(){this.stop();clearInterval(this.timer);this.bot.disconnect();}
- status(){return {number:this.id,name:this.bot.username,mode:this.mode,connectionPhase:this.bot.connectionPhase,endpoint:{host:this.bot.config?.host,port:this.bot.config?.port},terrainReady:this.bot.terrainReady,packets:this.bot.packetCounts,lastDisconnect:this.bot.lastDisconnect,position:this.bot.entity?.position,health:this.bot.health===null?null:this.bot.health/2,missing:this.missing,scaffold:this.state.scaffold,stats:this.state.stats,session:this.state.session,ownedScaffolds:Object.values(this.state.owned).filter(o=>o.kind==='scaffold').length};}
+ status(){return {number:this.id,name:this.bot.username,mode:this.mode,connectionPhase:this.bot.connectionPhase,endpoint:{host:this.bot.config?.host,port:this.bot.config?.port},terrainReady:this.bot.terrainReady,passivePhysics:this.bot.passivePhysics,serverPosition:this.bot.serverPosition,positionCorrections:this.bot.positionCorrections||0,packets:this.bot.packetCounts,lastDisconnect:this.bot.lastDisconnect,position:this.bot.entity?.position,health:this.bot.health===null?null:this.bot.health/2,missing:this.missing,scaffold:this.state.scaffold,stats:this.state.stats,session:this.state.session,ownedScaffolds:Object.values(this.state.owned).filter(o=>o.kind==='scaffold').length};}
 }
 module.exports={Worker};

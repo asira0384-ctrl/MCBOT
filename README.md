@@ -1,3 +1,4 @@
+<!-- v0.1.4: キュー待機中の重力停止・位置同期・テレポート確認応答 -->
 # Asira Clear Bot v0.1 — 統合版 / GitHub / Railway
 
 Bot01: **Aslrq 1st**。接続先: **2b2e.org:19132**。

@@ -51,6 +51,7 @@ function physicsPlugin(bot) {
             bot.entity.position.y = packet.position.y - C.PLAYER_EYE_HEIGHT // Server sends head pos
             bot.entity.position.z = packet.position.z
             bot.position = bot.entity.position.clone()
+            bot._lastSentPos = bot.entity.position.clone()
             if (packet.on_ground !== undefined) {
                 bot.entity.onGround = packet.on_ground
             }
@@ -66,9 +67,11 @@ function physicsPlugin(bot) {
         const runtimeId = typeof packet.runtime_id === 'bigint'
             ? packet.runtime_id.toString()
             : String(packet.runtime_id)
-        if (runtimeId === String(bot._runtimeEntityId) && packet.mode !== 0) {
-            // mode !== 0 means server-initiated teleport
-            if (packet.position && packet.position.x !== undefined && bot.entity) {
+        const mode = typeof packet.mode === 'number' ? ['normal', 'reset', 'teleport', 'rotation'][packet.mode] : packet.mode
+        if (runtimeId === String(bot._runtimeEntityId)) {
+            // Only reset/teleport count as corrections; normal own movement still synchronizes.
+            if (mode !== 'rotation' && packet.position && packet.position.x !== undefined && bot.entity) {
+                bot.serverPosition = { ...packet.position }
                 bot.entity.position.x = packet.position.x
                 bot.entity.position.y = packet.position.y - C.PLAYER_EYE_HEIGHT // Server sends head pos
                 bot.entity.position.z = packet.position.z
@@ -77,11 +80,14 @@ function physicsPlugin(bot) {
                 bot.entity.velocity.x = 0
                 bot.entity.velocity.y = 0
                 bot.entity.velocity.z = 0
-                if (packet.rotation) {
-                    bot.entity.pitch = (packet.rotation.x || 0) * Math.PI / 180
-                    bot.entity.yaw = (packet.rotation.z || 0) * Math.PI / 180
+                if (packet.pitch !== undefined) bot.entity.pitch = packet.pitch * Math.PI / 180
+                if (packet.yaw !== undefined) bot.entity.yaw = packet.yaw * Math.PI / 180
+                bot._lastSentPos = bot.entity.position.clone()
+                if (mode === 'teleport') bot.pendingTeleport = true
+                if (mode === 'reset' || mode === 'teleport') {
+                    bot.positionCorrections = (bot.positionCorrections || 0) + 1
+                    bot.emit('forcedMove')
                 }
-                bot.emit('forcedMove')
             }
         }
     })
@@ -91,6 +97,14 @@ function physicsPlugin(bot) {
 
 function _simulateTick(bot) {
     if (!bot.entity) return
+    // Keep input ticks alive while waiting, without inventing a fall in queue worlds.
+    if (bot.passivePhysics) {
+        bot.entity.velocity = new Vec3(0, 0, 0)
+        _sendPositionPacket(bot, 0, 0)
+        bot.tick++
+        bot.emit('physicsTick')
+        return
+    }
     if (bot.blockAt && !bot.blockAt(bot.entity.position.offset(0, -0.1, 0))) {
         bot.entity.velocity = new Vec3(0, 0, 0)
         _sendPositionPacket(bot, 0, 0); bot.tick++; bot.emit('physicsTick'); return
