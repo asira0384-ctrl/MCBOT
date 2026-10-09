@@ -1,3 +1,4 @@
+v0.1.5: /bot target:1 command:view で受信地形の視点画像。紫格子は未受信です。画面UI・プレイヤーは描画しません。
 <!-- v0.1.4: キュー待機中の重力停止・位置同期・テレポート確認応答 -->
 # Asira Clear Bot v0.1 — 統合版 / GitHub / Railway
 
