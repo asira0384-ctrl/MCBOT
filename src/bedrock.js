@@ -12,6 +12,7 @@ class BedrockBot extends EventEmitter {
   this.client=bedrock.createClient({host:config.host,port:config.port,username:`asira-bot-${config.id}`,offline:false,
    ...(config.version?{version:config.version}:{}),profilesFolder:config.authDir,raknetBackend:'raknet-native',followPort:false,
    onMsaCode:data=>{if(!this.ended&&!this.client?._closed){this.connectionPhase='Microsoft認証待ち';authCallback(data);}},conLog:()=>{},connectTimeout:60000,transport:'raknet'});
+  this.client.prependOnceListener('connect_allowed',()=>require('./runtime-schema').patchRuntimeIds(this.client));
   this.client.on('packet',p=>{const name=p?.data?.name;if(!name)return;this.lastPacketAt=Date.now();this.packetCounts[name]=(this.packetCounts[name]||0)+1;});
   this.client.on('session',()=>{if(this.ended)return;this.connectionPhase='サーバーへUDP接続中';
    if(this.client.connection){const old=this.client.connection.onCloseConnection;this.client.connection.onCloseConnection=reason=>{this.lastDisconnect=`RakNet切断: ${reason??'理由なし'}`;this.emit('diagnostic',this.lastDisconnect);old?.(reason);};}
