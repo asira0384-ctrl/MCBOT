@@ -24,4 +24,5 @@ function adaptInput(bot,p) {
  return {...p,pitch:(p.pitch||0)*deg,yaw:(p.yaw||0)*deg,head_yaw:(p.head_yaw||0)*deg,tick:p.tick??BigInt(bot.tick||0),input_data:arrayFlags?Object.keys(flags).filter(k=>flags[k]):flags,input_mode:'mouse',play_mode:'normal',interaction_model:'crosshair',
   interact_rotation:{x:(p.pitch||0)*deg,y:(p.yaw||0)*deg},camera_orientation:{x:0,y:0,z:1},raw_move_vector:p.move_vector||{x:0,y:0}};
 }
-module.exports={useItem,slotRef,request,adaptInput,emptyItem};
+function legacyMove(bot,p){const runtime=Number(bot._runtimeEntityId);if(!Number.isSafeInteger(runtime)||runtime<0||runtime>0xffffffff)throw Error('この通信スキーマでは旧方式のエンティティIDを安全に送れません');return {runtime_id:runtime,position:p.position,pitch:p.pitch,yaw:p.yaw,head_yaw:p.head_yaw,mode:'normal',on_ground:!!bot.entity?.onGround,ridden_runtime_id:0,tick:p.tick};}
+module.exports={useItem,slotRef,request,adaptInput,emptyItem,legacyMove};

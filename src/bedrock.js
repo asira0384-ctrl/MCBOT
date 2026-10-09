@@ -1,13 +1,13 @@
 'use strict';
 const EventEmitter=require('node:events');const path=require('node:path');const fs=require('node:fs');
 const bedrock=require('bedrock-protocol');const nbt=require('prismarine-nbt');const {Vec3}=require('vec3');
-const {World}=require('./world');const {useItem,request,slotRef,adaptInput,emptyItem}=require('./protocol');
+const {World}=require('./world');const {useItem,request,slotRef,adaptInput,emptyItem,legacyMove}=require('./protocol');
 const {sleep,air,solid,key,norm}=require('./util');
 const physics=require('../vendor/bedrockflayer/lib/physics/engine');
 const controls=require('../vendor/bedrockflayer/lib/plugins/controls');
 const pathfinder=require('../vendor/bedrockflayer/lib/plugins/pathfinder');
 class BedrockBot extends EventEmitter {
- constructor(config,authCallback){super();this.setMaxListeners(60);this.config=config;this.username=config.name;this.items=Array(36).fill(null);this.quickBarSlot=0;this.tick=0;this.physicsEnabled=true;this.passivePhysics=true;this.players=new Map();this.health=null;this.connected=false;this.dead=false;this.window=null;this.requestId=-1;this.abortVersion=0;this.dimensionId=0;this.ended=false;this.connectionPhase='Microsoft/Xbox認証中';this.lastDisconnect='';this.packetCounts={};this.lastPacketAt=0;this.terrainReady=false;
+ constructor(config,authCallback){super();this.setMaxListeners(60);this.config=config;this.username=config.name;this.items=Array(36).fill(null);this.quickBarSlot=0;this.tick=0;this.physicsEnabled=true;this.passivePhysics=true;this.players=new Map();this.health=null;this.connected=false;this.dead=false;this.window=null;this.requestId=-1;this.abortVersion=0;this.dimensionId=0;this.ended=false;this.connectionPhase='Microsoft/Xbox認証中';this.lastDisconnect='';this.packetCounts={};this.lastPacketAt=0;this.terrainReady=false;this.movementMode='auto';this.sentInputs=0;this.sentLegacyMoves=0;
   fs.mkdirSync(config.authDir,{recursive:true,mode:0o700});
   this.client=bedrock.createClient({host:config.host,port:config.port,username:`asira-bot-${config.id}`,offline:false,
    ...(config.version?{version:config.version}:{}),profilesFolder:config.authDir,raknetBackend:'raknet-native',followPort:false,
@@ -19,12 +19,15 @@ class BedrockBot extends EventEmitter {
   this.client.on('loggingIn',()=>{if(this.ended)return;this.connectionPhase='サーバーログイン中';this.emit('connectionStage',this.connectionPhase);});
   this.client.on('join',()=>{if(this.ended)return;this.connectionPhase='ワールド読み込み中';this.emit('connectionStage',this.connectionPhase);});
   const queue=this.client.queue.bind(this.client);
-  this.client.queue=(name,data)=>{if(name==='player_auth_input'){if(!this.registry)return;data=adaptInput(this,data);}return queue(name,data);};
+  this.client.queue=(name,data)=>{if(name==='player_auth_input'){if(!this.registry)return;data=adaptInput(this,data);this.sentInputs++;if(this.movementMode==='both'||(this.movementMode==='auto'&&this.advertisedMovement==='client')){queue('move_player',legacyMove(this,data));this.sentLegacyMoves++;}}return queue(name,data);};
   this.worldMirror=new World(this);this.blockAt=p=>this.worldMirror.get(p);
   physics(this);controls(this);pathfinder(this);
+  this.client.on('move_player',p=>{this.lastMovePacket={runtimeId:String(p.runtime_id),mode:p.mode,position:p.position,own:String(p.runtime_id)===String(this._runtimeEntityId)};});
+  this.client.on('set_movement_authority',p=>{this.advertisedMovement=p.movement_authority;this.emit('diagnostic',`移動方式: ${this.advertisedMovement}`);});
   this.client.on('start_game',p=>{try{
+   this.advertisedMovement=p.movement_authority??p.player_movement_settings?.movement_type??'未指定';this.serverPosition={...p.player_position};
    this._runtimeEntityId=p.runtime_entity_id;this.serverBreak=p.server_authoritative_block_breaking!==false;this.dimensionId=typeof p.dimension==='number'?p.dimension:({overworld:0,the_nether:1,the_end:2}[p.dimension]??0);
-   this.entity={position:new Vec3(p.player_position.x,p.player_position.y-1.62,p.player_position.z),velocity:new Vec3(0,0,0),yaw:(p.rotation?.z||0)*Math.PI/180,pitch:(p.rotation?.x||0)*Math.PI/180,onGround:false,effects:{}};this.position=this.entity.position;this.worldMirror.init(p);this.terrainReady=false;this.emit('diagnostic',`start_game: world=${p.world_name||p.level_id||'不明'} dimension=${this.dimensionId} 座標=${JSON.stringify(p.player_position)}`);
+   this.entity={position:new Vec3(p.player_position.x,p.player_position.y-1.62,p.player_position.z),velocity:new Vec3(0,0,0),yaw:(p.rotation?.z||0)*Math.PI/180,pitch:(p.rotation?.x||0)*Math.PI/180,onGround:false,effects:{}};this.position=this.entity.position;this.worldMirror.init(p);this.terrainReady=false;this.emit('diagnostic',`start_game: world=${p.world_name||p.level_id||'不明'} dimension=${this.dimensionId} 座標=${JSON.stringify(p.player_position)} entity=${String(this._runtimeEntityId)} movement=${this.advertisedMovement}`);
    this.client.queue('client_cache_status',{enabled:false});
   }catch(e){this.emit('error',e);this.disconnect();}});
   this.client.on('item_registry',p=>{if(this.registry&&p.itemstates)this.registry.handleStartGame({...this.client.startGameData,itemstates:p.itemstates});});

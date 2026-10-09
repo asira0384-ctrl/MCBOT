@@ -1,3 +1,4 @@
+v0.1.6: connection で位置パケットID・送信数を診断。movement both は停止状態で旧方式の位置送信も併用して接続互換性を検証。movement auto で元に戻ります。接続し直すとautoになります。
 v0.1.5: /bot target:1 command:view で受信地形の視点画像。紫格子は未受信です。画面UI・プレイヤーは描画しません。
 <!-- v0.1.4: キュー待機中の重力停止・位置同期・テレポート確認応答 -->
 # Asira Clear Bot v0.1 — 統合版 / GitHub / Railway

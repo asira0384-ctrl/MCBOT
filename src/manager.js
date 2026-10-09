@@ -43,7 +43,7 @@ class Manager{
  }
  worker(id){const w=this.workers.get(id);if(!w||!w.bot.connected)throw Error(`Bot${id}は未接続です`);return w;}
  async execute(target,text,origin='discord'){const ids=this.targets(String(target));const [cmd,...args]=text.trim().split(/\s+/);if(!cmd)throw Error('コマンドを入力してください');
-  if(origin==='game'&&['connect','disconnect','clear-recovery','diagnose','say'].includes(cmd))throw Error('この操作はDiscordから行ってください');
+  if(origin==='game'&&['connect','disconnect','clear-recovery','diagnose','say','movement','connection'].includes(cmd))throw Error('この操作はDiscordから行ってください');
   if(['start','scaffold','area','floor','ceiling','supply','chat','respawn','stats-reset','recover','clear-recovery','diagnose'].includes(cmd)){
    // Validate all targets before changing any persistent setting.
    if(['area','floor','ceiling','scaffold'].includes(cmd))for(const id of ids){const w=this.workers.get(id);if(w?.busy&&cmd!=='scaffold')w.stop();}
@@ -61,6 +61,8 @@ class Manager{
     case 'scaffold':{if(args[0]==='receive'){this.worker(id).receive();results.push(`Bot${id}受け取り待ち`);break;}const worker=this.worker(id);worker.stop();let name=itemName(args[0]||'');const alias={slime_block:'slime',スライム:'slime',スライムブロック:'slime',丸石:'cobblestone',砂:'sand',黒曜石:'obsidian'};name=alias[name]||name;
      if(/^\d+$/.test(name))name=worker.bot.registry.blocks[Number(name)]?.name||'';if(!name||!worker.bot.registry.blocksByName[name]||!worker.bot.registry.itemsByName[name])throw Error('ブロック名・対応レジストリの数値IDを指定してください');state.scaffold=name;results.push(`Bot${id}足場 ${name}`);break;}
     case 'supply':case 'chat':case 'respawn':{if(!['on','off'].includes(args[0]))throw Error(`${cmd} on / off`);state[{supply:'autoSupply',chat:'chat',respawn:'respawn'}[cmd]]=args[0]==='on';results.push(`Bot${id} ${cmd}=${args[0]}`);break;}
+    case 'connection':{const b=this.worker(id).bot;results.push(JSON.stringify({version:require('../package.json').version,runtimeEntityId:String(b._runtimeEntityId),movementMode:b.movementMode,advertisedMovement:b.advertisedMovement,lastMovePacket:b.lastMovePacket,sentInputs:b.sentInputs,sentLegacyMoves:b.sentLegacyMoves,serverPosition:b.serverPosition,position:b.entity?.position}));break;}
+    case 'movement':{if(!['auto','both'].includes(args[0])||args.length!==1)throw Error('movement auto / movement both');const worker=this.worker(id);if(args[0]==='both')require('./protocol').legacyMove(worker.bot,{position:{x:0,y:0,z:0},pitch:0,yaw:0,head_yaw:0,tick:0n});worker.stop();worker.bot.movementMode=args[0];results.push(`Bot${id} 移動送信=${args[0]}（停止状態）`);break;}
     case 'messages':results.push((this.logs.get(id)||[]).slice(-12).join('\n').slice(-1700)||'受信メッセージなし');break;
     case 'say':{const text=args.join(' ');if(!text||text.length>220)throw Error('say のあとに送信文を220文字以内で指定');this.worker(id).bot.chat(text);results.push(`Bot${id}から送信しました`);break;}
     case 'diagnose':results.push(await require('./network').diagnose(process.env.MC_HOST||'2b2e.org',Number(process.env.MC_PORT||19132)));break;
