@@ -11,7 +11,7 @@ function trackActors(bot){
  bot.client.on('remove_entity',p=>{for(const [id,a] of bot.actors)if(a.uniqueId===String(p.entity_id_self))bot.actors.delete(id);});
  bot.client.on('player_list',p=>{const payload=p.records;const list=Array.isArray(payload)?payload:payload?.records||[];for(const r of list)if((Array.isArray(payload)?r.type:payload.type)==='remove')for(const [id,a]of bot.actors)if(a.uuid===r.uuid)bot.actors.delete(id);});
  bot.client.on('entity_event',p=>{const own=String(p.runtime_entity_id)===String(bot._runtimeEntityId);if(own&&(p.event_id==='consume_totem'||p.event_id===65)){if(/totem/.test(bot.name(bot.offhand?.[0])))bot.offhand[0]=null;bot.emit('totemUsed');}
-  if(p.event_id==='death_animation'||p.event_id===3){const actor=bot.actors.get(String(p.runtime_entity_id));if(actor)bot.emit('actorDied',actor);bot.actors.delete(String(p.runtime_entity_id));if(own&&!bot.dead){bot.dead=true;bot.health=0;bot.halt();bot.emit('death');}}
+  if(p.event_id==='death_animation'||p.event_id===3){const actor=bot.actors.get(String(p.runtime_entity_id));if(actor)bot.emit('actorDied',actor);bot.actors.delete(String(p.runtime_entity_id));if(own&&!bot.dead)bot.markDead('entity_event');}
  });
  bot.on('dimensionChanged',()=>bot.actors.clear());bot.on('end',()=>bot.actors.clear());
 }

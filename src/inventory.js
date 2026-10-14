@@ -11,10 +11,11 @@ async function openInventory(bot,signal){
  if(signal?.aborted||!bot.connected)throw Error('停止・切断しました');if(bot.inventoryOpening)return bot.inventoryOpening;if(bot.inventoryOpen)return;
  bot.closeContainer();bot.inventoryOpen=true;bot.inventoryOpenRequests++;bot.inventoryOpenState={phase:'opening',requestedAt:Date.now(),acknowledged:false};
  bot.inventoryOpening=new Promise((resolve,reject)=>{let timer;
-  const clean=()=>{clearTimeout(timer);bot.removeListener('inventoryOpenAcknowledged',ack);bot.removeListener('inventoryClosed',closed);bot.removeListener('end',ended);signal?.removeEventListener('abort',aborted);};
-  const fail=e=>{clean();bot.inventoryOpen=false;bot.inventoryOpenState.phase='unconfirmed';reject(e);};
-  const finish=()=>{clean();bot.inventoryOpenState.phase='opened';resolve();},ack=()=>{bot.inventoryOpenState.acknowledged=true;finish();},closed=()=>fail(Error('サーバーがインベントリを閉じました')),ended=()=>fail(Error('切断')),aborted=()=>fail(Error('停止しました'));
+  const clean=()=>{clearTimeout(timer);bot.removeListener('inventoryOpenAcknowledged',ack);bot.removeListener('inventoryContents',contents);bot.removeListener('inventoryClosed',closed);bot.removeListener('end',ended);signal?.removeEventListener('abort',aborted);};
+  const fail=e=>{clean();if(bot.connected)try{bot.closeContainer();}catch{}bot.inventoryOpen=false;bot.inventoryOpenState.phase='unconfirmed';reject(e);};
+  const finish=()=>{clean();bot.inventoryOpenState.phase='opened';resolve();},ack=()=>{bot.inventoryOpenState.acknowledged=true;bot.inventoryOpenState.confirmedBy='container_open';finish();},contents=wid=>{if(bot.serverAuthoritativeInventory===false&&(wid===0||wid==='inventory')){bot.inventoryOpenState.acknowledged=true;bot.inventoryOpenState.confirmedBy='inventory_content';finish();}},closed=()=>fail(Error('サーバーがインベントリを閉じました')),ended=()=>fail(Error('切断')),aborted=()=>fail(Error('停止しました'));
   bot.on('inventoryOpenAcknowledged',ack);bot.on('inventoryClosed',closed);bot.on('end',ended);signal?.addEventListener('abort',aborted,{once:true});
+  bot.on('inventoryContents',contents);
   // Wait for the actual inventory screen's ContainerOpen before any slot move.
   timer=setTimeout(()=>fail(Error('インベントリを開くサーバー応答がありません')),bot.inventoryTimeoutMs||5000);
   try{bot.client.queue('interact',{action_id:'open_inventory',target_entity_id:0n,has_position:false});}catch(e){fail(e);}
@@ -27,8 +28,8 @@ async function transact(bot,action,changes,signal){
  bot.pendingStackRequest={id,action:action.type_id,mode:legacy?'legacy':'stack',at:Date.now(),source:action.source,destination:action.destination};
  const before=list.map(c=>clone(current(bot,c))),type=legacy?'legacy':'stack';
  try{
-  const response=await new Promise((resolve,reject)=>{let timer;
-   const clean=()=>{clearTimeout(timer);bot.client.removeListener('item_stack_response',onResponse);bot.removeListener('inventorySnapshot',onSnapshot);bot.removeListener('end',ended);signal?.removeEventListener('abort',aborted);};
+  const response=await new Promise((resolve,reject)=>{let timer,refreshTimer;
+   const clean=()=>{clearTimeout(timer);clearTimeout(refreshTimer);bot.client.removeListener('item_stack_response',onResponse);bot.removeListener('inventorySnapshot',onSnapshot);bot.removeListener('end',ended);signal?.removeEventListener('abort',aborted);};
    const fail=e=>{clean();reject(e);},done=r=>{clean();resolve(r);},ended=()=>fail(Error('切断')),aborted=()=>fail(Error('停止しました'));
    const onSnapshot=()=>{if(matches(bot,list))done({status:'ok',request_id:id,containers:[],verifiedSnapshot:true});};
    const onResponse=p=>{const r=p.responses?.find(r=>r.request_id===id);if(!r)return;
@@ -39,6 +40,14 @@ async function transact(bot,action,changes,signal){
    };
    timer=setTimeout(()=>fail(Error('アイテム移動のサーバー確認がありません')),bot.inventoryTimeoutMs||7000);
    bot.client.on('item_stack_response',onResponse);bot.on('inventorySnapshot',onSnapshot);bot.on('end',ended);signal?.addEventListener('abort',aborted,{once:true});
+   // Legacy servers may apply the transaction without echoing every slot.
+   // Reopen once to obtain fresh server contents; never resend the swap or
+   // declare success just because no rejection arrived.
+   if(legacy)refreshTimer=setTimeout(()=>{
+    if(signal?.aborted||!bot.connected||bot.window)return;
+    bot.inventoryResyncs=(bot.inventoryResyncs||0)+1;
+    bot.closeContainer();bot.openInventory(signal).catch(()=>{});
+   },Math.min(300,(bot.inventoryTimeoutMs||7000)/2));
    try{
     if(legacy){const actions=list.map((c,i)=>{const wid=windowId(bot,c.type);if(wid===undefined)throw Error('コンテナの番号を確認できません');return {source_type:'container',window_id:wid,flags:undefined,slot:c.slot,old_item:before[i]||emptyItem(),new_item:c.item||emptyItem()};});
      if(action.type_id==='drop')actions.push({source_type:'world_interaction',window_id:undefined,flags:0,slot:0,old_item:emptyItem(),new_item:{...before[0],count:action.count}});

@@ -1,6 +1,7 @@
 'use strict';
 const {Client,GatewayIntentBits,REST,Routes,SlashCommandBuilder,MessageFlags}=require('discord.js');const {OWNER}=require('./store');const {norm}=require('./util');
 const commands=[
+ ...require('./coordinates').aliases.map(name=>new SlashCommandBuilder().setName(name).setDescription('Botの座標を確認（誰でも利用可能）').addStringOption(o=>o.setName('target').setDescription('Bot番号 / all（省略時1）'))),
  new SlashCommandBuilder().setName('say').setDescription('Botから公開チャットへ送信（管理者専用）').addStringOption(o=>o.setName('target').setDescription('Bot番号 / all').setRequired(true)).addStringOption(o=>o.setName('message').setDescription('送信するメッセージ').setMaxLength(220).setRequired(true)),
  new SlashCommandBuilder().setName('w').setDescription('Botからtellを送信（管理者専用）').addStringOption(o=>o.setName('target').setDescription('Bot番号 / all').setRequired(true)).addStringOption(o=>o.setName('id').setDescription('相手のゲーマータグ（空白対応）').setMaxLength(64).setRequired(true)).addStringOption(o=>o.setName('message').setDescription('送信するメッセージ').setMaxLength(220).setRequired(true)),
  new SlashCommandBuilder().setName('panel').setDescription('ボタンと選択メニューでBotを管理する（管理者専用）'),
@@ -19,7 +20,7 @@ async function startDiscord(manager){const token=process.env.DISCORD_TOKEN;if(!t
   logChain=logChain.then(async()=>{const channel=await client.channels.fetch(channelId);if(channel?.isTextBased())await channel.send({content:`[Bot${String(id).padStart(2,'0')}] ${message}`,allowedMentions:{parse:[]}});}).catch(e=>console.error('通知送信失敗:',e.message));};
  client.once('clientReady',async()=>{const {registerCommands,publishEntry}=require('./command-registration');const rest=new REST({version:'10'}).setToken(token);const results=await registerCommands(rest,client.user.id,commands,[process.env.DISCORD_GUILD_ID,...client.guilds.cache.keys()]);for(const result of results)console.log(result.ok?`コマンド登録済み: ${result.scope}`:`コマンド登録失敗: ${result.scope}: ${result.message}`);console.log(`Discord ready: v${require('../package.json').version} /panel /help`);try{await publishEntry(client,manager,panel);}catch(e){console.error('操作ボタンの配置失敗:',e.message);}});
  client.on('guildCreate',async guild=>{const rest=new REST({version:'10'}).setToken(token);const results=await require('./command-registration').registerCommands(rest,client.user.id,commands,[guild.id]);for(const result of results)if(!result.ok)console.error('コマンド登録失敗:',result.message);});
- client.on('interactionCreate',async i=>{if(!i.isChatInputCommand()){try{await panel.handle(i);}catch(e){console.error('管理パネル:',e.message);}return;}if(i.user.id!==OWNER){await i.reply({content:'このBotに設定された管理者のみ使用できます。',flags:MessageFlags.Ephemeral});return;}await i.deferReply({flags:MessageFlags.Ephemeral});
+ client.on('interactionCreate',async i=>{if(!i.isChatInputCommand()){try{await panel.handle(i);}catch(e){console.error('管理パネル:',e.message);}return;}if(await require('./coordinates').discordCoordinates(i,manager))return;if(i.user.id!==OWNER){await i.reply({content:'このBotに設定された管理者のみ使用できます。',flags:MessageFlags.Ephemeral});return;}await i.deferReply({flags:MessageFlags.Ephemeral});
   try{let result;
    switch(i.commandName){
     case 'say':result=manager.say(i.options.getString('target',true),i.options.getString('message',true));break;

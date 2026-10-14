@@ -1,5 +1,20 @@
 'use strict';
 const test=require('node:test');const assert=require('node:assert/strict');const {adapter}=require('./helpers/adapter');const {wear,autoSlots}=require('../src/equipment');
+test('legacy equip applied without an echo is confirmed by a fresh reopen, without sending a second swap',async t=>{
+ const {b,c,item,packets}=adapter(t);b.serverAuthoritativeInventory=false;b.inventoryTimeoutMs=150;b.items[12]=item('totem_of_undying',12);
+ const serverItems=b.items.slice(),serverOffhand=[null],old=c.queue;let opens=0;
+ c.queue=(name,p)=>{old(name,p);if(name==='inventory_transaction'&&p.transaction.transaction_type==='normal'){
+  for(const a of p.transaction.actions){const array=a.window_id===119?serverOffhand:serverItems;array[a.slot]=a.new_item;}
+ }if(name==='interact'&&++opens===2)queueMicrotask(()=>{c.emit('inventory_content',{window_id:'inventory',input:serverItems});c.emit('inventory_content',{window_id:'offhand',input:serverOffhand});});};
+ await wear(b,{armor:false,totem:true});assert.equal(b.name(b.offhand[0]),'totem_of_undying');assert.equal(b.items[12],null);
+ assert.equal(b.lastStackResponse.confirmedBy,'inventory_snapshot');assert.equal(b.inventoryResyncs,1);
+ assert.equal(packets.filter(p=>p.name==='inventory_transaction'&&p.params.transaction.transaction_type==='normal').length,1);
+});
+test('legacy inventory open can synchronize from fresh contents without a ContainerOpen echo',async t=>{
+ const {b,c,packets}=adapter(t);b.serverAuthoritativeInventory=false;b.inventoryTimeoutMs=100;
+ const old=c.queue;c.queue=(name,p)=>{if(name==='interact'){packets.push({name,params:p});queueMicrotask(()=>c.emit('inventory_content',{window_id:'inventory',input:[]}));return;}old(name,p);};
+ await b.openInventory();assert.equal(b.inventoryOpenState.confirmedBy,'inventory_content');b.closeContainer();
+});
 test('server-declared legacy inventory equips Totem using real slot updates, not local predictions',async t=>{const {b,c,item,packets}=adapter(t);c.emit('start_game',{...c.startGameData,server_authoritative_inventory:false});b.items[12]=item('totem_of_undying',12);const old=c.queue;c.queue=(name,p)=>{old(name,p);if(name==='inventory_transaction'&&p.transaction.transaction_type==='normal')queueMicrotask(()=>{for(const a of p.transaction.actions)if(a.source_type==='container')c.emit('inventory_slot',{window_id:a.window_id,slot:a.slot,item:a.new_item});});};await wear(b,{armor:false,totem:true});assert.equal(b.name(b.offhand[0]),'totem_of_undying');assert.equal(b.items[12],null);assert(!packets.some(p=>p.name==='item_stack_request'));assert.equal(b.lastStackResponse.confirmedBy,'inventory_snapshot');});
 test('legacy operations with no server slot update fail and never pretend Totem is equipped',async t=>{const {b,item}=adapter(t);b.serverAuthoritativeInventory=false;b.inventoryTimeoutMs=30;b.items[12]=item('totem_of_undying',12);await assert.rejects(wear(b,{armor:false,totem:true}),/サーバー確認/);assert.equal(b.offhand[0],null);assert.equal(b.name(b.items[12]),'totem_of_undying');assert.equal(b.lastStackResponse.status,'failed');});
 test('empty success responses and wrong final counts are rejected without inventing equipment',async t=>{const {b,c,item}=adapter(t);b.items[12]=item('totem_of_undying',12);const old=c.queue;for(const containers of [[],[{slot_type:{container_id:'offhand'},slots:[{slot:0,count:0}]}]]){c.queue=(name,p)=>{if(name==='item_stack_request'){queueMicrotask(()=>c.emit('item_stack_response',{responses:[{request_id:p.requests[0].request_id,status:'ok',containers}]}));return;}old(name,p);};await assert.rejects(wear(b,{armor:false,totem:true}),/スロットのサーバー確認/);assert.equal(b.offhand[0],null);assert.equal(b.name(b.items[12]),'totem_of_undying');}});

@@ -36,7 +36,7 @@ class Runtime{
    if(low)w.mode='healing';
    await this.maintenance('オフハンド装着',()=>equipment.wear(b,{armor:false,totem:this.config.autototem},signal),signal);
    if(low&&b.find('enchanted_golden_apple')){this.operation='体力回復';this.travel.unbury();if(this.travel.flight)this.travel.flight.paused='health';w.mode='healing';
-    if(Date.now()-this.lastHeal>=5000){await b.openInventory(signal);await b.equip(b.find('enchanted_golden_apple').slot);b.closeContainer();await b.eat(signal);this.lastHeal=Date.now();this.dirty=true;this.notice('エンチャント金リンゴを食べました');}return;
+    if(Date.now()-this.lastHeal>=5000)await this.maintenance('体力回復',async()=>{await b.openInventory(signal);await b.equip(b.find('enchanted_golden_apple').slot);b.closeContainer();await b.eat(signal);this.lastHeal=Date.now();this.dirty=true;this.notice('エンチャント金リンゴを食べました');},signal);return;
    }
    if(low)this.noticeOnce('回復用エンチャント金リンゴがありません。指定座標への移動は続けます');
    if(w.mode==='healing')w.mode='stopped';if(this.travel.flight?.paused==='health')this.travel.flight.paused=false;
