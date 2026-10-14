@@ -29,10 +29,10 @@ class World {
  update(p){if(p.layer!==undefined&&p.layer!==0)return;this.overrides.set(key(p.position),p.block_runtime_id);this.bot.emit('worldUpdate',p.position);}
  get(p){p=new Vec3(Math.floor(p.x),Math.floor(p.y),Math.floor(p.z));if(!this.registry)return null;
   const override=this.overrides.get(key(p));let b;
-  if(override!==undefined){const data=this.registry.blocksByRuntimeId[override];if(!data)return this.unknown(p);b={...data,position:p,stateId:override};}
+  if(override!==undefined){const data=this.registry.blocksByRuntimeId[override];if(!data)return this.unknown(p);b={...data,shapes:data.stateShapes?.[override-data.minStateId]||data.shapes,position:p,stateId:override};}
   else{const cx=p.x>>4,cz=p.z>>4;if(!this.known.has(`${cx},${p.y>>4},${cz}`))return null;const c=this.columns.get(`${cx},${cz}`);if(!c)return null;
    const native=c.getBlock(new Vec3(p.x&15,p.y,p.z&15));if(!native||!native.name)return this.unknown(p);b={name:native.name,type:native.type,hardness:native.hardness,material:native.material,diggable:native.diggable,boundingBox:native.boundingBox,position:p,
-    properties:native.getProperties?.()||{},stateId:native.runtimeId??(this.hashed?native.getHash():native.stateId)};
+    properties:native.getProperties?.()||{},shapes:native.shapes,stateId:native.runtimeId??(this.hashed?native.getHash():native.stateId)};
   }
   b.isAir=['air','cave_air','void_air'].includes(b.name);b.isLiquid=/^(flowing_)?(water|lava)$/.test(b.name);b.solid=b.boundingBox==='block'&&!b.isAir;b.isClimbable=['ladder','vine','scaffolding'].includes(b.name);return b;
  }

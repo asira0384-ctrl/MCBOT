@@ -1,6 +1,8 @@
 'use strict';
 const {Client,GatewayIntentBits,REST,Routes,SlashCommandBuilder,MessageFlags}=require('discord.js');const {OWNER}=require('./store');const {norm}=require('./util');
 const commands=[
+ new SlashCommandBuilder().setName('say').setDescription('Botから公開チャットへ送信（管理者専用）').addStringOption(o=>o.setName('target').setDescription('Bot番号 / all').setRequired(true)).addStringOption(o=>o.setName('message').setDescription('送信するメッセージ').setMaxLength(220).setRequired(true)),
+ new SlashCommandBuilder().setName('w').setDescription('Botからtellを送信（管理者専用）').addStringOption(o=>o.setName('target').setDescription('Bot番号 / all').setRequired(true)).addStringOption(o=>o.setName('id').setDescription('相手のゲーマータグ（空白対応）').setMaxLength(64).setRequired(true)).addStringOption(o=>o.setName('message').setDescription('送信するメッセージ').setMaxLength(220).setRequired(true)),
  new SlashCommandBuilder().setName('panel').setDescription('ボタンと選択メニューでBotを管理する（管理者専用）'),
  new SlashCommandBuilder().setName('bot').setDescription('Botを番号/allで操作する（管理者専用）').addStringOption(o=>o.setName('target').setDescription('1〜10 / all').setRequired(true)).addStringOption(o=>o.setName('command').setDescription('例: connect / start / stop / area -20 -20 20 20 / floor 64').setRequired(true)),
  new SlashCommandBuilder().setName('auth').setDescription('Microsoft認証コードを見る（管理者専用）').addIntegerOption(o=>o.setName('target').setDescription('Bot番号').setMinValue(1).setMaxValue(10).setRequired(true)),
@@ -20,6 +22,8 @@ async function startDiscord(manager){const token=process.env.DISCORD_TOKEN;if(!t
  client.on('interactionCreate',async i=>{if(!i.isChatInputCommand()){try{await panel.handle(i);}catch(e){console.error('管理パネル:',e.message);}return;}if(i.user.id!==OWNER){await i.reply({content:'このBotに設定された管理者のみ使用できます。',flags:MessageFlags.Ephemeral});return;}await i.deferReply({flags:MessageFlags.Ephemeral});
   try{let result;
    switch(i.commandName){
+    case 'say':result=manager.say(i.options.getString('target',true),i.options.getString('message',true));break;
+    case 'w':result=manager.whisper(i.options.getString('target',true),i.options.getString('id',true),i.options.getString('message',true));break;
     case 'panel':await panel.create(i);return;
     case 'bot':{const target=i.options.getString('target',true),command=i.options.getString('command',true).trim();
      if(command==='panel'||command==='gui'){await panel.create(i,target);return;}

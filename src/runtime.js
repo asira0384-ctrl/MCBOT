@@ -7,6 +7,7 @@ class Runtime{
   this.bot.on('totemUsed',()=>{this.totemsUsed++;this.worker.stop();this.notice('Totemが割れました。オフハンドを補充します');});
   this.bot.on('death',()=>{this.safety.cancel();this.abort?.abort();this.travel.cancel(false);this.receiving=false;this.target=null;if(worker.state.respawn)this.bot.requestRespawn();this.notice('死亡・自動リスポーン待ち');});
   this.bot.on('respawned',()=>{this.safety.arm();this.dirty=true;const p=this.bot.entity.position;this.notice(`リスポーンしました。座標: ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)} / ${['現世','ネザー','エンド'][this.bot.dimensionId]||this.bot.dimensionId}。装備の補給待ちです`);});
+  this.bot.on('collisionBlocked',()=>{this.worker.stop();this.noticeOnce('ブロック内への落下を止めました。サーバーの位置補正を待ちます');});
   this.bot.on('forcedMove',()=>{this.travel.rollback();this.safety.invalidate();});
   this.bot.on('end',()=>this.destroy());
   this.timer=setInterval(()=>this.tick().catch(e=>{if(e.message!==this.lastError){this.lastError=e.message;this.notice(e.message);}this.receiving=false;this.paused=true;this.retryAt=Date.now()+5000;this.worker.stop();this.bot.closeContainer();this.travel.cancel();}),250);this.timer.unref?.();
@@ -17,9 +18,9 @@ class Runtime{
  requestMove(...args){require('./travel').validateGoal(...args);this.abort?.abort();this.worker.stop();this.bot.closeContainer();this.pendingMove=args;this.receiving=false;this.paused=false;this.retryAt=0;this.notice('移動先を受け付けました。現在の操作を止めて移動します');}
  receive(){this.worker.stop();this.stop(false);this.paused=false;this.retryAt=0;this.processedBoxes.clear();this.receiving=true;this.receivedAt=Date.now();this.dirty=true;this.notice('装備・アイテム・シュルカー受け取り待ち。最後の受信から3秒後にホットバーを整理します');}
  snapshot(){return {busy:this.busy,operation:this.operation||null,lastError:this.lastError,featureErrors:this.featureErrors||{},pendingMove:this.pendingMove||null,waterSafety:this.safety.snapshot(),inventoryMode:this.bot.inventoryMode,serverAuthoritativeInventory:this.bot.serverAuthoritativeInventory,paused:this.paused,target:this.target?.name||null,attacksSent:this.attacks,totemsUsed:this.totemsUsed,receiving:this.receiving,travel:this.travel.route?{mode:this.travel.route.mode,dimension:this.travel.route.dimension,destination:this.travel.route.destination}:null,movement:this.travel.waiting,flight:!!this.travel.flight,burrowActive:!!this.travel.embed,config:this.config,offhand:this.bot.name(this.bot.offhand?.[0]),armor:(this.bot.armor||[]).map(i=>this.bot.name(i)),lastEvent:this.events.at(-1)||null};}
- async tick(){const b=this.bot,w=this.worker;if(!b.connected||b.ended||!b.entity)return;
+ async tick(){const b=this.bot,w=this.worker;if(!b.connected||b.ended||b.loggingOut||!b.entity)return;
   if(b.dead){if(w.state.respawn)b.requestRespawn();return;}
-  if(this.config.autolog&&b.health!==null&&b.health>0&&b.health<=this.config.logHearts*2){this.notice(`AutoLog: 体力${b.health/2}ハートで切断します`);this.travel.cancel(false);b.disconnect();return;}
+  if(this.config.autolog&&b.health!==null&&b.health>0&&b.health<=this.config.logHearts*2){this.notice(`AutoLog: 体力${b.health/2}ハートで切断します`);this.travel.cancel(false);this.abort?.abort();this.safety.cancel();this.worker.stop();await b.logout('あぶねぇwあぶねぇw死にかけたぜw');return;}
   if(this.safety.update()||this.safety.active)return;
   if(this.busy||Date.now()<(this.retryAt||0))return;
   const low=this.config.heal&&b.health!==null&&b.health>0&&b.health<this.config.healHearts*2;

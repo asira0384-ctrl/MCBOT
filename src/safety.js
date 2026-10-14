@@ -44,7 +44,7 @@ class WaterSafety{
    if(!water(feet)&&!water(head)){if(feet?.isAir&&b.blockAt(p.offset(0,-.1,0))?.solid||Date.now()-this.armedAt>10000){this.pending=false;this.state='水中ではありません';}return false;}
    this.active=true;this.pending=false;r.abort?.abort();r.worker.stop();r.travel.cancel(false);r.receiving=false;r.paused=true;b.closeContainer();this.state='水中避難中';r.notice('水中でリスポーン。空気と乾いた足場へ泳いで避難します');
   }
-  if(dryStand(b,p.floored())&&Math.abs(p.y-Math.round(p.y))<.15){b.clearControlStates();b.naturalIdleFall=true;this.active=false;this.route=null;this.state='乾いた足場へ避難済み';r.dirty=true;r.notice(`水中から避難しました。座標: ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)}`);return false;}
+  if(dryStand(b,p.floored())&&b.entity.onGround){b.clearControlStates();b.naturalIdleFall=true;this.active=false;this.route=null;this.state='乾いた足場へ避難済み';r.dirty=true;r.notice(`水中から避難しました。座標: ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)}`);return false;}
   b.naturalIdleFall=false;
   if(!this.route||Date.now()-this.plannedAt>2500){if(Date.now()>=(this.nextSearch||0)){this.requestTerrain();this.route=findEscape(b,p);this.index=1;this.plannedAt=Date.now();this.nextSearch=Date.now()+1000;this.state=this.route?.kind==='dry'?'乾いた足場へ泳いで移動':this.route?'空気のある水面へ移動':'避難経路の地形受信待ち';}}
   b.clearControlStates();const path=this.route?.path;let target=path?.[Math.min(this.index,path.length-1)];

@@ -3,7 +3,7 @@ const path=require('node:path');const {BedrockBot}=require('./bedrock');const {W
 class Manager{
  constructor(store){this.store=store;this.workers=new Map();this.claims=new Map();this.auth=new Map();this.logs=new Map();this.transfers=new Map();this.transferTimers=new Map();this.attempts=new Map();this.seen=new Map();this.lastNotice=new Map();this.onNotice=()=>{};
   const names=(process.env.BOT_NAMES||'Aslrq 1st').split(',').map(s=>s.trim()).filter(Boolean);if(!names.length||names.length>10)throw Error('BOT_NAMESは1〜10アカウント');if(new Set(names.map(norm)).size!==names.length)throw Error('同じアカウントは重複登録できません');
-  this.names=new Map(names.map((name,i)=>[i+1,name]));this.chatTimer=setTimeout(()=>this.chatter(),600000+Math.random()*600000);
+  this.names=new Map(names.map((name,i)=>[i+1,name]));this.greetings=new (require('./greetings').FleetGreetings)(this);this.chatTimer=setTimeout(()=>this.chatter(),600000+Math.random()*600000);
  }
  targets(target){if(target==='all')return [...this.names.keys()];const id=integer(target,1,10);if(!this.names.has(id))throw Error('その番号のアカウントは未設定です');return[id];}
  async connect(id,destination){if(this.workers.has(id))return '接続済み・認証中です。statusで現在の段階を確認できます';const name=this.names.get(id);if(!name)throw Error('番号が未登録です');
@@ -25,8 +25,8 @@ class Manager{
   bot.on('dimensionChanged',()=>{if(current())worker.stop();});
   bot.on('error',e=>{if(!current())return;worker.stop();const message=e.message==='Connect timed out'?`サーバーへのUDP接続がタイムアウトしました (${process.env.MC_HOST||'2b2e.org'}:${process.env.MC_PORT||19132})。Microsoft認証後の通信で止まっています。`:e.message;this.notice(id,`${message} [段階: ${bot.connectionPhase}]`);});
   bot.on('end',()=>{clearTimeout(watchdog);if(!current())return;attempt.active=false;this.auth.delete(id);this.attempts.delete(id);worker.stop();worker.mode='disconnected';this.trace(id,`切断: ${bot.lastDisconnect||'切断理由のパケットはありません'}。最終受信から${bot.lastPacketAt?Math.round((Date.now()-bot.lastPacketAt)/1000):'不明'}秒`);this.notice(id,'接続が切れました。connectで再接続できます');});
-  bot.on('spawn',()=>{if(!current())return;clearTimeout(watchdog);this.auth.delete(id);this.notice(id,`${bot.username} の接続先でspawnを受信しました。本ワールドへの到着は未確認です。messagesでサーバー案内を確認できます`);});
-  bot.on('chat',p=>{if(!p.message?.startsWith('!')||!this.store.authorized(p,bot.players))return;
+  bot.on('spawn',()=>{if(!current())return;if(!bot.onlineAnnounced){bot.onlineAnnounced=true;bot.chat(require('./chat-output').automatic('オンラインになりました！'));}clearTimeout(watchdog);this.auth.delete(id);this.notice(id,`${bot.username} の接続先でspawnを受信しました。本ワールドへの到着は未確認です。messagesでサーバー案内を確認できます`);});
+  bot.on('chat',p=>{if(current())this.greetings.handle(id,p);if(!p.message?.startsWith('!')||!this.store.authorized(p,bot.players))return;
    const k=`${p.xuid}:${p.message}`;const now=Date.now();if(now-(this.seen.get(k)||0)<1500)return;this.seen.set(k,now);for(const[k,t]of this.seen)if(now-t>10000)this.seen.delete(k);
    const parts=p.message.slice(1).trim().split(/\s+/);const command=parts.shift(),target=parts.shift();if(!target)return;
    this.execute(target,[command,...parts].join(' '),'game').then(result=>bot.chat(result.slice(0,220))).catch(e=>bot.chat(e.message));
@@ -43,8 +43,12 @@ class Manager{
   return `Bot${id}: ${w.bot.connectionPhase}。認証済みならコードは発行されません。connectを繰り返さず、接続結果を待ってください`;
  }
  worker(id){const w=this.workers.get(id);if(!w||!w.bot.connected)throw Error(`Bot${id}は未接続です`);return w;}
+ say(target,text){const ids=this.targets(String(target)),message=require('./chat-output').message(text),workers=ids.map(id=>this.worker(id));for(const w of workers)w.bot.chat(message);return `公開チャットへ送信しました（Bot ${ids.join(', ')}）`;}
+ whisper(target,recipient,text){const helpers=require('./chat-output'),name=helpers.name(recipient),message=helpers.message(text),ids=this.targets(String(target)),workers=ids.map(id=>this.worker(id));for(const w of workers)w.bot.whisper(name,message);return `${name}へtellを送信しました（Bot ${ids.join(', ')}）`;}
+ async shutdown(){if(this.shuttingDown)return;this.shuttingDown=true;clearTimeout(this.chatTimer);for(const timer of this.transferTimers.values())clearTimeout(timer);await Promise.allSettled([...this.workers.values()].map(async w=>{w.runtime?.stop();w.stop();await w.bot.logout('バイバイ！');}));this.destroy();}
  async execute(target,text,origin='discord'){const ids=this.targets(String(target));const [cmd,...args]=text.trim().split(/\s+/);if(!cmd)throw Error('コマンドを入力してください');
-  if(origin==='game'&&['connect','disconnect','clear-recovery','diagnose','say','movement','connection','enemy','log'].includes(cmd))throw Error('この操作はDiscordから行ってください');
+  if(origin==='game'&&['connect','disconnect','clear-recovery','diagnose','say','w','tell','movement','connection','enemy','log'].includes(cmd))throw Error('この操作はDiscordから行ってください');
+  if(cmd==='say')return this.say(target,text.replace(/^\s*say\s+/u,''));if(cmd==='w'||cmd==='tell'){const parsed=require('./chat-output').parseTell(text);return this.whisper(target,parsed.recipient,parsed.text);}
   if(['start','scaffold','area','floor','ceiling','supply','chat','respawn','stats-reset','recover','clear-recovery','diagnose'].includes(cmd)){
    // Validate all targets before changing any persistent setting.
    if(['area','floor','ceiling','scaffold'].includes(cmd))for(const id of ids){const w=this.workers.get(id);if(w?.busy&&cmd!=='scaffold')w.stop();}
@@ -54,7 +58,7 @@ class Manager{
    const runtimeConfig=()=>w?.runtime?.config||(state.runtime=Object.assign({},require('./runtime').defaults,state.runtime));
    switch(cmd){
     case 'connect':clearTimeout(this.transferTimers.get(id));this.transferTimers.delete(id);if(w&&w.mode==='disconnected'){w.destroy();this.workers.delete(id);}results.push(await this.connect(id));break;
-    case 'disconnect':clearTimeout(this.transferTimers.get(id));this.transferTimers.delete(id);w?.destroy();this.workers.delete(id);this.auth.delete(id);this.attempts.delete(id);results.push(`Bot${id}を切断`);break;
+    case 'disconnect':clearTimeout(this.transferTimers.get(id));this.transferTimers.delete(id);if(w){w.runtime?.stop();w.stop();await w.bot.logout('バイバイ！');w.destroy();}this.workers.delete(id);this.auth.delete(id);this.attempts.delete(id);results.push(`Bot${id}を切断`);break;
     case 'stop':w?.runtime?.stop();w?.stop();results.push(`Bot${id}停止`);break;
     case 'start':this.worker(id).start();results.push(`Bot${id}開始`);break;
     case 'area':{if(args.length!==4)throw Error('area x1 z1 x2 z2');const [x1,z1,x2,z2]=args.map(v=>integer(v,-30000000,30000000));const area={x1:Math.min(x1,x2),z1:Math.min(z1,z2),x2:Math.max(x1,x2),z2:Math.max(z1,z2)};if((area.x2-area.x1+1)*(area.z2-area.z1+1)>262144)throw Error('最初は512×512ブロック以内にしてください');w?.stop();state.area=area;if(w)w.survey=0;results.push(`Bot${id} 範囲 ${JSON.stringify(area)}`);break;}
@@ -78,7 +82,6 @@ class Manager{
     case 'escape':{const r=this.worker(id).runtime;r.safety.arm();results.push('水中避難を開始。受信済み地形を確認します');break;}
     case 'runtime':results.push(JSON.stringify(this.worker(id).runtime.snapshot()));break;
     case 'messages':results.push((this.logs.get(id)||[]).slice(-12).join('\n').slice(-1700)||'受信メッセージなし');break;
-    case 'say':{const text=args.join(' ');if(!text||text.length>220)throw Error('say のあとに送信文を220文字以内で指定');this.worker(id).bot.chat(text);results.push(`Bot${id}から送信しました`);break;}
     case 'diagnose':results.push(await require('./network').diagnose(process.env.MC_HOST||'2b2e.org',Number(process.env.MC_PORT||19132)));break;
     case 'status':results.push(JSON.stringify(w?.status()||{number:id,name:this.names.get(id),mode:'offline',scaffold:state.scaffold}));break;
     case 'stats':results.push(`Bot${id}: 累計 ${state.stats.total} (黒曜石 ${state.stats.obsidian} / その他 ${state.stats.other}) / 今回 ${state.session.total}`);break;

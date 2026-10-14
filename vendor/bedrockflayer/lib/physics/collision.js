@@ -12,7 +12,7 @@ const PARTIAL_BLOCKS = {
     fences: ['fence', 'fence_gate', 'nether_brick_fence', 'iron_bars'],
     walls: ['wall', 'cobblestone_wall'],
     slabs: ['slab'],
-    panes: ['glass_pane', 'glass', 'ice', 'cobweb'],
+    panes: ['glass_pane'],
     stairs: ['stairs', 'stair'],
     buttons: ['button'],
     pressure_plates: ['pressure_plate', 'weighted_pressure_plate'],
@@ -132,6 +132,12 @@ function getSurroundingBBs(bot, region) {
                 const block = bot.blockAt ? bot.blockAt({ x, y, z }, false) : null
                 if (block) {
                     if (block.solid) {
+                        if (Array.isArray(block.shapes)) {
+                            for (const shape of block.shapes) {
+                                if (shape.length === 6) bbs.push(new AABB(x + shape[0], y + shape[1], z + shape[2], x + shape[3], y + shape[4], z + shape[5]))
+                            }
+                            continue
+                        }
                         const partialBB = _getPartialBlockBB(block, x, y, z)
                         if (partialBB) {
                             bbs.push(partialBB)

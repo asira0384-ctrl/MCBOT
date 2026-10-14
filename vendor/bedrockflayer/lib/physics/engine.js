@@ -53,18 +53,23 @@ function physicsPlugin(bot) {
 
     // ---- Handle server position corrections ----
     bot.client.on('correct_player_move_prediction', (packet) => {
+        if (packet.prediction_type === 'vehicle' || packet.prediction_type === 1) return
         if (packet.position && packet.position.x !== undefined && bot.entity) {
-            bot.entity.position.x = packet.position.x
-            bot.entity.position.y = packet.position.y - C.PLAYER_EYE_HEIGHT // Server sends head pos
-            bot.entity.position.z = packet.position.z
+            if (packet.tick && bot.lastCorrectionTick && BigInt(packet.tick) < bot.lastCorrectionTick) return
+            if (packet.tick) bot.lastCorrectionTick = BigInt(packet.tick)
+            bot.serverPosition = { ...packet.position }
+            const pos = require('../../../../src/positions').serverPosition(bot, packet.position, 'correct_player_move_prediction')
+            bot.entity.position.x = pos.x
+            bot.entity.position.y = pos.y
+            bot.entity.position.z = pos.z
             bot.position = bot.entity.position.clone()
             bot._lastSentPos = bot.entity.position.clone()
             if (packet.on_ground !== undefined) {
                 bot.entity.onGround = packet.on_ground
             }
-            bot.entity.velocity.x = 0
-            bot.entity.velocity.y = 0
-            bot.entity.velocity.z = 0
+            const delta = packet.delta
+            bot.entity.velocity = delta && ['x','y','z'].every(k => Number.isFinite(delta[k])) ? new Vec3(delta.x,delta.y,delta.z) : new Vec3(0,0,0)
+            bot.positionCorrections = (bot.positionCorrections || 0) + 1
             bot.emit('forcedMove')
         }
     })
@@ -79,9 +84,10 @@ function physicsPlugin(bot) {
             // Only reset/teleport count as corrections; normal own movement still synchronizes.
             if (mode !== 'rotation' && packet.position && packet.position.x !== undefined && bot.entity) {
                 bot.serverPosition = { ...packet.position }
-                bot.entity.position.x = packet.position.x
-                bot.entity.position.y = packet.position.y - C.PLAYER_EYE_HEIGHT // Server sends head pos
-                bot.entity.position.z = packet.position.z
+                const pos = require('../../../../src/positions').serverPosition(bot, packet.position, 'move_player')
+                bot.entity.position.x = pos.x
+                bot.entity.position.y = pos.y
+                bot.entity.position.z = pos.z
                 bot.position = bot.entity.position.clone()
                 bot.entity.onGround = packet.on_ground || false
                 bot.entity.velocity.x = 0
@@ -107,6 +113,9 @@ function _simulateTick(bot) {
     const escapingWater = bot.safety?.update();
     if (!escapingWater && bot.motion?.step()) {
         bot.position = bot.entity.position.clone()
+        _sendPositionPacket(bot, 0, 0); bot.tick++; bot.emit('physicsTick'); return
+    }
+    if (require('../../../../src/positions').guardPenetration(bot)) {
         _sendPositionPacket(bot, 0, 0); bot.tick++; bot.emit('physicsTick'); return
     }
     // Stopping controls does not freeze gravity. Apply normal collision and

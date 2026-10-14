@@ -20,6 +20,7 @@ class Travel{
  cancel(land=true){this.route=null;this.unbury();this.waiting='';if(this.flight&&land){const floor=landingFloor(this.bot,this.bot.entity.position,16);if(floor){this.flight={goal:floor,landing:true};this.waiting='着地中';return;}this.flight={goal:this.bot.entity.position.clone(),paused:true};this.waiting='着地点が未受信・飛行待機';return;}this.flight=null;if(this.bot.gliding)this.glide(false);}
  rollback(){if(this.embed)this.runtime.burrowBlockedUntil=Date.now()+10000;this.embed=null;if(this.flight){this.flight={goal:this.bot.entity.position.clone(),paused:true};this.route=null;this.waiting='位置補正を受信・飛行待機';this.runtime.notice(this.waiting);}}
  step(){const b=this.bot;if(!b.connected||b.dead)return false;
+  if(this.embed&&!this.runtime.config.anticrystal)this.unbury();
   if(this.embed){b.entity.position.y=this.embed.y;b.entity.velocity=new Vec3(0,0,0);return true;}
   if(!this.flight)return false;
   const f=this.flight,p=b.entity.position;

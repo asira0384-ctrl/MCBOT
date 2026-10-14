@@ -2,7 +2,7 @@
 const {ActionRowBuilder,ButtonBuilder,ButtonStyle,StringSelectMenuBuilder,ChannelSelectMenuBuilder,ChannelType,ModalBuilder,TextInputBuilder,TextInputStyle,MessageFlags}=require('discord.js');
 const {norm}=require('./util');const {defaults}=require('./runtime');
 const CID='acb:';
-const pages={home:'操作',gear:'装備・受け取り',combat:'敵・戦闘',travel:'移動',mining:'整地',logs:'ログ・管理者'};
+const pages={home:'操作',gear:'装備・受け取り',combat:'敵・戦闘',travel:'移動',mining:'整地',logs:'ログ・管理者',chat:'チャット'};
 const row=(...components)=>new ActionRowBuilder().addComponents(...components);
 function button(id,label,style=ButtonStyle.Secondary,disabled=false){return new ButtonBuilder().setCustomId(CID+id).setLabel(label.slice(0,80)).setStyle(style).setDisabled(disabled);}
 class ControlPanel{
@@ -18,7 +18,8 @@ class ControlPanel{
   if(s.page==='home'){
    components.push(row(button('connect','接続',ButtonStyle.Success),button('disconnect','切断',ButtonStyle.Danger),button('stop','停止',ButtonStyle.Danger),button('auth','認証コード',ButtonStyle.Secondary,!one),button('refresh','更新')));
    components.push(row(button('receive','装備・箱を受け取る',ButtonStyle.Primary,!connected),button('page:travel','移動',ButtonStyle.Primary),button('view','視点画像',ButtonStyle.Secondary,!connected||!one),button('report','状態レポート')));
-   components.push(row(button('page:gear','装備設定'),button('page:combat','敵・戦闘'),button('page:mining','整地'),button('page:logs','ログ・管理者')));
+   components.push(row(button('page:gear','装備設定'),button('page:combat','敵・戦闘'),button('page:mining','整地'),button('page:logs','ログ・管理者'),button('page:chat','チャット')));
+  }else if(s.page==='chat'){components.push(row(button('form:say','公開チャットに送信',ButtonStyle.Primary,!connected),button('form:w','tellを送信',ButtonStyle.Primary,!connected)));
   }else if(s.page==='gear'){
    components.push(row(this.toggle(s,'gear','自動防具'),this.toggle(s,'autototem','AutoTotem'),this.toggle(s,'autoslot','AutoSlot'),this.toggle(s,'heal','回復'),button('respawn',`自動リスポーン: ${selected.every(id=>this.manager.store.bot(id).respawn)?'ON':'OFF'}`,selected.every(id=>this.manager.store.bot(id).respawn)?ButtonStyle.Success:ButtonStyle.Secondary)));
    components.push(row(button('receive','装備・箱を受け取る',ButtonStyle.Primary,!connected),button('sort','今すぐ並べる',ButtonStyle.Primary,!connected),button('recover-box','箱の回収を再試行',ButtonStyle.Secondary,!connected),button('form:heal','回復する体力を設定')));
@@ -48,15 +49,16 @@ class ControlPanel{
  }
  async create(i,target){for(const [id,s]of this.sessions)if(Date.now()-s.updatedAt>3600000)this.sessions.delete(id);const selected=target||String([...this.manager.names.keys()][0]);this.manager.targets(selected);const s={target:selected,page:'home',mode:'walk',dimension:'overworld',updatedAt:Date.now()};const message=await i.editReply(this.render(s));this.sessions.set(message.id,s);}
  modal(id,s,form){const current=this.manager.workers.get(this.ids(s)[0]),b=current?.bot,c=this.settings(s)[0];const p=b?.entity?.position||{x:0,y:64,z:0};const definitions={
+  say:['公開チャットに送信',[['message','メッセージ','']]],w:['tellを送信',[['id','相手のゲーマータグ（空白対応）',''],['message','メッセージ','']]],
   move:['移動先の座標',[['x','X',Math.floor(p.x)],['y','Y',Math.floor(p.y)],['z','Z',Math.floor(p.z)]]],
   speed:['飛行速度（ブロック/秒）',[['horizontal','横の速度',c.flyHorizontal*20],['vertical','上下の速度',c.flyVertical*20]]],
   'enemy-add':['敵を登録',[['name','敵のゲーマータグ','']]],'enemy-remove':['敵を解除',[['name','敵のゲーマータグ','']]],
   'admin-add':['ゲーム内管理者を登録',[['name','ゲーマータグ',''],['xuid','XUID（一覧から取得できる時は空欄）','',false]]],'admin-remove':['管理者を解除',[['name','ゲーマータグ','']]],
   autolog:['切断する体力',[['hearts','何ハート以下で切断するか',c.logHearts]]],heal:['回復する体力',[['hearts','何ハート未満で食べるか',c.healHearts]]],depth:['AntiCrystal',[['depth','埋まる深さ（ブロック）',c.burrowDepth]]],
   area:['整地の範囲と床',[['x1','始点X',''],['z1','始点Z',''],['x2','終点X',''],['z2','終点Z',''],['floor','残す床のY','64']]],scaffold:['足場を指定',[['block','ブロック名（例: cobblestone）','cobblestone']]]};
-  const def=definitions[form];if(!def)throw Error('入力画面がありません');return new ModalBuilder().setCustomId(`${CID}modal:${form}:${id}`).setTitle(def[0]).addComponents(def[1].map(([key,label,value,required=true])=>row(new TextInputBuilder().setCustomId(key).setLabel(label).setStyle(TextInputStyle.Short).setRequired(required).setMaxLength(80).setValue(String(value)))));
+  const def=definitions[form];if(!def)throw Error('入力画面がありません');return new ModalBuilder().setCustomId(`${CID}modal:${form}:${id}`).setTitle(def[0]).addComponents(def[1].map(([key,label,value,required=true])=>row(new TextInputBuilder().setCustomId(key).setLabel(label).setStyle(key==='message'?TextInputStyle.Paragraph:TextInputStyle.Short).setRequired(required).setMaxLength(key==='message'?220:80).setValue(String(value)))));
  }
- diagnostic(s){return {version:require('../package.json').version,at:new Date().toISOString(),bots:this.ids(s).map(id=>{const w=this.manager.workers.get(id),b=w?.bot,p=b?.entity?.position;return {number:id,name:this.manager.names.get(id),mode:w?.mode,connectionPhase:b?.connectionPhase,runtimeEntityId:b?._runtimeEntityId?.toString(),position:p,serverPosition:b?.serverPosition,health:b?.health,dead:b?.dead,terrainReady:b?.terrainReady,feet:p?b.blockAt(p)?.name:null,below:p?b.blockAt(p.offset(0,-.1,0))?.name:null,knownSections:b?.worldMirror?.known.size,packets:b?.packetCounts,lastMove:b?.lastMovePacket,runtime:w?.runtime?.snapshot(),inventoryMode:b?.inventoryMode,serverAuthoritativeInventory:b?.serverAuthoritativeInventory,inventoryOpenState:b?.inventoryOpenState,inventoryOpenRequests:b?.inventoryOpenRequests,pendingStack:b?.pendingStackRequest,lastStackResponse:b?.lastStackResponse,inventory:b?.list().map(i=>({slot:i.slot,name:i.name,count:i.count,networkId:i.raw.network_id,stackId:i.raw.stack_id})),serverMessages:(this.manager.logs.get(id)||[]).slice(-12)};})};}
+ diagnostic(s){return {version:require('../package.json').version,at:new Date().toISOString(),greetings:this.manager.greetings?.snapshot(),bots:this.ids(s).map(id=>{const w=this.manager.workers.get(id),b=w?.bot,p=b?.entity?.position;return {number:id,name:this.manager.names.get(id),mode:w?.mode,connectionPhase:b?.connectionPhase,runtimeEntityId:b?._runtimeEntityId?.toString(),position:p,serverPosition:b?.serverPosition,health:b?.health,dead:b?.dead,terrainReady:b?.terrainReady,feet:p?b.blockAt(p)?.name:null,below:p?b.blockAt(p.offset(0,-.1,0))?.name:null,knownSections:b?.worldMirror?.known.size,packets:b?.packetCounts,lastMove:b?.lastMovePacket,positionNormalization:b?.lastPositionNormalization,collisionState:b?.collisionState,runtime:w?.runtime?.snapshot(),inventoryMode:b?.inventoryMode,serverAuthoritativeInventory:b?.serverAuthoritativeInventory,inventoryOpenState:b?.inventoryOpenState,inventoryOpenRequests:b?.inventoryOpenRequests,pendingStack:b?.pendingStackRequest,lastStackResponse:b?.lastStackResponse,inventory:b?.list().map(i=>({slot:i.slot,name:i.name,count:i.count,networkId:i.raw.network_id,stackId:i.raw.stack_id})),serverMessages:(this.manager.logs.get(id)||[]).slice(-12)};})};}
  async handle(i){if(!i.customId?.startsWith(CID))return false;if(i.user.id!==this.owner){await i.reply({content:'このBotの管理者だけ操作できます。',flags:MessageFlags.Ephemeral});return true;}
   if(i.customId===CID+'open'){await i.deferReply({flags:MessageFlags.Ephemeral});await this.create(i);return true;}
   const modal=i.isModalSubmit?.(),parts=i.customId.slice(CID.length).split(':'),id=modal?parts[2]:i.message?.id,s=this.sessions.get(id);if(!s){await i.reply({content:'/panel をもう一度開いてください。',flags:MessageFlags.Ephemeral});return true;}s.updatedAt=Date.now();
@@ -86,7 +88,7 @@ class ControlPanel{
   }catch(e){if(i.deferred||i.replied){if(modal||['auth','view','report','messages','enemy-list','admin-list','stats'].includes(parts[0]))await i.editReply({content:e.message.slice(0,1900),allowedMentions:{parse:[]}});else{s.result='操作できません: '+e.message;await i.editReply(this.render(s));}}else await i.reply({content:e.message.slice(0,1900),flags:MessageFlags.Ephemeral});}
   return true;
  }
- async submit(s,form,fields){const get=k=>fields.getTextInputValue(k).trim();if(form==='move'){return this.manager.execute(s.target,`goto ${s.mode} ${s.dimension} ${get('x')} ${get('y')} ${get('z')}`);}
+ async submit(s,form,fields){const get=k=>fields.getTextInputValue(k).trim();if(form==='say')return this.manager.say(s.target,get('message'));if(form==='w')return this.manager.whisper(s.target,get('id'),get('message'));if(form==='move'){return this.manager.execute(s.target,`goto ${s.mode} ${s.dimension} ${get('x')} ${get('y')} ${get('z')}`);}
   if(form==='speed'){const h=Number(get('horizontal')),v=Number(get('vertical'));return this.manager.execute(s.target,`flyspeed ${h/20} ${v/20}`);}
   if(form==='enemy-add'||form==='enemy-remove')return this.manager.execute(s.target,`enemy ${form==='enemy-add'?'add':'remove'} ${get('name')}`);
   if(form==='admin-add'){const name=get('name'),profile=[...this.manager.workers.values()].flatMap(w=>[...w.bot.players.values()]).find(p=>norm(p.name)===norm(name)),xuid=get('xuid')||profile?.xuid;if(!xuid)throw Error('同じサーバーに本人がいる時に登録するか、XUIDを入力してください');if(profile&&profile.xuid!==xuid)throw Error('XUIDがプレイヤー一覧と一致しません');this.manager.store.adminAdd(name,xuid);return `${name} を登録しました`;}
