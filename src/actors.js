@@ -2,18 +2,19 @@
 const {Vec3}=require('vec3');const {norm}=require('./util');
 function trackActors(bot){
  bot.actors=new Map();
- const add=(p,player)=>{if(String(p.runtime_id)===String(bot._runtimeEntityId))return;const position=new Vec3(p.position.x,p.position.y-(player?1.62:0),p.position.z);bot.actors.set(String(p.runtime_id),{id:BigInt(p.runtime_id),uniqueId:String(p.unique_id??p.runtime_id),uuid:p.uuid,name:p.username||p.entity_type||'',player,position,seen:Date.now(),dimension:bot.dimensionId});};
+ const playerPosition=p=>require('./positions').serverPosition({blockAt:bot.blockAt},p,'actor');
+ const add=(p,player)=>{if(String(p.runtime_id)===String(bot._runtimeEntityId)||!p.position)return;const position=player?playerPosition(p.position):new Vec3(p.position.x,p.position.y,p.position.z);bot.actors.set(String(p.runtime_id),{id:BigInt(p.runtime_id),uniqueId:String(p.unique_id??p.runtime_id),uuid:p.uuid,name:p.username||p.entity_type||'',player,position,rawPosition:player?p.position:null,seen:Date.now(),dimension:bot.dimensionId});};
  bot.client.on('add_player',p=>add(p,true));bot.client.on('add_entity',p=>add(p,false));
- bot.client.on('move_player',p=>{const a=bot.actors.get(String(p.runtime_id));if(a&&p.position){a.position=new Vec3(p.position.x,p.position.y-1.62,p.position.z);a.seen=Date.now();}});
- bot.client.on('move_entity',p=>{const a=bot.actors.get(String(p.runtime_entity_id));if(a&&p.position){a.position=new Vec3(p.position.x,p.position.y,p.position.z);a.seen=Date.now();}});
+ bot.client.on('move_player',p=>{const a=bot.actors.get(String(p.runtime_id));if(a&&p.position){a.rawPosition=p.position;a.position=playerPosition(p.position);a.seen=Date.now();}});
+ bot.client.on('move_entity',p=>{const a=bot.actors.get(String(p.runtime_entity_id));if(a&&p.position){a.rawPosition=null;a.position=new Vec3(p.position.x,p.position.y,p.position.z);a.seen=Date.now();}});
  bot.client.on('move_entity_delta',p=>{const a=bot.actors.get(String(p.runtime_entity_id));if(a){for(const k of ['x','y','z'])if(p[k]!==undefined&&p[k]!==null)a.position[k]=p[k];a.seen=Date.now();}});
  bot.client.on('remove_entity',p=>{for(const [id,a] of bot.actors)if(a.uniqueId===String(p.entity_id_self))bot.actors.delete(id);});
  bot.client.on('player_list',p=>{const payload=p.records;const list=Array.isArray(payload)?payload:payload?.records||[];for(const r of list)if((Array.isArray(payload)?r.type:payload.type)==='remove')for(const [id,a]of bot.actors)if(a.uuid===r.uuid)bot.actors.delete(id);});
  bot.client.on('entity_event',p=>{const own=String(p.runtime_entity_id)===String(bot._runtimeEntityId);if(own&&(p.event_id==='consume_totem'||p.event_id===65)){if(/totem/.test(bot.name(bot.offhand?.[0])))bot.offhand[0]=null;bot.emit('totemUsed');}
-  if(p.event_id==='death_animation'||p.event_id===3){bot.actors.delete(String(p.runtime_entity_id));if(own&&!bot.dead){bot.dead=true;bot.health=0;bot.halt();bot.emit('death');}}
+  if(p.event_id==='death_animation'||p.event_id===3){const actor=bot.actors.get(String(p.runtime_entity_id));if(actor)bot.emit('actorDied',actor);bot.actors.delete(String(p.runtime_entity_id));if(own&&!bot.dead){bot.dead=true;bot.health=0;bot.halt();bot.emit('death');}}
  });
  bot.on('dimensionChanged',()=>bot.actors.clear());bot.on('end',()=>bot.actors.clear());
 }
-function nearestEnemy(bot,enemies,range=12){if(!bot.entity)return null;return [...(bot.actors?.values()||[])].filter(a=>a.player&&a.dimension===bot.dimensionId&&a.id!==bot._runtimeEntityId&&enemies.some(e=>norm(e.name)===norm(a.name)&&(!e.xuid||bot.players.get(norm(a.name))?.xuid===e.xuid))&&a.position.distanceTo(bot.entity.position)<=range).sort((a,b)=>a.position.distanceTo(bot.entity.position)-b.position.distanceTo(bot.entity.position))[0]||null;}
+function nearestEnemy(bot,enemies,range=12){if(!bot.entity)return null;for(const a of bot.actors?.values()||[])if(a.player&&a.rawPosition)a.position=require('./positions').serverPosition({blockAt:bot.blockAt},a.rawPosition,'actor');return [...(bot.actors?.values()||[])].filter(a=>a.player&&a.dimension===bot.dimensionId&&a.id!==bot._runtimeEntityId&&enemies.some(e=>norm(e.name)===norm(a.name)&&(!e.xuid||bot.players.get(norm(a.name))?.xuid===e.xuid))&&a.position.distanceTo(bot.entity.position)<=range).sort((a,b)=>a.position.distanceTo(bot.entity.position)-b.position.distanceTo(bot.entity.position))[0]||null;}
 function lineOfSight(bot,point){const eye=bot.entity.position.offset(0,1.62,0),delta=point.minus(eye),n=Math.ceil(delta.norm()*5);for(let i=1;i<n;i++){const b=bot.blockAt(eye.plus(delta.scaled(i/n)));if(!b||b.solid||b.name==='unknown')return false;}return true;}
 module.exports={trackActors,nearestEnemy,lineOfSight};

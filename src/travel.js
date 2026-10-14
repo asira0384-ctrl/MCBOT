@@ -2,7 +2,7 @@
 const {Vec3}=require('vec3');const {air,solid,hazard}=require('./util');const {wear}=require('./equipment');
 const dimensions={overworld:0,nether:1,end:2,現世:0,ネザー:1,エンド:2};
 function dimension(value){if(Object.hasOwn(dimensions,value))return dimensions[value];const n=Number(value);if(Number.isInteger(n)&&n>=0&&n<=2)return n;throw Error('ディメンション: overworld / nether / end');}
-function validateGoal(mode,dim,x,y,z){if(!['walk','dig','fly'].includes(mode))throw Error('移動方法: walk / dig / fly');const destination=new Vec3(...[x,y,z].map(Number));if(![destination.x,destination.y,destination.z].every(Number.isFinite)||Math.abs(destination.x)>30000000||Math.abs(destination.z)>30000000||destination.y< -64||destination.y>319)throw Error('座標の範囲が不正です');return {mode,dimension:dimension(dim),destination};}
+function validateGoal(mode,dim,x,y,z){if(!['walk','dig','fly','jetpack'].includes(mode))throw Error('移動方法: walk / dig / fly / jetpack');const destination=new Vec3(...[x,y,z].map(Number));if(![destination.x,destination.y,destination.z].every(Number.isFinite)||Math.abs(destination.x)>30000000||Math.abs(destination.z)>30000000||destination.y< -64||destination.y>319)throw Error('座標の範囲が不正です');return {mode,dimension:dimension(dim),destination};}
 function bodyClear(bot,p,margin=.3){for(let x=Math.floor(p.x-margin);x<=Math.floor(p.x+margin);x++)for(let z=Math.floor(p.z-margin);z<=Math.floor(p.z+margin);z++)for(let y=Math.floor(p.y);y<=Math.floor(p.y+1.79);y++){const b=bot.blockAt({x,y,z});if(!b||b.solid||b.isLiquid||/unknown|fire|lava/.test(b.name))return false;}return true;}
 function sweptClear(bot,from,to,margin=.3){const delta=to.minus(from),n=Math.max(1,Math.ceil(delta.norm()*5));for(let i=0;i<=n;i++)if(!bodyClear(bot,from.plus(delta.scaled(i/n)),margin))return false;return true;}
 function landingFloor(bot,p,max=10){for(let d=0;d<=max;d++){const y=Math.floor(p.y)-d,q=new Vec3(Math.floor(p.x),y,Math.floor(p.z));if(solid(bot.blockAt(q.offset(0,-1,0)))&&bodyClear(bot,q.offset(.5,0,.5)))return q.offset(.5,0,.5);}return null;}
@@ -25,11 +25,11 @@ class Travel{
   if(!this.flight)return false;
   const f=this.flight,p=b.entity.position;
   if(f.paused){b.entity.velocity=new Vec3(0,0,0);return true;}
-  if(!b.gliding&&b.entity.onGround){b.controlState.jump=true;return false;}
-  b.controlState.jump=false;if(!b.gliding)this.glide(true);
+  if(!f.jetpack&&!b.gliding&&b.entity.onGround){b.controlState.jump=true;return false;}
+  b.controlState.jump=!!f.jetpack;if(!f.jetpack&&!b.gliding)this.glide(true);
   const delta=f.goal.minus(p);if(delta.norm()<.15){if(f.landing){b.entity.onGround=true;this.flight=null;this.glide(false);this.waiting='着地済み';}b.entity.velocity=new Vec3(0,0,0);return true;}
   if(f.bestDistance===undefined||delta.norm()<f.bestDistance-.3){f.bestDistance=delta.norm();f.progressAt=Date.now();}else if(Date.now()-f.progressAt>5000){f.paused=true;this.waiting='飛行が進まないため待機';this.runtime.notice(this.waiting);b.entity.velocity=new Vec3(0,0,0);return true;}
-  const horizontal=Math.hypot(delta.x,delta.z),hs=Math.min(this.runtime.config.flyHorizontal,horizontal),vs=Math.min(f.landing?.15:this.runtime.config.flyVertical,Math.abs(delta.y));
+  const horizontal=Math.hypot(delta.x,delta.z),hs=Math.min(f.jetpack?.25:this.runtime.config.flyHorizontal,horizontal),vs=Math.min(f.landing?.15:f.jetpack?.35:this.runtime.config.flyVertical,Math.abs(delta.y));
   let next=p.offset(horizontal?delta.x/horizontal*hs:0,Math.sign(delta.y)*vs,horizontal?delta.z/horizontal*hs:0);
   if(!sweptClear(b,p,next,f.landing?.3:1.05)){
    const candidates=[p.offset(-delta.z/(horizontal||1)*2,0,delta.x/(horizontal||1)*2),p.offset(delta.z/(horizontal||1)*2,0,-delta.x/(horizontal||1)*2),p.offset(0,2,0)];
@@ -47,7 +47,7 @@ class Travel{
    }return;
   }
   if(b.entity.position.distanceTo(r.destination)<1){if(this.flight){const floor=landingFloor(b,r.destination,3);if(!floor)throw Error('目的地の着地面を確認できません。飛行待機します');this.flight={goal:floor,landing:true};}this.route=null;this.runtime.notice('指定座標へ到着しました');return;}
-  if(r.mode==='fly'){if(b.name(b.armor[1])!=='elytra'){await wear(b,{armor:true,totem:true,elytra:true},signal);if(b.name(b.armor[1])!=='elytra')throw Error('エリトラを補給してください');}if(b.damage(b.armor[1])>=422)throw Error('エリトラの耐久が少なくなりました');this.flight??={goal:r.destination,landing:false};this.waiting=this.flight.paused?this.waiting:'エリトラ移動中';return;}
+  if(r.mode==='fly'||r.mode==='jetpack'){if(!b.terrainEstablished&&!b.entity.onGround){this.waiting='飛行開始前の足場確認待ち';return;}if(r.mode==='fly'){if(b.name(b.armor[1])!=='elytra'){await wear(b,{armor:true,totem:true,elytra:true},signal);if(b.name(b.armor[1])!=='elytra')throw Error('エリトラを補給してください');}if(b.damage(b.armor[1])>=422)throw Error('エリトラの耐久が少なくなりました');}this.flight??={goal:r.destination,landing:false,jetpack:r.mode==='jetpack'};this.waiting=this.flight.paused?this.waiting:r.mode==='jetpack'?'Jetpack移動中':'エリトラ移動中';return;}
   this.waiting=r.mode==='dig'?'採掘しながら移動中':'徒歩移動中';await this.walk(r.destination,r.mode,signal);
  }
  async walk(destination,mode,signal){const b=this.bot,beforeDimension=b.dimensionId,p=b.entity.position,dx=destination.x-p.x,dz=destination.z-p.z;const horizontal=Math.hypot(dx,dz);if(horizontal<.5&&Math.abs(destination.y-p.y)>1.5)throw Error('上下へ進む経路がありません');

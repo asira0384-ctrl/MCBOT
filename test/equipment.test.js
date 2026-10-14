@@ -9,6 +9,14 @@ test('armor/offhand server snapshots; open inventory before gear moves; rejected
  b.items[18]=item('totem_of_undying',18);c.reject=true;await assert.rejects(wear(b,{armor:false,totem:true}));assert.equal(b.name(b.offhand[0]),'shield');assert.equal(b.name(b.items[18]),'totem_of_undying');
 });
 test('AutoSlot preserves replaced items and assigns weapon/pickaxe/gapple in a real adapter',async t=>{const {b,item}=adapter(t);b.items[10]=item('diamond_sword',10);b.items[11]=item('diamond_pickaxe',11);b.items[12]=item('enchanted_golden_apple',12);b.items[0]=item('dirt',30);await autoSlots(b);assert.equal(b.name(b.items[0]),'diamond_sword');assert.equal(b.name(b.items[1]),'diamond_pickaxe');assert.equal(b.name(b.items[2]),'enchanted_golden_apple');assert.equal(b.count('dirt'),1);});
+test('PA AutoSlot prepares crystal/piston/redstone without losing rockets or opening inventory between uses',async t=>{
+ const {b,item,packets}=adapter(t);b.items[6]=item('firework_rocket',60);b.items[12]=item('end_crystal',12);b.items[13]=item('piston',13);b.items[14]=item('redstone_block',14);
+ await autoSlots(b,undefined,{pistoncrystal:true});
+ assert.deepEqual([6,7,8].map(slot=>b.name(b.items[slot])),['end_crystal','piston','redstone_block']);assert.equal(b.count('firework_rocket'),1);
+ const opens=packets.filter(p=>p.name==='interact').length;
+ for(const name of ['piston','end_crystal','redstone_block'])await b.equip(b.find(name).slot);
+ assert.equal(packets.filter(p=>p.name==='interact').length,opens);assert.equal(b.name(b.items[b.quickBarSlot]),'redstone_block');
+});
 for(const version of ['1.21.2','1.26.51'])test(`combat and offhand/container packets preserve exact IDs (${version})`,()=>{const s=createSerializer(version),d=createDeserializer(version),b={_runtimeEntityId:9223372036854775807n,quickBarSlot:0,items:[],entity:{position:{x:1,y:2,z:3}}};const read=d.parsePacketBuffer(s.createPacketBuffer({name:'inventory_transaction',params:attack(b,{id:9223372036854775806n})})).data.params;assert.equal(read.transaction.transaction_data.entity_runtime_id,9223372036854775806n);assert.equal(read.transaction.transaction_data.action_type,'attack');
  const p=request(-1,[{type_id:'take',count:1,source:slotRef('level_entity',0,{stack_id:1}),destination:slotRef('offhand',0,null)}]);const adapted=require('../src/protocol').adaptRequest({registry:require('prismarine-registry')('bedrock_'+version)},p);const decoded=d.parsePacketBuffer(s.createPacketBuffer({name:'item_stack_request',params:adapted})).data.params;assert.equal(typeof decoded.requests[0].actions[0].source.slot_type==='string'?decoded.requests[0].actions[0].source.slot_type:decoded.requests[0].actions[0].source.slot_type.container_id,'container');assert.equal(typeof decoded.requests[0].actions[0].destination.slot_type==='string'?decoded.requests[0].actions[0].destination.slot_type:decoded.requests[0].actions[0].destination.slot_type.container_id,'offhand');
 });

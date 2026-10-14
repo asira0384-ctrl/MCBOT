@@ -122,7 +122,9 @@ function _simulateTick(bot) {
     // falling physics in received terrain, including while waiting to join.
     // During idle loading, missing terrain must not act as a mid-air brake.
     // Active navigation still waits for terrain before entering unknown space.
-    if (!bot.naturalIdleFall && bot.blockAt && !bot.blockAt(bot.entity.position.offset(0, -0.1, 0))) {
+    const floor = bot.blockAt?.(bot.entity.position.offset(0, -0.1, 0))
+    if (floor?.solid && floor.name !== 'unknown' && bot.entity.onGround) bot.terrainEstablished = true
+    if ((!bot.naturalIdleFall || bot.terrainEstablished || bot.terrainDecodeFailed) && (!floor || floor.name === 'unknown')) {
         bot.entity.velocity = new Vec3(0, 0, 0)
         _sendPositionPacket(bot, 0, 0); bot.tick++; bot.emit('physicsTick'); return
     }

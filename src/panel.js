@@ -26,11 +26,11 @@ class ControlPanel{
    components.push(row(button('receive','装備・箱を受け取る',ButtonStyle.Primary,!connected),button('sort','今すぐ並べる',ButtonStyle.Primary,!connected),button('recover-box','箱の回収を再試行',ButtonStyle.Secondary,!connected),button('form:heal','回復する体力を設定')));
    const mode=selected.length===1?this.manager.workers.get(selected[0])?.bot.inventoryMode||'auto':'auto';components.push(row(new StringSelectMenuBuilder().setCustomId(CID+'inventory-mode').setPlaceholder('インベントリ通信方式').addOptions([{label:'サーバー指定で自動',value:'auto',default:mode==='auto'},{label:'スロットの成功応答を使う',value:'stack',default:mode==='stack'},{label:'従来方式・実スロット更新で確認',value:'legacy',default:mode==='legacy'}])));
   }else if(s.page==='combat'){
-   components.push(row(this.toggle(s,'killaura','指定敵を攻撃'),this.toggle(s,'anticrystal','AntiCrystal'),this.toggle(s,'autolog','AutoLog')));
+   components.push(row(this.toggle(s,'killaura','指定敵を攻撃'),this.toggle(s,'anticrystal','AntiCrystal'),this.toggle(s,'autolog','AutoLog'),this.toggle(s,'crystalaura','CA'),this.toggle(s,'pistoncrystal','PA')));
    components.push(row(button('form:enemy-add','敵を登録',ButtonStyle.Primary),button('form:enemy-remove','敵を解除'),button('enemy-list','敵一覧'),button('form:autolog','切断する体力')));
-   components.push(row(button('form:depth','埋まる深さ')));
+   components.push(row(button('form:depth','埋まる深さ'),button('pvp-start','PvP開始',ButtonStyle.Danger),button('pvp-stop','PvP停止')));
   }else if(s.page==='travel'){
-   components.push(row(new StringSelectMenuBuilder().setCustomId(CID+'mode').setPlaceholder('移動方法').addOptions([{label:'歩く',value:'walk',default:s.mode==='walk'},{label:'邪魔なブロックを掘って歩く',value:'dig',default:s.mode==='dig'},{label:'エリトラで飛ぶ',value:'fly',default:s.mode==='fly'}])));
+   components.push(row(new StringSelectMenuBuilder().setCustomId(CID+'mode').setPlaceholder('移動方法').addOptions([{label:'Jetpack',value:'jetpack',default:s.mode==='jetpack'},{label:'歩く',value:'walk',default:s.mode==='walk'},{label:'邪魔なブロックを掘って歩く',value:'dig',default:s.mode==='dig'},{label:'エリトラで飛ぶ',value:'fly',default:s.mode==='fly'}])));
    components.push(row(new StringSelectMenuBuilder().setCustomId(CID+'dimension').setPlaceholder('移動先の世界').addOptions([{label:'現世',value:'overworld',default:s.dimension==='overworld'},{label:'ネザー（入口を探す）',value:'nether',default:s.dimension==='nether'}])));
    components.push(row(button('form:move','座標を入力して移動',ButtonStyle.Primary,!connected),button('form:speed','飛行速度'),button('escape','水から避難',ButtonStyle.Secondary,!connected),button('stop','停止',ButtonStyle.Danger)));
   }else if(s.page==='mining'){
@@ -45,7 +45,7 @@ class ControlPanel{
   const fields=selected.map(id=>{const w=this.manager.workers.get(id),b=w?.bot,r=w?.runtime?.snapshot(),p=b?.entity?.position;const status=!b?.connected?(b?.connectionPhase||'未接続'):b.dead?'死亡・リスポーン待ち':r?.waterSafety?.active?r.waterSafety.state:r?.operation?`処理中: ${r.operation}`:r?.pendingMove?'移動命令待ち':r?.movement||w.mode;
    const errors=Object.entries(r?.featureErrors||{}).map(([k,e])=>`${k}: ${e.message}`).join('\n');const text=[status,p?`座標: ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)} / ${['現世','ネザー','エンド'][b.dimensionId]}`:'',`体力: ${b?.health===null||b?.health===undefined?'未受信':b.health/2+'♥'} / 手: ${r?.offhand||'なし'}`,errors||r?.lastError||r?.lastEvent?.text||''].filter(Boolean).join('\n');return {name:`Bot${id} / ${this.manager.names.get(id)}`,value:text.slice(0,480),inline:false};});
   let description=s.page==='gear'?'受け取り後は剣1・ツルハシ2・ガップル3へ並べます。':s.page==='travel'?'方法と世界を選び、座標入力を押してください。ネザー座標はネザー内の値です。':s.page==='combat'?'登録した敵だけを攻撃します。ボタンは機能の設定です。':s.page==='mining'?'床Y以下は残します。開始前に範囲・床・装備を設定してください。':'操作するBotを選んでボタンを押してください。';
-  if(s.page==='chat')description=this.manager.greetings?.status()||'公開チャットとtellを送信できます。';
+  if(s.page==='chat')description=this.ids(s).map(id=>{const b=this.manager.workers.get(id)?.bot,t=b?this.manager.greetings?.targetFor?.(b):id===11?process.env.IGN_GREET_TARGET_ID:process.env.GREET_TARGET_ID;return `Bot${id}: グリーター ${t?'ON / 対象ID: '+t:'OFF（対象ID未設定）'}`;}).join('\n')||this.manager.greetings?.status()||'公開チャットとtellを送信できます。';
   if(s.result)description+='\n'+s.result.slice(0,600);
   return {content:'',embeds:[{title:`Bot管理 / ${pages[s.page]} / v${require('../package.json').version}`,description,fields,color:0x5865f2}],components,allowedMentions:{parse:[]}};
  }
@@ -78,14 +78,14 @@ class ControlPanel{
    await i.deferUpdate();s.result='';
    if(parts[0]==='target'){this.manager.targets(i.values[0]);s.target=i.values[0];}
    else if(parts[0]==='page'){if(!pages[parts[1]])throw Error('画面がありません');s.page=parts[1];}
-   else if(parts[0]==='mode'){if(!['walk','dig','fly'].includes(i.values[0]))throw Error('移動方法が不正です');s.mode=i.values[0];}
+   else if(parts[0]==='mode'){if(!['walk','dig','fly','jetpack'].includes(i.values[0]))throw Error('移動方法が不正です');s.mode=i.values[0];}
    else if(parts[0]==='dimension'){if(!['overworld','nether'].includes(i.values[0]))throw Error('世界が不正です');s.dimension=i.values[0];}
    else if(parts[0]==='inventory-mode')s.result=await this.manager.execute(s.target,`inventorymode ${i.values[0]}`);
    else if(parts[0]==='channel'){const channel=await i.guild.channels.fetch(i.values[0]);if(!channel?.isTextBased())throw Error('テキストチャンネルを選んでください');this.manager.store.data.logChannel=channel.id;this.manager.store.data.liveMessageId=null;this.manager.store.save();s.result='ログの通知先を設定しました';}
-   else if(parts[0]==='toggle'){const key=parts[1];if(!['gear','autototem','autoslot','heal','killaura','anticrystal','autolog'].includes(key))throw Error('設定が不正です');const on=!this.settings(s).every(c=>c[key]);s.result=await this.manager.execute(s.target,`${key} ${on?'on':'off'}`);}
+   else if(parts[0]==='toggle'){const key=parts[1];if(!['gear','autototem','autoslot','heal','killaura','anticrystal','autolog','crystalaura','pistoncrystal','jetpack'].includes(key))throw Error('設定が不正です');const on=!this.settings(s).every(c=>c[key]);s.result=await this.manager.execute(s.target,`${key} ${on?'on':'off'}`);}
    else if(parts[0]==='respawn')s.result=await this.manager.execute(s.target,`respawn ${this.ids(s).every(id=>this.manager.store.bot(id).respawn)?'off':'on'}`);
    else if(parts[0]==='live')s.result=await this.manager.execute(s.target,`log ${this.manager.store.data.liveLog?'off':'on'}`);
-   else if(parts[0]!=='refresh'){const cmd={connect:'connect',disconnect:'disconnect',stop:'stop',receive:'autoslot receive',sort:'autoslot now','recover-box':'autoslot recover',start:'start','scaffold-receive':'scaffold receive',recover:'recover',escape:'escape','greeter-status':'greeter status','greeter-test':'greeter test'}[parts[0]];if(!cmd)throw Error('操作がありません');s.result=await this.manager.execute(s.target,cmd);}
+   else if(parts[0]!=='refresh'){const cmd={connect:'connect',disconnect:'disconnect',stop:'stop',receive:'autoslot receive',sort:'autoslot now','recover-box':'autoslot recover',start:'start','scaffold-receive':'scaffold receive',recover:'recover',escape:'escape','pvp-start':'pvp on','pvp-stop':'pvp off','greeter-status':'greeter status','greeter-test':'greeter test'}[parts[0]];if(!cmd)throw Error('操作がありません');s.result=await this.manager.execute(s.target,cmd);}
    await i.editReply(this.render(s));
   }catch(e){if(i.deferred||i.replied){if(modal||['auth','view','report','messages','enemy-list','admin-list','stats'].includes(parts[0]))await i.editReply({content:e.message.slice(0,1900),allowedMentions:{parse:[]}});else{s.result='操作できません: '+e.message;await i.editReply(this.render(s));}}else await i.reply({content:e.message.slice(0,1900),flags:MessageFlags.Ephemeral});}
   return true;
@@ -97,7 +97,7 @@ class ControlPanel{
   if(form==='admin-remove'){const name=get('name');this.manager.store.data.admins=this.manager.store.data.admins.filter(a=>norm(a.name)!==norm(name));this.manager.store.save();return `${name} の権限を解除しました`;}
   if(form==='autolog')return this.manager.execute(s.target,`autolog on ${get('hearts')}`);
   if(form==='depth')return this.manager.execute(s.target,`anticrystal ${get('depth')}`);
-  if(form==='heal'){const n=Number(get('hearts'));if(!Number.isFinite(n)||n<=0||n>10)throw Error('ハート数は0より大きく10以下にしてください');for(const id of this.ids(s)){const state=this.manager.store.bot(id);state.runtime??={...defaults};state.runtime.healHearts=n;state.runtime.heal=true;}this.manager.store.save();return `${n}ハート未満で回復します`;}
+  if(form==='heal'){const n=Number(get('hearts'));if(!Number.isFinite(n)||n<=0||n>10)throw Error('ハート数は0より大きく10以下にしてください');for(const id of this.ids(s)){const state=this.manager.store.bot(id);state.runtime??={...defaults};state.runtime.healHearts=n;state.runtime.heal=true;}this.manager.store.save();return `${n}ハート以下で回復します`;}
   if(form==='area'){const coords=['x1','z1','x2','z2'].map(get),floor=get('floor');const {integer}=require('./util');coords.forEach(n=>integer(n,-30000000,30000000));integer(floor,-64,318);await this.manager.execute(s.target,`area ${coords.join(' ')}`);return this.manager.execute(s.target,`floor ${floor}`);}
   if(form==='scaffold')return this.manager.execute(s.target,`scaffold ${get('block')}`);throw Error('入力画面がありません');
  }
