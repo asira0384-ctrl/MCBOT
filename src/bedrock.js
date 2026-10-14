@@ -7,7 +7,7 @@ const physics=require('../vendor/bedrockflayer/lib/physics/engine');
 const controls=require('../vendor/bedrockflayer/lib/plugins/controls');
 const pathfinder=require('../vendor/bedrockflayer/lib/plugins/pathfinder');
 class BedrockBot extends EventEmitter {
- constructor(config,authCallback){super();this.setMaxListeners(60);this.config=config;this.username=config.name;this.items=Array(36).fill(null);this.quickBarSlot=0;this.tick=0;this.physicsEnabled=true;this.passivePhysics=true;this.players=new Map();this.health=null;this.connected=false;this.dead=false;this.window=null;this.requestId=-1;this.abortVersion=0;this.dimensionId=0;this.ended=false;this.connectionPhase='Microsoft/Xbox認証中';this.lastDisconnect='';this.packetCounts={};this.lastPacketAt=0;this.terrainReady=false;this.movementMode='auto';this.sentInputs=0;this.sentLegacyMoves=0;
+ constructor(config,authCallback){super();this.setMaxListeners(60);this.config=config;this.username=config.name;this.items=Array(36).fill(null);this.quickBarSlot=0;this.tick=0;this.physicsEnabled=true;this.passivePhysics=false;this.naturalIdleFall=true;this.players=new Map();this.health=null;this.connected=false;this.dead=false;this.window=null;this.requestId=-1;this.abortVersion=0;this.dimensionId=0;this.ended=false;this.connectionPhase='Microsoft/Xbox認証中';this.lastDisconnect='';this.packetCounts={};this.lastPacketAt=0;this.terrainReady=false;this.movementMode='auto';this.sentInputs=0;this.sentLegacyMoves=0;
   fs.mkdirSync(config.authDir,{recursive:true,mode:0o700});
   this.client=bedrock.createClient({host:config.host,port:config.port,username:`asira-bot-${config.id}`,offline:false,
    ...(config.version?{version:config.version}:{}),profilesFolder:config.authDir,raknetBackend:'raknet-native',followPort:false,
@@ -23,12 +23,13 @@ class BedrockBot extends EventEmitter {
   this.client.queue=(name,data)=>{if(name==='player_auth_input'){if(!this.registry)return;data=adaptInput(this,data);this.sentInputs++;if(this.movementMode==='both'||(this.movementMode==='auto'&&this.advertisedMovement==='client')){queue('move_player',legacyMove(this,data));this.sentLegacyMoves++;}}return queue(name,data);};
   this.worldMirror=new World(this);this.blockAt=p=>this.worldMirror.get(p);
   physics(this);controls(this);pathfinder(this);
+  require('./session').installSession(this);
   this.client.on('move_player',p=>{this.lastMovePacket={runtimeId:String(p.runtime_id),mode:p.mode,position:p.position,own:String(p.runtime_id)===String(this._runtimeEntityId)};});
   this.client.on('set_movement_authority',p=>{this.advertisedMovement=p.movement_authority;this.emit('diagnostic',`移動方式: ${this.advertisedMovement}`);});
   this.client.on('start_game',p=>{try{
    this.advertisedMovement=p.movement_authority??p.player_movement_settings?.movement_type??'未指定';this.serverPosition={...p.player_position};
    this._runtimeEntityId=p.runtime_entity_id;this.serverBreak=p.server_authoritative_block_breaking!==false;this.dimensionId=typeof p.dimension==='number'?p.dimension:({overworld:0,the_nether:1,the_end:2}[p.dimension]??0);
-   this.entity={position:new Vec3(p.player_position.x,p.player_position.y-1.62,p.player_position.z),velocity:new Vec3(0,0,0),yaw:(p.rotation?.z||0)*Math.PI/180,pitch:(p.rotation?.x||0)*Math.PI/180,onGround:false,effects:{}};this.position=this.entity.position;this.worldMirror.init(p);this.terrainReady=false;this.emit('diagnostic',`start_game: world=${p.world_name||p.level_id||'不明'} dimension=${this.dimensionId} 座標=${JSON.stringify(p.player_position)} entity=${String(this._runtimeEntityId)} movement=${this.advertisedMovement}`);
+   this.entity={position:new Vec3(p.player_position.x,p.player_position.y-1.62,p.player_position.z),velocity:new Vec3(0,0,0),yaw:(p.rotation?.y||0)*Math.PI/180,pitch:(p.rotation?.x||0)*Math.PI/180,onGround:false,effects:{}};this.position=this.entity.position;this.worldMirror.init(p);this.terrainReady=false;this.emit('diagnostic',`start_game: world=${p.world_name||p.level_id||'不明'} dimension=${this.dimensionId} 座標=${JSON.stringify(p.player_position)} entity=${String(this._runtimeEntityId)} movement=${this.advertisedMovement}`);
    this.client.queue('client_cache_status',{enabled:false});
   }catch(e){this.emit('error',e);this.disconnect();}});
   this.client.on('item_registry',p=>{if(this.registry&&p.itemstates)this.registry.handleStartGame({...this.client.startGameData,itemstates:p.itemstates});});
@@ -49,11 +50,10 @@ class BedrockBot extends EventEmitter {
   this.client.on('container_close',()=>{this.window=null;});
   this.client.on('update_attributes',p=>{if(String(p.runtime_entity_id)!==String(this._runtimeEntityId))return;for(const a of p.attributes||[])if(a.name==='minecraft:health') {this.health=a.current;if(this.health<=0&&!this.dead){this.dead=true;this.halt();this.emit('death');}this.emit('health');}});
   this.client.on('respawn',p=>{if(p.state===0||p.state==='searching')return;if(p.position&&this.entity){this.entity.position=new Vec3(p.position.x,p.position.y-1.62,p.position.z);this.entity.velocity=new Vec3(0,0,0);this.position=this.entity.position;}if(p.state===1||p.state==='ready'){this.respawnPacket=p;this.emit('respawnReady');}});
-  this.client.on('change_dimension',()=>{this.halt();this.emit('error',Error('ディメンションが変わりました。再接続して範囲を設定してください'));});
   this.client.on('error',e=>this.emit('error',e));this.client.on('kick',p=>{this.lastDisconnect=String(p.message||p.reason||'サーバーが理由を表示せず切断');this.emit('error',Error(this.lastDisconnect));});
   this.client.on('close',()=>this.finish());
  }
- decode(fn){this.worldMirror.loading=this.worldMirror.loading.then(fn).then(()=>{if(!this.ended&&this.entity&&this.worldMirror.get(this.entity.position)){this.terrainReady=true;}}).catch(e=>{this.emit('error',Error('地形デコード: '+e.message));});}
+ decode(fn){const generation=this.worldGeneration;this.worldMirror.loading=this.worldMirror.loading.then(()=>{if(generation===this.worldGeneration&&!this.ended)return fn();}).then(()=>{if(generation===this.worldGeneration&&!this.ended&&this.entity&&this.worldMirror.get(this.entity.position)){this.terrainReady=true;this.emit('terrainDecoded');}}).catch(e=>{this.emit('error',Error('地形デコード: '+e.message));});}
  setItems(items){const old=this.items;this.items=Array.from({length:36},(_,i)=>items[i]?.network_id?items[i]:null);for(let i=0;i<36;i++)if((this.items[i]?.count||0)>(old[i]?.count||0)||this.items[i]?.network_id!==old[i]?.network_id)this.emit('inventory',old[i],this.items[i]);}
  name(item){return item?this.registry?.items[item.network_id]?.name||`unknown_${item.network_id}`:'';}
  list(){return this.items.map((raw,slot)=>raw?{raw,slot,name:this.name(raw),count:raw.count}:null).filter(Boolean);}
@@ -86,7 +86,7 @@ class BedrockBot extends EventEmitter {
   await this.transaction({type_id:'take',count:n,source:this.slot(fromContainer?'level_entity':'hotbar_and_inventory',from,item),destination:this.slot(toContainer?'level_entity':'hotbar_and_inventory',to,null)},[{array:src,slot:from,item:n===item.count?null:{...item,count:item.count-n}},{array:dst,slot:to,item:{...item,count:n}}]);
  }
  async waitUntil(fn,ms=5000,signal){const start=Date.now();const epoch=this.abortVersion;while(Date.now()-start<ms){if(signal?.aborted||epoch!==this.abortVersion||!this.connected)throw Error('停止・切断しました');if(fn())return;await sleep(50);}throw Error('サーバーの確認がタイムアウトしました');}
- halt(){this.passivePhysics=true;this.abortVersion++;this.pathfinder?.stop();this.clearControlStates?.();if(this.mining)this.breakAction={action:'abort_break',position:this.mining,face:1};this.mining=null;this.usingItem=false;}
+ halt(){this.naturalIdleFall=true;this.passivePhysics=false;this.abortVersion++;this.pathfinder?.stop();this.clearControlStates?.();if(this.mining)this.breakAction={action:'abort_break',position:this.mining,face:1};this.mining=null;this.usingItem=false;}
  finish(){if(this.ended)return;this.ended=true;this.connected=false;this.connectionPhase='切断済み';this.halt();this.emit('end');}
  disconnect(){if(this.ended)return;this.halt();try{this.closeContainer();}catch{}try{this.client.disconnect('Stopping');}catch{}finally{try{this.client.close();}catch{}this.finish();}}
  chat(text){if(this.connected)this.client.queue('text',{type:'chat',needs_translation:false,source_name:this.username,message:text.slice(0,220),xuid:'',platform_chat_id:'',filtered_message:''});}
@@ -112,7 +112,7 @@ class BedrockBot extends EventEmitter {
  async eat(signal){const food=this.find('enchanted_golden_apple');if(!food)throw Error('エンチャント金リンゴがなくなりました');this.clearControlStates();await this.equip(food.slot);const before=this.count('enchanted_golden_apple');this.usingItem=true;
   try{this.client.queue('inventory_transaction',useItem(this,'click_air',{x:0,y:0,z:0},-1));await this.waitUntil(()=>this.count('enchanted_golden_apple')<before,7000,signal);}finally{this.usingItem=false;}
  }
- async go(pos,signal){this.passivePhysics=false;const goal=new pathfinder.GoalNear(pos.x+.5,pos.y,pos.z+.5,.6);if(goal.isEnd(this.entity.position))return;
+ async go(pos,signal){this.naturalIdleFall=false;this.passivePhysics=false;const goal=new pathfinder.GoalNear(pos.x+.5,pos.y,pos.z+.5,.6);if(goal.isEnd(this.entity.position))return;
   let timer;const navigation=this.pathfinder.goto(goal,{maxNodes:1500,tickDelay:1});
   const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>{this.pathfinder.stop();reject(Error('移動がタイムアウトしました'));},15000);});
   try{await Promise.race([navigation,timeout]);if(signal?.aborted)throw Error('停止');}finally{clearTimeout(timer);this.pathfinder.stop();this.clearControlStates();}

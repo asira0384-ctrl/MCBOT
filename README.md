@@ -1,17 +1,29 @@
-v0.1.7: MovePlayerの64bitエンティティIDを保持し、自分宛ての位置補正を認識。既存スキーマの32bit切り詰めを修正。接続後 connection で lastMovePacket.own:true を確認。
-v0.1.6: connection で位置パケットID・送信数を診断。movement both は停止状態で旧方式の位置送信も併用して接続互換性を検証。movement auto で元に戻ります。接続し直すとautoになります。
-v0.1.5: /bot target:1 command:view で受信地形の視点画像。紫格子は未受信です。画面UI・プレイヤーは描画しません。
-<!-- v0.1.4: キュー待機中の重力停止・位置同期・テレポート確認応答 -->
-# Asira Clear Bot v0.1 — 統合版 / GitHub / Railway
+# Asira Clear Bot v0.1.10 — 統合版 / GitHub / Railway
 
-Bot01: **Aslrq 1st**。接続先: **2b2e.org:19132**。
+Bot01: **Aslrq6th**。接続先: **2b2e.org:19132**。
 Discordの全コマンドはユーザー **1343843235252146219** のみ使用可能です。
+
+## v0.1.10 待機中の落下
+
+待機中は未受信の足元でも重力を継続します。受信済みの床や壁には通常どおり衝突します。サーバーのテレポートで戻されたら位置と速度を同期し、その位置から重力を再計算します。Y=0やY=-27への強制移動・高さ制限はありません。採掘・移動の開始後は、未受信の地形を待つ保護を使います。
+
+## v0.1.9 停止中の通常物理
+
+停止・待機中も位置を固定しません。歩行・採掘の操作だけを止め、受信済みの地形では重力・落下・衝突を処理します。サーバーからの位置補正に従います。（v0.1.10で待機中の未受信地形への対応を変更しました。）
+
+## v0.1.8 接続処理の変更
+
+- 自分へのテレポートを受信したら `player_action:handled_teleport` と次の入力で応答します。
+- 初期地形の受信後に `received_server_data` を通知します。
+- ディメンション変更で古い地形を消去し、新しい地形の読み込み後に切替を通知します。採掘は停止します。
+- v0.1.7の64bit ID修正、v0.1.6のconnection診断、v0.1.5のview画像を含みます。
+- 2b2e本ワールドへの到着は未検証です。キューの案内やspawnだけで到着とは判定しません。
 
 ## 最初に知っておくこと
 
 これは初回テスト用の実装です。移動、採掘、足場、補給、回復はコードに実装していますが、**2b2eに実アカウントで接続しての検証はまだ行っていません**。動作保証済みの完成版ではありません。まず1体・3×3程度で接続、座標、停止、アイテム移動を順に確認してください。複雑な地形・段差・サーバー独自の処理では停止する場合があります。
 
-ローカル検証: 12テスト成功。権限判定、データ保存、補給後3秒、満スタック廃棄、空/中身入りシュルカー、サーバーに拒否された移動、地形の座標、1.21.2/1.26.51の送信パケット形式。実サーバーでの移動・整地の検証とは別です。
+ローカル検証: 24テスト成功。暗号化UDP通信で63bit IDのテレポート受信とサーバーへの確認応答も検証。権限判定、データ保存、補給後3秒、満スタック廃棄、空/中身入りシュルカー、サーバーに拒否された移動、地形の座標、1.21.2/1.26.51の送信パケット形式。実サーバーでの移動・整地の検証とは別です。
 
 ## GitHubに入れる
 
@@ -40,7 +52,7 @@ Discord Developer PortalでApplication → Botを作成し、Botトークンを�
 | `DISCORD_GUILD_ID` | コマンドをすぐ表示させたいDiscordサーバーのID（任意） |
 | `MC_HOST` | `2b2e.org` |
 | `MC_PORT` | `19132` |
-| `BOT_NAMES` | `Aslrq 1st` |
+| `BOT_NAMES` | `Aslrq6th` |
 | `DATA_DIR` | `/data` |
 
 `MC_VERSION`は最初は未設定。接続先の広告するプロトコルをbedrock-protocolが自動選択します。未対応のプロトコルなら接続を止めます。「最新」とサーバーの対応版は一致しない場合があります。必要時にエラーに合わせて対応バージョンを指定してください。
@@ -61,7 +73,7 @@ Discordで:
 /auth target:1
 ```
 
-`/auth`で表示されるMicrosoft公式リンクを開き、コードを入力し、**Aslrq 1stのアカウント**でログインする。まだコードがなければ数秒後に `/auth` をもう一度実行。コードはAsiraにだけ表示します。パスワードをDiscordチャットに書く必要はありません。
+`/auth`で表示されるMicrosoft公式リンクを開き、コードを入力し、**Aslrq6thのアカウント**でログインする。まだコードがなければ数秒後に `/auth` をもう一度実行。コードはAsiraにだけ表示します。パスワードをDiscordチャットに書く必要はありません。
 
 違うゲーマータグでログインした場合は停止します。MicrosoftアカウントにXboxプロフィールが必要です。ゲーム所有・アクセス条件などは接続先とMicrosoft認証の要件に従います。名前を設定するだけでオンラインのアカウントを作ることはできません。
 
@@ -170,7 +182,7 @@ Discordは `/bot target:番号またはall command:コマンド本文`。
 まずBot01の実動作を確認する。Railwayの `BOT_NAMES` を例のように増やして再デプロイ:
 
 ```
-Aslrq 1st,AslrqBot02xx,AslrqBot03xx,AslrqBot04xx,AslrqBot05xx,AslrqBot06xx,AslrqBot07xx,AslrqBot08xx,AslrqBot09xx,AslrqBot10xx
+Aslrq6th,AslrqBot02xx,AslrqBot03xx,AslrqBot04xx,AslrqBot05xx,AslrqBot06xx,AslrqBot07xx,AslrqBot08xx,AslrqBot09xx,AslrqBot10xx
 ```
 
 実際に作成したXboxゲーマータグに置き換える。アカウントの並び順がBot番号になり、認証保存先も番号ごとなので、既存の順番を変えない。
@@ -205,7 +217,7 @@ Node.js 24、Gitをインストール。PowerShell:
 npm ci
 $env:DISCORD_TOKEN="取得したトークン"
 $env:DISCORD_GUILD_ID="サーバーID"
-$env:BOT_NAMES="Aslrq 1st"
+$env:BOT_NAMES="Aslrq6th"
 $env:DATA_DIR="$PWD/data"
 npm start
 ```

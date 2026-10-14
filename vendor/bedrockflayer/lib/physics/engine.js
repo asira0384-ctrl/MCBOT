@@ -97,15 +97,11 @@ function physicsPlugin(bot) {
 
 function _simulateTick(bot) {
     if (!bot.entity) return
-    // Keep input ticks alive while waiting, without inventing a fall in queue worlds.
-    if (bot.passivePhysics) {
-        bot.entity.velocity = new Vec3(0, 0, 0)
-        _sendPositionPacket(bot, 0, 0)
-        bot.tick++
-        bot.emit('physicsTick')
-        return
-    }
-    if (bot.blockAt && !bot.blockAt(bot.entity.position.offset(0, -0.1, 0))) {
+    // Stopping controls does not freeze gravity. Apply normal collision and
+    // falling physics in received terrain, including while waiting to join.
+    // During idle loading, missing terrain must not act as a mid-air brake.
+    // Active navigation still waits for terrain before entering unknown space.
+    if (!bot.naturalIdleFall && bot.blockAt && !bot.blockAt(bot.entity.position.offset(0, -0.1, 0))) {
         bot.entity.velocity = new Vec3(0, 0, 0)
         _sendPositionPacket(bot, 0, 0); bot.tick++; bot.emit('physicsTick'); return
     }

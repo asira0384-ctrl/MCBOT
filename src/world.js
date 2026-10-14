@@ -3,6 +3,7 @@ const {Vec3}=require('vec3');
 const {key}=require('./util');
 class World {
  constructor(bot){this.bot=bot;this.columns=new Map();this.known=new Set();this.overrides=new Map();this.loading=Promise.resolve();this.requested=new Map();}
+ reset(){this.columns.clear();this.known.clear();this.overrides.clear();this.requested.clear();}
  init(packet){
   this.registry=require('prismarine-registry')(`bedrock_${this.bot.client.options.version}`);
   // 1.26 retains the 1.18+ Bedrock subchunk format; use that implementation explicitly.
