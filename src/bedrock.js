@@ -9,6 +9,7 @@ const pathfinder=require('../vendor/bedrockflayer/lib/plugins/pathfinder');
 class BedrockBot extends EventEmitter {
  constructor(config,authCallback){super();this.setMaxListeners(60);this.config=config;this.username=config.name;this.items=Array(36).fill(null);this.quickBarSlot=0;this.tick=0;this.physicsEnabled=true;this.passivePhysics=false;this.naturalIdleFall=true;this.players=new Map();this.health=null;this.connected=false;this.dead=false;this.window=null;this.requestId=-1;this.abortVersion=0;this.dimensionId=0;this.ended=false;this.connectionPhase='Microsoft/Xbox認証中';this.lastDisconnect='';this.packetCounts={};this.lastPacketAt=0;this.terrainReady=false;this.movementMode='auto';this.sentInputs=0;this.sentLegacyMoves=0;
   fs.mkdirSync(config.authDir,{recursive:true,mode:0o700});
+  this.armor=Array(4).fill(null);this.offhand=[null];this.effects=new Map();this.lastInventoryAt=0;this.respawnAckSent=false;
   this.client=bedrock.createClient({host:config.host,port:config.port,username:`asira-bot-${config.id}`,offline:false,
    ...(config.version?{version:config.version}:{}),profilesFolder:config.authDir,raknetBackend:'raknet-native',followPort:false,
    onMsaCode:data=>{if(!this.ended&&!this.client?._closed){this.connectionPhase='Microsoft認証待ち';authCallback(data);}},conLog:()=>{},connectTimeout:60000,transport:'raknet'});
@@ -20,10 +21,11 @@ class BedrockBot extends EventEmitter {
   this.client.on('loggingIn',()=>{if(this.ended)return;this.connectionPhase='サーバーログイン中';this.emit('connectionStage',this.connectionPhase);});
   this.client.on('join',()=>{if(this.ended)return;this.connectionPhase='ワールド読み込み中';this.emit('connectionStage',this.connectionPhase);});
   const queue=this.client.queue.bind(this.client);
-  this.client.queue=(name,data)=>{if(name==='player_auth_input'){if(!this.registry)return;data=adaptInput(this,data);this.sentInputs++;if(this.movementMode==='both'||(this.movementMode==='auto'&&this.advertisedMovement==='client')){queue('move_player',legacyMove(this,data));this.sentLegacyMoves++;}}return queue(name,data);};
+  this.client.queue=(name,data)=>{if(name==='item_stack_request'&&this.registry)data=require('./protocol').adaptRequest(this,data);if(name==='player_auth_input'){if(!this.registry)return;data=adaptInput(this,data);this.sentInputs++;if(this.movementMode==='both'||(this.movementMode==='auto'&&this.advertisedMovement==='client')){queue('move_player',legacyMove(this,data));this.sentLegacyMoves++;}}return queue(name,data);};
   this.worldMirror=new World(this);this.blockAt=p=>this.worldMirror.get(p);
   physics(this);controls(this);pathfinder(this);
   require('./session').installSession(this);
+  require('./actors').trackActors(this);
   this.client.on('move_player',p=>{this.lastMovePacket={runtimeId:String(p.runtime_id),mode:p.mode,position:p.position,own:String(p.runtime_id)===String(this._runtimeEntityId)};});
   this.client.on('set_movement_authority',p=>{this.advertisedMovement=p.movement_authority;this.emit('diagnostic',`移動方式: ${this.advertisedMovement}`);});
   this.client.on('start_game',p=>{try{
@@ -44,11 +46,14 @@ class BedrockBot extends EventEmitter {
   this.client.on('modal_form_request',p=>this.emit('serverMessage',`form ${p.form_id}: ${p.data||''}`));
   this.client.on('transfer',p=>{if(this.ended)return;this.halt();this.emit('serverTransfer',p);});
   this.client.on('player_list',p=>{const payload=p.records;if(!payload)return;const records=Array.isArray(payload)?payload:payload.records||[];for(const v of records){const action=Array.isArray(payload)?v.type:payload.type;if(action==='add'){if(v.username&&v.xbox_user_id)this.players.set(norm(v.username),{name:v.username,xuid:String(v.xbox_user_id),uuid:v.uuid});}else if(action==='remove')for(const[k,a]of this.players)if(a.uuid===v.uuid)this.players.delete(k);}});
-  this.client.on('inventory_content',p=>{const wid=p.window_id;const type=p.container?.container_id;if(wid==='inventory'||wid===0||type==='inventory'){this.setItems(p.input||[]);}else if(this.window&&wid===this.window.id){this.window.items=(p.input||[]).map(i=>i.network_id?i:null);this.window.ready=true;this.emit('windowContent');}});
-  this.client.on('inventory_slot',p=>{if(p.window_id==='inventory'||p.window_id===0||p.container?.container_id==='inventory') {const old=this.items[p.slot];this.items[p.slot]=p.item?.network_id?p.item:null;this.emit('inventory',old,this.items[p.slot]);} else if(this.window&&p.window_id===this.window.id){this.window.items[p.slot]=p.item?.network_id?p.item:null;}});
+  this.client.on('inventory_content',p=>{const wid=p.window_id,type=p.container?.container_id;this.lastInventoryAt=Date.now();if(wid==='armor'||wid===120||type==='armor')this.armor=Array.from({length:4},(_,i)=>p.input?.[i]?.network_id?p.input[i]:null);else if(wid==='offhand'||wid===119||type==='offhand')this.offhand=[p.input?.[0]?.network_id?p.input[0]:null];else if(wid==='inventory'||wid===0||type==='inventory'){this.setItems(p.input||[]);}else if(this.window&&wid===this.window.id){this.window.items=(p.input||[]).map(i=>i.network_id?i:null);this.window.container=p.container;this.window.ready=true;this.emit('windowContent');}});
+  this.client.on('inventory_slot',p=>{this.lastInventoryAt=Date.now();const a=p.window_id==='armor'||p.window_id===120||p.container?.container_id==='armor'?this.armor:p.window_id==='offhand'||p.window_id===119||p.container?.container_id==='offhand'?this.offhand:null;if(a)a[p.slot]=p.item?.network_id?p.item:null;else if(p.window_id==='inventory'||p.window_id===0||p.container?.container_id==='inventory') {const old=this.items[p.slot];this.items[p.slot]=p.item?.network_id?p.item:null;this.emit('inventory',old,this.items[p.slot]);} else if(this.window&&p.window_id===this.window.id){this.window.items[p.slot]=p.item?.network_id?p.item:null;}});
+  this.client.on('mob_armor_equipment',p=>{if(String(p.runtime_entity_id)===String(this._runtimeEntityId))this.armor=[p.helmet,p.chestplate,p.leggings,p.boots].map(i=>i?.network_id?i:null);});
+  this.client.on('mob_equipment',p=>{if(String(p.runtime_entity_id)===String(this._runtimeEntityId)&&(p.window_id==='offhand'||p.window_id===119))this.offhand=[p.item?.network_id?p.item:null];});
+  this.client.on('mob_effect',p=>{if(String(p.runtime_entity_id)!==String(this._runtimeEntityId))return;if(p.event_id==='remove'||p.event_id===3)this.effects.delete(p.effect_id);else this.effects.set(p.effect_id,{amplifier:p.amplifier,expires:Date.now()+Number(p.duration)*50});});
   this.client.on('container_open',p=>{this.window={id:p.window_id,type:p.window_type,position:p.coordinates,items:[],ready:false};this.emit('windowOpen');});
   this.client.on('container_close',()=>{this.window=null;});
-  this.client.on('update_attributes',p=>{if(String(p.runtime_entity_id)!==String(this._runtimeEntityId))return;for(const a of p.attributes||[])if(a.name==='minecraft:health') {this.health=a.current;if(this.health<=0&&!this.dead){this.dead=true;this.halt();this.emit('death');}this.emit('health');}});
+  this.client.on('update_attributes',p=>{if(String(p.runtime_entity_id)!==String(this._runtimeEntityId))return;for(const a of p.attributes||[])if(a.name==='minecraft:health') {this.health=a.current;if(this.health<=0&&!this.dead){this.dead=true;this.halt();this.emit('death');}else if(this.health>0&&this.dead&&this.respawnAckSent){this.dead=false;this.respawnAckSent=false;this.emit('respawned');}this.emit('health');}});
   this.client.on('respawn',p=>{if(p.state===0||p.state==='searching')return;if(p.position&&this.entity){this.entity.position=new Vec3(p.position.x,p.position.y-1.62,p.position.z);this.entity.velocity=new Vec3(0,0,0);this.position=this.entity.position;}if(p.state===1||p.state==='ready'){this.respawnPacket=p;this.emit('respawnReady');}});
   this.client.on('error',e=>this.emit('error',e));this.client.on('kick',p=>{this.lastDisconnect=String(p.message||p.reason||'サーバーが理由を表示せず切断');this.emit('error',Error(this.lastDisconnect));});
   this.client.on('close',()=>this.finish());
@@ -64,8 +69,8 @@ class BedrockBot extends EventEmitter {
  enchant(item,name,id){return (this.nbt(item)?.ench||[]).some(e=>(e.id===id||e.id===name)&&e.lvl>0);}
  tool(silk=false){const caps={netherite_pickaxe:2031,diamond_pickaxe:1561,iron_pickaxe:250,stone_pickaxe:131,golden_pickaxe:32,wooden_pickaxe:59};return this.list().filter(i=>(!silk||this.enchant(i.raw,'silk_touch',16))&&caps[i.name]&&caps[i.name]-this.damage(i.raw)>10).sort((a,b)=>caps[b.name]-caps[a.name])[0];}
  select(slot){this.quickBarSlot=slot;this.client.queue('mob_equipment',{runtime_entity_id:this._runtimeEntityId,item:this.items[slot]||emptyItem(),slot,selected_slot:slot,window_id:'inventory'});}
- async equip(slot){if(slot<9){this.select(slot);return;}await this.swap(slot,0);this.select(0);}
- slot(type,index,item){return slotRef(type,index,item);}
+ async equip(slot){if(slot<9){this.select(slot);return;}const opened=!!this.window;if(!opened)await this.openInventory();try{await this.swap(slot,0);this.select(0);}finally{if(!opened)this.closeContainer();}}
+ slot(type,index,item){const ref=slotRef(type,index,item);if(['level_entity','container','shulker'].includes(type)&&this.window?.container)ref.slot_type={...this.window.container};return ref;}
  async transaction(action,changes,signal){const id=this.requestId--;const before=this.abortVersion;
   const response=new Promise((resolve,reject)=>{const timer=setTimeout(()=>{cleanup();reject(Error('アイテム移動の応答がありません'));},7000);
    const onResponse=p=>{const r=p.responses?.find(r=>r.request_id===id);if(!r)return;cleanup();if(r.status!=='ok'&&r.status!==0)return reject(Error('サーバーがアイテム操作を拒否しました'));resolve(r);};
@@ -75,12 +80,15 @@ class BedrockBot extends EventEmitter {
   const r=await response;
   // Accepted responses contain final counts/stack IDs. Apply planned identities, then authoritative counts.
   for(const c of changes)c.array[c.slot]=c.item?structuredClone(c.item):null;
-  for(const container of r.containers||[]){const type=container.slot_type?.container_id;const array=['inventory','hotbar','hotbar_and_inventory'].includes(type)?this.items:type==='level_entity'?this.window?.items:null;if(!array)continue;
+  for(const container of r.containers||[]){const type=typeof container.slot_type==='string'?container.slot_type:container.slot_type?.container_id;const array=['inventory','hotbar','hotbar_and_inventory'].includes(type)?this.items:type==='armor'?this.armor:type==='offhand'?this.offhand:['container','shulker','level_entity'].includes(type)?this.window?.items:null;if(!array)continue;
    for(const s of container.slots||[]){if(s.count===0)array[s.slot]=null;else if(array[s.slot]){array[s.slot].count=s.count;array[s.slot].stack_id=s.item_stack_id;if(s.durability_correction>0)array[s.slot].metadata=s.durability_correction;}}
   }
   if(signal?.aborted||before!==this.abortVersion)throw Error('停止しました');return r;
  }
  async swap(a,b){const ai=this.items[a],bi=this.items[b];await this.transaction({type_id:'swap',source:this.slot('hotbar_and_inventory',a,ai),destination:this.slot('hotbar_and_inventory',b,bi)},[{array:this.items,slot:a,item:bi},{array:this.items,slot:b,item:ai}]);}
+ array(type){return type==='armor'?this.armor:type==='offhand'?this.offhand:['container','shulker','level_entity'].includes(type)?this.window?.items:this.items;}
+ async swapContainer(from,a,to,b){const src=this.array(from),dst=this.array(to);if(!src||!dst)throw Error('インベントリが閉じています');const ai=src[a],bi=dst[b];if(!ai)return;await this.transaction({type_id:'swap',source:this.slot(from,a,ai),destination:this.slot(to,b,bi)},[{array:src,slot:a,item:bi},{array:dst,slot:b,item:ai}]);}
+ async openInventory(signal){if(this.window&&(this.window.id==='inventory'||this.window.id===0))return;this.closeContainer();this.client.queue('interact',{action_id:'open_inventory',target_entity_id:BigInt(this._runtimeEntityId),has_position:false});await this.waitUntil(()=>this.window&&(this.window.id==='inventory'||this.window.id===0),4000,signal);}
  async drop(slot,count){const item=this.items[slot];if(!item)return;const n=Math.min(count||item.count,item.count);await this.transaction({type_id:'drop',count:n,source:this.slot('hotbar_and_inventory',slot,item),randomly:false},[{array:this.items,slot,item:n===item.count?null:{...item,count:item.count-n}}]);}
  async transfer(fromContainer,from,toContainer,to,count){const src=fromContainer?this.window?.items:this.items,dst=toContainer?this.window?.items:this.items;if(!src||!dst)throw Error('コンテナが閉じています');const item=src[from];if(!item)throw Error('取り出すアイテムがありません');if(dst[to])throw Error('移動先に空きがありません');const n=Math.min(count||item.count,item.count);
   await this.transaction({type_id:'take',count:n,source:this.slot(fromContainer?'level_entity':'hotbar_and_inventory',from,item),destination:this.slot(toContainer?'level_entity':'hotbar_and_inventory',to,null)},[{array:src,slot:from,item:n===item.count?null:{...item,count:item.count-n}},{array:dst,slot:to,item:{...item,count:n}}]);
@@ -112,11 +120,14 @@ class BedrockBot extends EventEmitter {
  async eat(signal){const food=this.find('enchanted_golden_apple');if(!food)throw Error('エンチャント金リンゴがなくなりました');this.clearControlStates();await this.equip(food.slot);const before=this.count('enchanted_golden_apple');this.usingItem=true;
   try{this.client.queue('inventory_transaction',useItem(this,'click_air',{x:0,y:0,z:0},-1));await this.waitUntil(()=>this.count('enchanted_golden_apple')<before,7000,signal);}finally{this.usingItem=false;}
  }
+ async drink(item,signal){if(!item||this.name(item.raw)!=='potion')throw Error('飲めるポーションがありません');await this.equip(item.slot);const held=this.items[this.quickBarSlot],id=held?.stack_id,before=held?.count;this.usingItem=true;try{this.client.queue('inventory_transaction',useItem(this,'click_air',{x:0,y:0,z:0},-1));await this.waitUntil(()=>{const current=this.items[this.quickBarSlot];return !current||this.name(current)!=='potion'||current.stack_id!==id||current.count<before;},7000,signal);}finally{this.usingItem=false;}}
+ attack(actor){this.client.queue('animate',{action_id:'swing_arm',runtime_entity_id:BigInt(this._runtimeEntityId),data:0,has_swing_source:false});this.client.queue('inventory_transaction',require('./protocol').attack(this,actor));}
+ requestRespawn(){if(!this.dead||this.respawnRequested||this.respawnAckSent)return;this.respawnRequested=true;this.client.queue('player_action',{runtime_entity_id:BigInt(this._runtimeEntityId),action:'respawn',position:{x:0,y:0,z:0},result_position:{x:0,y:0,z:0},face:0});}
  async go(pos,signal){this.naturalIdleFall=false;this.passivePhysics=false;const goal=new pathfinder.GoalNear(pos.x+.5,pos.y,pos.z+.5,.6);if(goal.isEnd(this.entity.position))return;
   let timer;const navigation=this.pathfinder.goto(goal,{maxNodes:1500,tickDelay:1});
   const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>{this.pathfinder.stop();reject(Error('移動がタイムアウトしました'));},15000);});
   try{await Promise.race([navigation,timeout]);if(signal?.aborted)throw Error('停止');}finally{clearTimeout(timer);this.pathfinder.stop();this.clearControlStates();}
  }
- respawn(){const p=this.respawnPacket;if(!p)throw Error('リスポーンの準備がまだです');this.client.queue('respawn',{position:p.position,state:2,runtime_entity_id:this._runtimeEntityId});this.client.queue('player_action',{runtime_entity_id:this._runtimeEntityId,action:'respawn',position:{x:0,y:0,z:0},result_position:{x:0,y:0,z:0},face:0});this.dead=false;this.health=null;this.respawnPacket=null;}
+ respawn(){const p=this.respawnPacket;if(!p)throw Error('リスポーンの準備がまだです');this.client.queue('respawn',{position:p.position,state:2,runtime_entity_id:BigInt(this._runtimeEntityId)});this.respawnAckSent=true;this.respawnRequested=false;this.health=null;this.respawnPacket=null;}
 }
 module.exports={BedrockBot};

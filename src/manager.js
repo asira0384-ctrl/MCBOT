@@ -44,17 +44,18 @@ class Manager{
  }
  worker(id){const w=this.workers.get(id);if(!w||!w.bot.connected)throw Error(`Bot${id}は未接続です`);return w;}
  async execute(target,text,origin='discord'){const ids=this.targets(String(target));const [cmd,...args]=text.trim().split(/\s+/);if(!cmd)throw Error('コマンドを入力してください');
-  if(origin==='game'&&['connect','disconnect','clear-recovery','diagnose','say','movement','connection'].includes(cmd))throw Error('この操作はDiscordから行ってください');
+  if(origin==='game'&&['connect','disconnect','clear-recovery','diagnose','say','movement','connection','enemy','log'].includes(cmd))throw Error('この操作はDiscordから行ってください');
   if(['start','scaffold','area','floor','ceiling','supply','chat','respawn','stats-reset','recover','clear-recovery','diagnose'].includes(cmd)){
    // Validate all targets before changing any persistent setting.
    if(['area','floor','ceiling','scaffold'].includes(cmd))for(const id of ids){const w=this.workers.get(id);if(w?.busy&&cmd!=='scaffold')w.stop();}
   }
   const results=[];
   for(const id of ids){const state=this.store.bot(id),w=this.workers.get(id);
+   const runtimeConfig=()=>w?.runtime?.config||(state.runtime=Object.assign({},require('./runtime').defaults,state.runtime));
    switch(cmd){
     case 'connect':clearTimeout(this.transferTimers.get(id));this.transferTimers.delete(id);if(w&&w.mode==='disconnected'){w.destroy();this.workers.delete(id);}results.push(await this.connect(id));break;
     case 'disconnect':clearTimeout(this.transferTimers.get(id));this.transferTimers.delete(id);w?.destroy();this.workers.delete(id);this.auth.delete(id);this.attempts.delete(id);results.push(`Bot${id}を切断`);break;
-    case 'stop':w?.stop();results.push(`Bot${id}停止`);break;
+    case 'stop':w?.runtime?.stop();w?.stop();results.push(`Bot${id}停止`);break;
     case 'start':this.worker(id).start();results.push(`Bot${id}開始`);break;
     case 'area':{if(args.length!==4)throw Error('area x1 z1 x2 z2');const [x1,z1,x2,z2]=args.map(v=>integer(v,-30000000,30000000));const area={x1:Math.min(x1,x2),z1:Math.min(z1,z2),x2:Math.max(x1,x2),z2:Math.max(z1,z2)};if((area.x2-area.x1+1)*(area.z2-area.z1+1)>262144)throw Error('最初は512×512ブロック以内にしてください');w?.stop();state.area=area;if(w)w.survey=0;results.push(`Bot${id} 範囲 ${JSON.stringify(area)}`);break;}
     case 'floor':{const n=integer(args[0],-64,318);if(n>=state.ceiling)throw Error('床はceilingより低く指定');w?.stop();state.floor=n;results.push(`Bot${id}: Y=${n}以下を残す`);break;}
@@ -64,6 +65,16 @@ class Manager{
     case 'supply':case 'chat':case 'respawn':{if(!['on','off'].includes(args[0]))throw Error(`${cmd} on / off`);state[{supply:'autoSupply',chat:'chat',respawn:'respawn'}[cmd]]=args[0]==='on';results.push(`Bot${id} ${cmd}=${args[0]}`);break;}
     case 'connection':{const b=this.worker(id).bot;results.push(JSON.stringify({version:require('../package.json').version,runtimeEntityId:String(b._runtimeEntityId),runtimeIdSchema:b.client?.runtimeIdSchema,movementMode:b.movementMode,advertisedMovement:b.advertisedMovement,lastMovePacket:b.lastMovePacket,sentInputs:b.sentInputs,sentLegacyMoves:b.sentLegacyMoves,naturalIdleFall:b.naturalIdleFall,sessionResponses:b.sessionResponses,initialDataAcknowledged:b.initialDataAcknowledged,positionCorrections:b.positionCorrections||0,serverPosition:b.serverPosition,position:b.entity?.position}));break;}
     case 'movement':{if(!['auto','both'].includes(args[0])||args.length!==1)throw Error('movement auto / movement both');const worker=this.worker(id);if(args[0]==='both')require('./protocol').legacyMove(worker.bot,{position:{x:0,y:0,z:0},pitch:0,yaw:0,head_yaw:0,tick:0n});worker.stop();worker.bot.movementMode=args[0];results.push(`Bot${id} 移動送信=${args[0]}（停止状態）`);break;}
+    case 'enemy':{const [action,...parts]=args,name=parts.join(' ').trim();this.store.data.enemies??=[];if(action==='list'){results.push(this.store.data.enemies.map(e=>e.name).join('\n')||'敵の登録なし');break;}if(!name||!['add','remove'].includes(action))throw Error('enemy add MCID / enemy remove MCID / enemy list');if([...this.names.values()].some(n=>norm(n)===norm(name)))throw Error('Bot自身を敵には登録できません');this.store.data.enemies=this.store.data.enemies.filter(e=>norm(e.name)!==norm(name));if(action==='add'){const profile=[...this.workers.values()].flatMap(w=>[...w.bot.players.values()]).find(p=>norm(p.name)===norm(name));this.store.data.enemies.push({name,xuid:profile?.xuid||null});}results.push(`敵 ${action}: ${name}`);break;}
+    case 'log':{if(!['on','off'].includes(args[0]))throw Error('log on / off');if(args[0]==='on'&&!this.store.data.logChannel)throw Error('/logchannel でログのチャンネルを指定してください');this.store.data.liveLog=args[0]==='on';results.push(`リアルタイムログ ${args[0]}（5秒更新）`);break;}
+    case 'gear':case 'autototem':case 'killaura':case 'heal':{if(!['on','off'].includes(args[0]))throw Error(`${cmd} on / off`);runtimeConfig()[cmd]=args[0]==='on';if(cmd==='killaura'&&args[0]==='on'&&w?.runtime)w.runtime.paused=false;results.push(`${cmd}=${args[0]}`);break;}
+    case 'autolog':{if(!['on','off'].includes(args[0]))throw Error('autolog on 3 / autolog off（ハート数）');const config=runtimeConfig();if(args[1]!==undefined){const n=Number(args[1]);if(!Number.isFinite(n)||n<=0||n>=10)throw Error('体力は0より大きく10未満のハート数');config.logHearts=n;}config.autolog=args[0]==='on';results.push(`AutoLog=${args[0]} / ${config.logHearts}ハート以下`);break;}
+    case 'anticrystal':{const r=this.worker(id).runtime;if(args[0]==='off'){r.travel.unbury();r.config.anticrystal=false;}else{const depth=Number(args[0]==='on'?(args[1]??.55):args[0]);if(!Number.isFinite(depth)||depth<=0||depth>.8)throw Error('anticrystal 0.55 / anticrystal off');r.config.anticrystal=true;r.config.burrowDepth=depth;}results.push(`AntiCrystal=${r.config.anticrystal} / 埋まる深さ${r.config.burrowDepth}`);break;}
+    case 'autoslot':{const worker=this.worker(id),r=worker.runtime;if(args[0]==='receive'||args[0]==='recover'){r.receive();}else if(['on','off'].includes(args[0])){r.config.autoslot=args[0]==='on';r.dirty=true;}else if(args[0]==='now'){r.dirty=true;r.paused=false;}else throw Error('autoslot receive / now / on / off / recover');results.push(`AutoSlot: ${args[0]}`);break;}
+    case 'goto':{if(args.length!==5)throw Error('goto walk|dig|fly overworld|nether x y z');const worker=this.worker(id);if(worker.runtime.busy||worker.busy)throw Error('操作中です。stopで止め、操作終了後に移動を指定してください');worker.runtime.travel.command(...args);worker.stop();worker.runtime.paused=false;results.push(`移動: ${args.join(' ')}`);break;}
+    case 'elytrafly':{const worker=this.worker(id),r=worker.runtime;if(args[0]==='off'){r.travel.cancel();results.push('ElytraFlyを終了・着地処理');break;}if(args.length!==4)throw Error('elytrafly overworld|nether x y z / elytrafly off');if(r.busy||worker.busy)throw Error('操作中です。stopで止め、操作終了後に飛行を指定してください');r.travel.command('fly',...args);worker.stop();r.paused=false;results.push(`ElytraFly: ${args.join(' ')}`);break;}
+    case 'flyspeed':{const r=this.worker(id).runtime,h=Number(args[0]),v=Number(args[1]);if(!Number.isFinite(h)||!Number.isFinite(v)||h<=0||h>3||v<=0||v>1.5)throw Error('flyspeed 1.5 0.7（ブロック/tick）');r.config.flyHorizontal=h;r.config.flyVertical=v;results.push(`飛行速度 横${h} / 上下${v} ブロック/tick`);break;}
+    case 'runtime':results.push(JSON.stringify(this.worker(id).runtime.snapshot()));break;
     case 'messages':results.push((this.logs.get(id)||[]).slice(-12).join('\n').slice(-1700)||'受信メッセージなし');break;
     case 'say':{const text=args.join(' ');if(!text||text.length>220)throw Error('say のあとに送信文を220文字以内で指定');this.worker(id).bot.chat(text);results.push(`Bot${id}から送信しました`);break;}
     case 'diagnose':results.push(await require('./network').diagnose(process.env.MC_HOST||'2b2e.org',Number(process.env.MC_PORT||19132)));break;
@@ -72,7 +83,7 @@ class Manager{
     case 'stats-reset':state.session=emptyStats();results.push(`Bot${id}今回の数をリセット。累計は保持`);break;
     case 'recover':this.worker(id).stop();results.push(await this.worker(id).recover());break;
     case 'clear-recovery':if(args[0]!=='confirm')throw Error('箱を手動回収した後、clear-recovery confirm を実行');if(w?.busy)throw Error('操作中です');state.supplyPending=null;results.push(`Bot${id}補給待機情報を解除`);break;
-    default:throw Error('messages / say / diagnose / connect / start / stop / status / stats / area / floor / ceiling / scaffold / supply / chat / respawn / recover');
+    default:throw Error('connect / start / stop / view / status / runtime / messages / enemy / killaura / autototem / gear / heal / autolog / anticrystal / autoslot / goto / flyspeed / log / stats / area / floor / ceiling / scaffold / supply / chat / respawn / recover');
    }this.store.save();
    if(cmd==='connect'&&ids.length>1)await sleep(1500);
   }

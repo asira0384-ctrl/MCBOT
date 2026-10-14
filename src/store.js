@@ -1,7 +1,11 @@
 'use strict';
 const fs=require('node:fs'); const path=require('node:path');
 const {emptyStats,norm}=require('./util');
-const OWNER='1343843235252146219';
+function ownerId(value=process.env.DISCORD_OWNER_ID){
+ if(value===undefined)return '1343843235252146219';
+ const id=value.trim();if(!/^[1-9]\d{16,19}$/.test(id))throw Error('DISCORD_OWNER_IDには操作する本人のDiscordユーザーIDを設定してください');return id;
+}
+const OWNER=ownerId();
 class Store {
  constructor(dir) { this.dir=dir; fs.mkdirSync(dir,{recursive:true,mode:0o700}); this.file=path.join(dir,'state.json');
   this.data=fs.existsSync(this.file)?JSON.parse(fs.readFileSync(this.file,'utf8')):{schema:1,admins:[],bots:{},logChannel:null};
@@ -14,4 +18,4 @@ class Store {
   return this.data.admins.some(a=>norm(a.name)===name&&a.xuid===String(packet.xuid));
  }
 }
-module.exports={Store,OWNER};
+module.exports={Store,OWNER,ownerId};

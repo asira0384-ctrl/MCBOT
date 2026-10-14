@@ -12,5 +12,5 @@ const solid = b => !!b && !air(b) && !hazard(b) && b.boundingBox === 'block';
 function integer(v,min,max) { const n=Number(v); if (!Number.isInteger(n)||n<min||n>max) throw Error(`整数 ${min}〜${max} を指定してください`); return n; }
 function emptyStats() { return {total:0,obsidian:0,other:0,byBlock:{}}; }
 function addStat(s,name) { s.total++; s[name==='obsidian'?'obsidian':'other']++; s.byBlock[name]=(s.byBlock[name]||0)+1; }
-function canDiscard(name,scaffold) { return name!==scaffold && !/_pickaxe$|shulker_box$|enchanted_golden_apple|golden_apple|ender_chest|totem|elytra|helmet|chestplate|leggings|boots/.test(name); }
+function canDiscard(name,scaffold) { return name!==scaffold && !/_pickaxe$|_sword$|shield|potion|firework_rocket|shulker_box$|enchanted_golden_apple|golden_apple|ender_chest|totem|elytra|helmet|chestplate|leggings|boots/.test(name); }
 module.exports={sleep,key,vec,clean,norm,itemName,air,hazard,solid,integer,emptyStats,addStat,canDiscard};

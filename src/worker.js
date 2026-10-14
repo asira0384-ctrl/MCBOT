@@ -10,17 +10,18 @@ class Worker {
   bot.on('death',()=>{this.mode='dead';this.running=false;this.notice('死亡しました。装備の補給待ちです');});
   bot.on('respawnReady',()=>{if(this.state.respawn){try{bot.respawn();this.mode='waiting';this.missing='死亡後の装備';}catch(e){this.notice(e.message);}}});
   this.timer=setInterval(()=>this.tick().catch(e=>{this.stop();this.notice(e.message);}),300);
+  if(bot.client)this.runtime=new (require('./runtime').Runtime)(this);
  }
  notice(text){this.manager.notice(this.id,text);}
  stop(){this.running=false;this.receiving=false;this.receivedBlock=false;this.mode='stopped';this.bot.halt();this.abort?.abort();}
- start(){if(this.busy)throw Error('前の操作が終わるまで少し待ってください');if(!this.state.area||this.state.floor===null)throw Error('area と floor を先に指定してください');if(this.bot.terrainReady===false)throw Error('Botの足元の地形をまだ受信していません。messagesでサーバー案内を確認してください');if(!this.bot.connected||this.bot.dead)throw Error('Botが接続していません');if(this.state.supplyPending)throw Error('補給途中の箱があります。recover を実行してください');this.bot.naturalIdleFall=false;this.bot.passivePhysics=false;this.running=true;this.mode='running';this.missing='';}
+ start(){if(this.busy||this.controlBusy)throw Error('前の操作が終わるまで少し待ってください');if(!this.state.area||this.state.floor===null)throw Error('area と floor を先に指定してください');if(this.bot.terrainReady===false)throw Error('Botの足元の地形をまだ受信していません。messagesでサーバー案内を確認してください');if(!this.bot.connected||this.bot.dead)throw Error('Botが接続していません');if(this.state.supplyPending||this.state.autoBox)throw Error('補給途中の箱があります。recover / autoslot receive を実行してください');if(this.runtime)this.runtime.paused=false;this.bot.naturalIdleFall=false;this.bot.passivePhysics=false;this.running=true;this.mode='running';this.missing='';}
  receive(){this.stop();this.receiving=true;this.mode='receiving';this.lastReceive=0;this.receivedBlock=false;this.notice('足場ブロックを渡してください。最後の受け取りから3秒後に再開します');}
  inArea(p){const a=this.state.area;return a&&p.x>=a.x1&&p.x<=a.x2&&p.z>=a.z1&&p.z<=a.z2&&p.y>this.state.floor&&p.y<=this.state.ceiling;}
  owned(p){return this.state.owned[`${this.bot.dimensionId}:${key(p)}`];}
  recordOwned(p,kind,name){this.state.owned[`${this.bot.dimensionId}:${key(p)}`]={p:{x:p.x,y:p.y,z:p.z},kind,name,dimension:this.bot.dimensionId};this.manager.store.save();}
  removeOwned(p){delete this.state.owned[`${this.bot.dimensionId}:${key(p)}`];this.manager.store.save();}
  underPlayer(p){return [...this.manager.workers.values()].some(w=>{const q=w.bot.entity?.position;return w.bot.dimensionId===this.bot.dimensionId&&q&&Math.abs(q.x-(p.x+.5))<.9&&Math.abs(q.z-(p.z+.5))<.9&&q.y>=p.y&&q.y<=p.y+2;});}
- async tick(){if(this.busy||!this.bot.connected||this.bot.dead)return;
+ async tick(){if(this.busy||this.controlBusy||!this.bot.connected||this.bot.dead)return;
   if(this.receiving){if(this.receivedBlock&&this.lastReceive&&Date.now()-this.lastReceive>=3000){this.receiving=false;try{this.start();this.notice(`足場 ${this.state.scaffold} で再開しました`);}catch(e){this.mode='stopped';this.notice(e.message);}}return;}
   if(!this.running&&this.mode!=='waiting')return;
   this.busy=true;this.abort=new AbortController();const signal=this.abort.signal;
@@ -85,7 +86,7 @@ class Worker {
   for(const[name,count]of sums){const limit=this.bot.registry.itemsByName[name]?.stackSize||64;if(count<limit)continue;let left=limit;for(const i of this.bot.list().filter(i=>i.name===name)){if(signal.aborted)return;const n=Math.min(left,i.count);await this.bot.drop(i.slot,n);left-=n;if(!left)break;}}
  }
  supplySpot(exclude){const p=this.bot.entity.position;for(const[dx,dz]of [[1,0],[-1,0],[0,1],[0,-1],[2,0],[0,2],[-2,0],[0,-2]]){const q=new Vec3(Math.floor(p.x)+dx,Math.floor(p.y),Math.floor(p.z)+dz);if(exclude&&key(q)===key(exclude))continue;if(air(this.bot.blockAt(q))&&air(this.bot.blockAt(q.offset(0,1,0)))&&solid(this.bot.blockAt(q.offset(0,-1,0))))return q;}throw Error('補給用チェストを置く場所がありません');}
- wanted(name){return name===this.state.scaffold||name==='enchanted_golden_apple'||/_pickaxe$/.test(name);}
+ wanted(name){return name===this.state.scaffold||require('./equipment').wanted(name);}
  async takeSupplies(window,signal){let taken=0;for(let slot=0;slot<window.items.length;slot++){const raw=window.items[slot];if(!raw||!this.wanted(this.bot.name(raw)))continue;if(this.bot.items.filter(i=>!i).length<=2)break;const dest=this.bot.items.findIndex(i=>!i);if(dest<0)break;if(signal.aborted)throw Error('停止');await this.bot.transfer(true,slot,false,dest);taken++;}return taken;}
  async supply(signal){this.mode='supplying';const tool=this.bot.tool(true);if(!tool)throw Error('エンダーチェスト回収用のシルクタッチ付きピッケルが必要です');
   if(this.bot.items.filter(i=>!i).length<3)throw Error('自動補給にはインベントリの空き3枠が必要です');
@@ -115,7 +116,7 @@ class Worker {
    if(pending.box){const q=new Vec3(pending.box.x,pending.box.y,pending.box.z);const b=this.bot.blockAt(q);if(b&&!air(b)){const w=await this.bot.openContainer(q,signal);if(w.items.length!==27)throw Error('シュルカーの内容未確認');const empty=w.items.every(i=>!i);this.bot.closeContainer();await this.recoverBox(q,pending.box.name,empty,cp,signal);}else throw Error('箱の状態が変わりました。手動で回収し、Discordのclear-recoveryを使ってください');}
    await this.recoverChest(cp,signal);this.state.supplyPending=null;this.manager.store.save();this.mode='stopped';return '補給用の箱を回収しました。startで再開できます';
   }finally{this.busy=false;this.bot.closeContainer();}}
- destroy(){this.stop();clearInterval(this.timer);this.bot.disconnect();}
+ destroy(){this.runtime?.destroy();this.stop();clearInterval(this.timer);this.bot.disconnect();}
  status(){return {version:require('../package.json').version,number:this.id,name:this.bot.username,mode:this.mode,connectionPhase:this.bot.connectionPhase,endpoint:{host:this.bot.config?.host,port:this.bot.config?.port},terrainReady:this.bot.terrainReady,passivePhysics:this.bot.passivePhysics,naturalIdleFall:this.bot.naturalIdleFall,serverPosition:this.bot.serverPosition,positionCorrections:this.bot.positionCorrections||0,packets:this.bot.packetCounts,lastDisconnect:this.bot.lastDisconnect,position:this.bot.entity?.position,health:this.bot.health===null?null:this.bot.health/2,missing:this.missing,scaffold:this.state.scaffold,stats:this.state.stats,session:this.state.session,ownedScaffolds:Object.values(this.state.owned).filter(o=>o.kind==='scaffold').length};}
 }
 module.exports={Worker};

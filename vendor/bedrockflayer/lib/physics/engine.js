@@ -97,6 +97,10 @@ function physicsPlugin(bot) {
 
 function _simulateTick(bot) {
     if (!bot.entity) return
+    if (bot.motion?.step()) {
+        bot.position = bot.entity.position.clone()
+        _sendPositionPacket(bot, 0, 0); bot.tick++; bot.emit('physicsTick'); return
+    }
     // Stopping controls does not freeze gravity. Apply normal collision and
     // falling physics in received terrain, including while waiting to join.
     // During idle loading, missing terrain must not act as a mid-air brake.

@@ -1,0 +1,9 @@
+'use strict';
+function payload(manager){const fields=[...manager.names].map(([id,name])=>{const w=manager.workers.get(id),b=w?.bot,r=w?.runtime?.snapshot(),p=b?.entity?.position;const coords=p?`${p.x.toFixed(1)} / ${p.y.toFixed(1)} / ${p.z.toFixed(1)}`:'—';const text=[`状態: ${b?.connected?(r?.movement||w.mode):'未接続'} / dim ${b?.dimensionId??'—'}`,`座標: ${coords}`,`体力: ${b?.health===null||b?.health===undefined?'—':b.health/2}♥ / 手: ${r?.offhand||'なし'}`,`敵: ${r?.target||'なし'} / 攻撃送信 ${r?.attacksSent||0} / Totem消費 ${r?.totemsUsed||0}`,`装備: ${(r?.armor||[]).filter(Boolean).join(', ')||'なし'}`,`最新: ${r?.lastEvent?.text||(manager.logs.get(id)||[]).at(-1)||'—'}`].join('\n');return {name:`Bot${id} / ${name}`.slice(0,256),value:text.slice(0,480),inline:false};});return {embeds:[{title:`Asira Clear Bot / v${require('../package.json').version}`,description:'5秒更新。攻撃送信数は命中・キルの確定数ではありません。',fields,footer:{text:new Date().toISOString()}}],allowedMentions:{parse:[]}};}
+function installLiveLog(client,manager){let busy=false;const update=async()=>{const data=manager.store.data;if(busy||!client.isReady()||!data.liveLog||!data.logChannel)return;busy=true;
+  try{const channel=await client.channels.fetch(data.logChannel);if(!channel?.isTextBased())return;let message;if(data.liveMessageId)try{message=await channel.messages.fetch(data.liveMessageId);}catch(e){if(e.code!==10008)throw e;data.liveMessageId=null;}
+   if(message){if(message.author.id!==client.user.id){data.liveMessageId=null;throw Error('リアルタイムログのメッセージはこのBotのものではありません');}await message.edit(payload(manager));}else{const created=await channel.send(payload(manager));data.liveMessageId=created.id;manager.store.save();}
+  }catch(e){console.error('リアルタイムログ:',e.message);}finally{busy=false;}
+ };const timer=setInterval(update,5000);timer.unref?.();const old=client.destroy.bind(client);client.destroy=()=>{clearInterval(timer);return old();};return update;
+}
+module.exports={payload,installLiveLog};
