@@ -2,6 +2,7 @@
 const {Vec3}=require('vec3');const {air,solid,hazard}=require('./util');const {wear}=require('./equipment');
 const dimensions={overworld:0,nether:1,end:2,現世:0,ネザー:1,エンド:2};
 function dimension(value){if(Object.hasOwn(dimensions,value))return dimensions[value];const n=Number(value);if(Number.isInteger(n)&&n>=0&&n<=2)return n;throw Error('ディメンション: overworld / nether / end');}
+function validateGoal(mode,dim,x,y,z){if(!['walk','dig','fly'].includes(mode))throw Error('移動方法: walk / dig / fly');const destination=new Vec3(...[x,y,z].map(Number));if(![destination.x,destination.y,destination.z].every(Number.isFinite)||Math.abs(destination.x)>30000000||Math.abs(destination.z)>30000000||destination.y< -64||destination.y>319)throw Error('座標の範囲が不正です');return {mode,dimension:dimension(dim),destination};}
 function bodyClear(bot,p,margin=.3){for(let x=Math.floor(p.x-margin);x<=Math.floor(p.x+margin);x++)for(let z=Math.floor(p.z-margin);z<=Math.floor(p.z+margin);z++)for(let y=Math.floor(p.y);y<=Math.floor(p.y+1.79);y++){const b=bot.blockAt({x,y,z});if(!b||b.solid||b.isLiquid||/unknown|fire|lava/.test(b.name))return false;}return true;}
 function sweptClear(bot,from,to,margin=.3){const delta=to.minus(from),n=Math.max(1,Math.ceil(delta.norm()*5));for(let i=0;i<=n;i++)if(!bodyClear(bot,from.plus(delta.scaled(i/n)),margin))return false;return true;}
 function landingFloor(bot,p,max=10){for(let d=0;d<=max;d++){const y=Math.floor(p.y)-d,q=new Vec3(Math.floor(p.x),y,Math.floor(p.z));if(solid(bot.blockAt(q.offset(0,-1,0)))&&bodyClear(bot,q.offset(.5,0,.5)))return q.offset(.5,0,.5);}return null;}
@@ -14,7 +15,7 @@ class Travel{
  constructor(runtime){this.runtime=runtime;this.bot=runtime.bot;this.route=null;this.flight=null;this.embed=null;this.waiting='';
   this.bot.motion=this;this.bot.on('dimensionChanged',()=>{this.flight=null;this.embed=null;if(this.route){this.route.portal=null;this.route.enteredAt=0;this.waiting='新しい地形の受信待ち';}});
  }
- command(mode,dim,x,y,z){if(!['walk','dig','fly'].includes(mode))throw Error('goto walk / dig / fly dimension x y z');const destination=new Vec3(...[x,y,z].map(Number));if(![destination.x,destination.y,destination.z].every(Number.isFinite)||Math.abs(destination.x)>30000000||Math.abs(destination.z)>30000000||destination.y< -64||destination.y>319)throw Error('座標の範囲が不正です');this.cancel(false);this.route={mode,dimension:dimension(dim),destination,portal:null,enteredAt:0};this.waiting='移動準備';}
+ command(mode,dim,x,y,z){const goal=validateGoal(mode,dim,x,y,z);this.cancel(false);this.route={...goal,portal:null,enteredAt:0};this.waiting='移動準備';}
  glide(on){if(this.bot.gliding===on)return;this.bot.gliding=on;this.bot.pendingGlide=on?'start':'stop';this.bot.client.queue('player_action',{runtime_entity_id:BigInt(this.bot._runtimeEntityId),action:on?'start_glide':'stop_glide',position:{x:0,y:0,z:0},result_position:{x:0,y:0,z:0},face:0});}
  cancel(land=true){this.route=null;this.unbury();this.waiting='';if(this.flight&&land){const floor=landingFloor(this.bot,this.bot.entity.position,16);if(floor){this.flight={goal:floor,landing:true};this.waiting='着地中';return;}this.flight={goal:this.bot.entity.position.clone(),paused:true};this.waiting='着地点が未受信・飛行待機';return;}this.flight=null;if(this.bot.gliding)this.glide(false);}
  rollback(){if(this.embed)this.runtime.burrowBlockedUntil=Date.now()+10000;this.embed=null;if(this.flight){this.flight={goal:this.bot.entity.position.clone(),paused:true};this.route=null;this.waiting='位置補正を受信・飛行待機';this.runtime.notice(this.waiting);}}
@@ -61,4 +62,4 @@ class Travel{
  bury(depth){const b=this.bot,p=b.entity.position,floor=b.blockAt(p.offset(0,-.1,0));if(!b.entity.onGround||!solid(floor)||!bodyClear(b,p))return false;this.embed={y:p.y-depth,original:p.y};return true;}
  unbury(){if(this.embed){this.bot.entity.position.y=this.embed.original;this.bot.entity.velocity=new Vec3(0,0,0);this.embed=null;}}
 }
-module.exports={Travel,bodyClear,sweptClear,landingFloor,nearestPortal,dimension};
+module.exports={Travel,bodyClear,sweptClear,landingFloor,nearestPortal,dimension,validateGoal};

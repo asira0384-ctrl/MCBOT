@@ -1,6 +1,7 @@
 'use strict';
 const {Client,GatewayIntentBits,REST,Routes,SlashCommandBuilder,MessageFlags}=require('discord.js');const {OWNER}=require('./store');const {norm}=require('./util');
 const commands=[
+ new SlashCommandBuilder().setName('panel').setDescription('ボタンと選択メニューでBotを管理する（管理者専用）'),
  new SlashCommandBuilder().setName('bot').setDescription('Botを番号/allで操作する（管理者専用）').addStringOption(o=>o.setName('target').setDescription('1〜10 / all').setRequired(true)).addStringOption(o=>o.setName('command').setDescription('例: connect / start / stop / area -20 -20 20 20 / floor 64').setRequired(true)),
  new SlashCommandBuilder().setName('auth').setDescription('Microsoft認証コードを見る（管理者専用）').addIntegerOption(o=>o.setName('target').setDescription('Bot番号').setMinValue(1).setMaxValue(10).setRequired(true)),
  new SlashCommandBuilder().setName('admin').setDescription('ゲーム内操作権限を管理（管理者専用）')
@@ -11,13 +12,16 @@ const commands=[
  new SlashCommandBuilder().setName('help').setDescription('操作ガイド（管理者専用）')
 ].map(c=>c.toJSON());
 async function startDiscord(manager){const token=process.env.DISCORD_TOKEN;if(!token)throw Error('.envまたはRailway VariablesにDISCORD_TOKENを設定してください');const client=new Client({intents:[GatewayIntentBits.Guilds]});let logChain=Promise.resolve();
+ const panel=new (require('./panel').ControlPanel)(manager,OWNER);
  manager.onNotice=(id,message)=>{console.log(`[Bot${id}] ${message}`);const channelId=manager.store.data.logChannel;if(!channelId)return;
   logChain=logChain.then(async()=>{const channel=await client.channels.fetch(channelId);if(channel?.isTextBased())await channel.send({content:`[Bot${String(id).padStart(2,'0')}] ${message}`,allowedMentions:{parse:[]}});}).catch(e=>console.error('通知送信失敗:',e.message));};
- client.once('clientReady',async()=>{try{const rest=new REST({version:'10'}).setToken(token);const guild=process.env.DISCORD_GUILD_ID;await rest.put(guild?Routes.applicationGuildCommands(client.user.id,guild):Routes.applicationCommands(client.user.id),{body:commands});console.log('Discord ready: /help');}catch(e){console.error('コマンド登録失敗:',e.message);}});
- client.on('interactionCreate',async i=>{if(!i.isChatInputCommand())return;if(i.user.id!==OWNER){await i.reply({content:'このBotに設定された管理者のみ使用できます。',flags:MessageFlags.Ephemeral});return;}await i.deferReply({flags:MessageFlags.Ephemeral});
+ client.once('clientReady',async()=>{try{const rest=new REST({version:'10'}).setToken(token);const guild=process.env.DISCORD_GUILD_ID;await rest.put(guild?Routes.applicationGuildCommands(client.user.id,guild):Routes.applicationCommands(client.user.id),{body:commands});console.log('Discord ready: /panel /help');}catch(e){console.error('コマンド登録失敗:',e.message);}});
+ client.on('interactionCreate',async i=>{if(!i.isChatInputCommand()){try{await panel.handle(i);}catch(e){console.error('管理パネル:',e.message);}return;}if(i.user.id!==OWNER){await i.reply({content:'このBotに設定された管理者のみ使用できます。',flags:MessageFlags.Ephemeral});return;}await i.deferReply({flags:MessageFlags.Ephemeral});
   try{let result;
    switch(i.commandName){
+    case 'panel':await panel.create(i);return;
     case 'bot':{const target=i.options.getString('target',true),command=i.options.getString('command',true).trim();
+     if(command==='panel'||command==='gui'){await panel.create(i,target);return;}
      if(command==='view'){const ids=manager.targets(target);if(ids.length!==1)throw Error('view はBot番号を1つ指定してください');const id=ids[0],w=manager.workers.get(id);if(!w)throw Error('先にBotを接続してください');const view=require('./view').renderView(w.bot),status=w.status();
       const messages=(manager.logs.get(id)||[]).slice(-5).join('\n');const content=`Bot${id} / v${require('../package.json').version} / ${w.bot.username}\n受信地形から描いたBot視点（マイクラ本体の画面ではありません）\n紫の格子＝未受信・判別できない地形。空の色＝受信済みの空気。UI・プレイヤーは描画しません。\n座標: ${JSON.stringify(status.position)}\nサーバー位置: ${JSON.stringify(status.serverPosition)}\n位置固定: ${status.passivePhysics} / 補正: ${status.positionCorrections}\n描画: ${JSON.stringify(view.hits)}\n${messages}`;
       await i.editReply({content:content.slice(0,1950),files:[{attachment:view.buffer,name:`bot-${id}-view.png`}],allowedMentions:{parse:[]}});return;

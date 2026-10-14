@@ -10,6 +10,7 @@ class BedrockBot extends EventEmitter {
  constructor(config,authCallback){super();this.setMaxListeners(60);this.config=config;this.username=config.name;this.items=Array(36).fill(null);this.quickBarSlot=0;this.tick=0;this.physicsEnabled=true;this.passivePhysics=false;this.naturalIdleFall=true;this.players=new Map();this.health=null;this.connected=false;this.dead=false;this.window=null;this.requestId=-1;this.abortVersion=0;this.dimensionId=0;this.ended=false;this.connectionPhase='Microsoft/Xbox認証中';this.lastDisconnect='';this.packetCounts={};this.lastPacketAt=0;this.terrainReady=false;this.movementMode='auto';this.sentInputs=0;this.sentLegacyMoves=0;
   fs.mkdirSync(config.authDir,{recursive:true,mode:0o700});
   this.armor=Array(4).fill(null);this.offhand=[null];this.effects=new Map();this.lastInventoryAt=0;this.respawnAckSent=false;
+  this.inventoryOpen=false;this.inventoryOpenRequests=0;this.pendingStackRequest=null;this.lastStackResponse=null;
   this.client=bedrock.createClient({host:config.host,port:config.port,username:`asira-bot-${config.id}`,offline:false,
    ...(config.version?{version:config.version}:{}),profilesFolder:config.authDir,raknetBackend:'raknet-native',followPort:false,
    onMsaCode:data=>{if(!this.ended&&!this.client?._closed){this.connectionPhase='Microsoft認証待ち';authCallback(data);}},conLog:()=>{},connectTimeout:60000,transport:'raknet'});
@@ -51,8 +52,8 @@ class BedrockBot extends EventEmitter {
   this.client.on('mob_armor_equipment',p=>{if(String(p.runtime_entity_id)===String(this._runtimeEntityId))this.armor=[p.helmet,p.chestplate,p.leggings,p.boots].map(i=>i?.network_id?i:null);});
   this.client.on('mob_equipment',p=>{if(String(p.runtime_entity_id)===String(this._runtimeEntityId)&&(p.window_id==='offhand'||p.window_id===119))this.offhand=[p.item?.network_id?p.item:null];});
   this.client.on('mob_effect',p=>{if(String(p.runtime_entity_id)!==String(this._runtimeEntityId))return;if(p.event_id==='remove'||p.event_id===3)this.effects.delete(p.effect_id);else this.effects.set(p.effect_id,{amplifier:p.amplifier,expires:Date.now()+Number(p.duration)*50});});
-  this.client.on('container_open',p=>{this.window={id:p.window_id,type:p.window_type,position:p.coordinates,items:[],ready:false};this.emit('windowOpen');});
-  this.client.on('container_close',()=>{this.window=null;});
+  this.client.on('container_open',p=>{if(p.window_id==='inventory'||p.window_id===0){this.emit('inventoryOpenAcknowledged');return;}this.inventoryOpen=false;this.window={id:p.window_id,type:p.window_type,position:p.coordinates,items:[],ready:false};this.emit('windowOpen');});
+  this.client.on('container_close',p=>{if(p.window_id==='inventory'||p.window_id===0)this.inventoryOpen=false;else if(this.window&&p.window_id===this.window.id)this.window=null;});
   this.client.on('update_attributes',p=>{if(String(p.runtime_entity_id)!==String(this._runtimeEntityId))return;for(const a of p.attributes||[])if(a.name==='minecraft:health') {this.health=a.current;if(this.health<=0&&!this.dead){this.dead=true;this.halt();this.emit('death');}else if(this.health>0&&this.dead&&this.respawnAckSent){this.dead=false;this.respawnAckSent=false;this.emit('respawned');}this.emit('health');}});
   this.client.on('respawn',p=>{if(p.state===0||p.state==='searching')return;if(p.position&&this.entity){this.entity.position=new Vec3(p.position.x,p.position.y-1.62,p.position.z);this.entity.velocity=new Vec3(0,0,0);this.position=this.entity.position;}if(p.state===1||p.state==='ready'){this.respawnPacket=p;this.emit('respawnReady');}});
   this.client.on('error',e=>this.emit('error',e));this.client.on('kick',p=>{this.lastDisconnect=String(p.message||p.reason||'サーバーが理由を表示せず切断');this.emit('error',Error(this.lastDisconnect));});
@@ -69,15 +70,15 @@ class BedrockBot extends EventEmitter {
  enchant(item,name,id){return (this.nbt(item)?.ench||[]).some(e=>(e.id===id||e.id===name)&&e.lvl>0);}
  tool(silk=false){const caps={netherite_pickaxe:2031,diamond_pickaxe:1561,iron_pickaxe:250,stone_pickaxe:131,golden_pickaxe:32,wooden_pickaxe:59};return this.list().filter(i=>(!silk||this.enchant(i.raw,'silk_touch',16))&&caps[i.name]&&caps[i.name]-this.damage(i.raw)>10).sort((a,b)=>caps[b.name]-caps[a.name])[0];}
  select(slot){this.quickBarSlot=slot;this.client.queue('mob_equipment',{runtime_entity_id:this._runtimeEntityId,item:this.items[slot]||emptyItem(),slot,selected_slot:slot,window_id:'inventory'});}
- async equip(slot){if(slot<9){this.select(slot);return;}const opened=!!this.window;if(!opened)await this.openInventory();try{await this.swap(slot,0);this.select(0);}finally{if(!opened)this.closeContainer();}}
+ async equip(slot){if(slot<9){this.select(slot);return;}const opened=!!this.window||this.inventoryOpen;if(!opened)await this.openInventory();try{await this.swap(slot,0);this.select(0);}finally{if(!opened)this.closeContainer();}}
  slot(type,index,item){const ref=slotRef(type,index,item);if(['level_entity','container','shulker'].includes(type)&&this.window?.container)ref.slot_type={...this.window.container};return ref;}
- async transaction(action,changes,signal){const id=this.requestId--;const before=this.abortVersion;
+ async transaction(action,changes,signal){const id=this.requestId--;const before=this.abortVersion;this.pendingStackRequest={id,action:action.type_id,at:Date.now()};
   const response=new Promise((resolve,reject)=>{const timer=setTimeout(()=>{cleanup();reject(Error('アイテム移動の応答がありません'));},7000);
-   const onResponse=p=>{const r=p.responses?.find(r=>r.request_id===id);if(!r)return;cleanup();if(r.status!=='ok'&&r.status!==0)return reject(Error('サーバーがアイテム操作を拒否しました'));resolve(r);};
+   const onResponse=p=>{const r=p.responses?.find(r=>r.request_id===id);if(!r)return;cleanup();this.lastStackResponse={id,status:r.status,at:Date.now()};if(r.status!=='ok'&&r.status!==0)return reject(Error('サーバーがアイテム操作を拒否しました'));resolve(r);};
    const onEnd=()=>{cleanup();reject(Error('切断'));};const cleanup=()=>{clearTimeout(timer);this.client.removeListener('item_stack_response',onResponse);this.removeListener('end',onEnd);};this.client.on('item_stack_response',onResponse);this.on('end',onEnd);
    try{this.client.queue('item_stack_request',request(id,[action]));}catch(e){cleanup();reject(e);}
   });
-  const r=await response;
+  let r;try{r=await response;}finally{if(this.pendingStackRequest?.id===id)this.pendingStackRequest=null;}
   // Accepted responses contain final counts/stack IDs. Apply planned identities, then authoritative counts.
   for(const c of changes)c.array[c.slot]=c.item?structuredClone(c.item):null;
   for(const container of r.containers||[]){const type=typeof container.slot_type==='string'?container.slot_type:container.slot_type?.container_id;const array=['inventory','hotbar','hotbar_and_inventory'].includes(type)?this.items:type==='armor'?this.armor:type==='offhand'?this.offhand:['container','shulker','level_entity'].includes(type)?this.window?.items:null;if(!array)continue;
@@ -88,7 +89,7 @@ class BedrockBot extends EventEmitter {
  async swap(a,b){const ai=this.items[a],bi=this.items[b];await this.transaction({type_id:'swap',source:this.slot('hotbar_and_inventory',a,ai),destination:this.slot('hotbar_and_inventory',b,bi)},[{array:this.items,slot:a,item:bi},{array:this.items,slot:b,item:ai}]);}
  array(type){return type==='armor'?this.armor:type==='offhand'?this.offhand:['container','shulker','level_entity'].includes(type)?this.window?.items:this.items;}
  async swapContainer(from,a,to,b){const src=this.array(from),dst=this.array(to);if(!src||!dst)throw Error('インベントリが閉じています');const ai=src[a],bi=dst[b];if(!ai)return;await this.transaction({type_id:'swap',source:this.slot(from,a,ai),destination:this.slot(to,b,bi)},[{array:src,slot:a,item:bi},{array:dst,slot:b,item:ai}]);}
- async openInventory(signal){if(this.window&&(this.window.id==='inventory'||this.window.id===0))return;this.closeContainer();this.client.queue('interact',{action_id:'open_inventory',target_entity_id:BigInt(this._runtimeEntityId),has_position:false});await this.waitUntil(()=>this.window&&(this.window.id==='inventory'||this.window.id===0),4000,signal);}
+ async openInventory(signal){if(signal?.aborted||!this.connected)throw Error('停止・切断しました');if(this.inventoryOpen)return;this.closeContainer();this.client.queue('interact',{action_id:'open_inventory',target_entity_id:0n,has_position:false});this.inventoryOpen=true;this.inventoryOpenRequests++;}
  async drop(slot,count){const item=this.items[slot];if(!item)return;const n=Math.min(count||item.count,item.count);await this.transaction({type_id:'drop',count:n,source:this.slot('hotbar_and_inventory',slot,item),randomly:false},[{array:this.items,slot,item:n===item.count?null:{...item,count:item.count-n}}]);}
  async transfer(fromContainer,from,toContainer,to,count){const src=fromContainer?this.window?.items:this.items,dst=toContainer?this.window?.items:this.items;if(!src||!dst)throw Error('コンテナが閉じています');const item=src[from];if(!item)throw Error('取り出すアイテムがありません');if(dst[to])throw Error('移動先に空きがありません');const n=Math.min(count||item.count,item.count);
   await this.transaction({type_id:'take',count:n,source:this.slot(fromContainer?'level_entity':'hotbar_and_inventory',from,item),destination:this.slot(toContainer?'level_entity':'hotbar_and_inventory',to,null)},[{array:src,slot:from,item:n===item.count?null:{...item,count:item.count-n}},{array:dst,slot:to,item:{...item,count:n}}]);
@@ -116,7 +117,7 @@ class BedrockBot extends EventEmitter {
   try{this.client.queue('inventory_transaction',useItem(this,'click_block',support.position,face,support.stateId));await this.waitUntil(()=>{const b=this.blockAt(target);return !!b&&!air(b)&&b.name===item.name;},6000,signal);}finally{this.setControlState('sneak',false);}
  }
  async openContainer(pos,signal){this.closeContainer();const b=this.blockAt(pos);if(!b||!this.reach(b))throw Error('チェストが届く範囲にありません');this.clearControlStates();this.lookAt(pos.offset(.5,.5,.5),false);this.client.queue('inventory_transaction',useItem(this,'click_block',pos,1,b.stateId));await this.waitUntil(()=>this.window?.ready,7000,signal);return this.window;}
- closeContainer(){if(this.window){this.client.queue('container_close',{window_id:this.window.id,window_type:this.window.type,server:false});this.window=null;}}
+ closeContainer(){if(this.window){this.client.queue('container_close',{window_id:this.window.id,window_type:this.window.type,server:false});this.window=null;}if(this.inventoryOpen){this.client.queue('container_close',{window_id:'inventory',window_type:'inventory',server:false});this.inventoryOpen=false;}}
  async eat(signal){const food=this.find('enchanted_golden_apple');if(!food)throw Error('エンチャント金リンゴがなくなりました');this.clearControlStates();await this.equip(food.slot);const before=this.count('enchanted_golden_apple');this.usingItem=true;
   try{this.client.queue('inventory_transaction',useItem(this,'click_air',{x:0,y:0,z:0},-1));await this.waitUntil(()=>this.count('enchanted_golden_apple')<before,7000,signal);}finally{this.usingItem=false;}
  }
