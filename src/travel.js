@@ -55,7 +55,7 @@ class Travel{
   const limit=Math.min(6,horizontal),x=p.x+(horizontal?dx/horizontal*limit:0),z=p.z+(horizontal?dz/horizontal*limit:0);let spot=null;
   for(const dy of [0,1,-1]){const q=new Vec3(Math.floor(x),Math.floor(p.y)+dy,Math.floor(z));if(bodyClear(b,q.offset(.5,0,.5))&&solid(b.blockAt(q.offset(0,-1,0)))){spot=q;break;}}
   if(spot){try{await b.go(spot,signal);return;}catch(e){if(b.dimensionId!==beforeDimension)return;if(signal.aborted||mode!=='dig')throw e;}}
-  if(mode!=='dig')throw Error('受信済み地形に安全な徒歩経路がありません');
+  if(mode!=='dig')throw Object.assign(Error('受信済み地形に安全な徒歩経路がありません'),{code:'PATH_WAIT'});
   const sx=Math.abs(dx)>=Math.abs(dz)?Math.sign(dx):0,sz=sx?0:Math.sign(dz),q=new Vec3(Math.floor(p.x)+sx,Math.floor(p.y),Math.floor(p.z)+sz);
   if(!solid(b.blockAt(q.offset(0,-1,0))))throw Error('移動先の足場がありません');
   for(const target of [q.offset(0,1,0),q]){const block=b.blockAt(target);if(!block)throw Error('採掘する地形が未受信です');if(air(block))continue;if(hazard(block)||!block.diggable||block.hardness<0)throw Error('移動先に破壊できない・危険なブロックがあります');if(this.runtime.worker.state.floor!==null&&target.y<=this.runtime.worker.state.floor)throw Error('保護している床は掘りません');await b.dig(block,signal);const w=this.runtime.worker;if(!w.owned(target)){const {addStat}=require('./util');addStat(w.state.stats,block.name);addStat(w.state.session,block.name);w.recordMined(block.name);this.runtime.manager.store.save();}}

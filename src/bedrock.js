@@ -43,7 +43,7 @@ class BedrockBot extends EventEmitter {
   this.client.on('spawn',()=>{const actual=this.client.profile?.name||this.client.username;
    if(norm(actual)!==norm(config.name)){this.emit('error',Error(`ログインしたゲーマータグが違います: ${actual} / 設定 ${config.name}`));this.disconnect();return;}
    this.username=actual;this.connected=true;this.connectionPhase='接続済み・本ワールド到着は未確認';this.client.queue('request_chunk_radius',{chunk_radius:4,max_radius:4});this.emit('spawn');});
-  this.client.on('text',p=>{const text=String(p.message||'')+(p.parameters?.length?' '+p.parameters.map(String).join(' '):'');if(text)this.emit('serverMessage',p.type==='whisper'?`whisper: ${p.source_name||'player'}（本文はログへ保存しません）`:`${p.source_name||p.type||'server'}: ${text}`);this.emit('chat',p);});
+  this.client.on('text',p=>{this.chatQueue?.warning(p);const text=String(p.message||'')+(p.parameters?.length?' '+p.parameters.map(String).join(' '):'');if(text)this.emit('serverMessage',p.type==='whisper'?`whisper: ${p.source_name||'player'}（本文はログへ保存しません）`:`${p.source_name||p.type||'server'}: ${text}`);this.emit('chat',p);});
   this.client.on('command_output',p=>this.emit('serverMessage',`コマンド応答: 成功数 ${p.success_count??'不明'}（tell本文はログへ保存しません）`));
   this.client.on('set_title',p=>{if(p.text)this.emit('serverMessage',`title: ${p.text}`);});
   this.client.on('modal_form_request',p=>this.emit('serverMessage',`form ${p.form_id}: ${p.data||''}`));
@@ -85,9 +85,9 @@ class BedrockBot extends EventEmitter {
  }
  async waitUntil(fn,ms=5000,signal){const start=Date.now();const epoch=this.abortVersion;while(Date.now()-start<ms){if(signal?.aborted||epoch!==this.abortVersion||!this.connected)throw Error('停止・切断しました');if(fn())return;await sleep(50);}throw Error('サーバーの確認がタイムアウトしました');}
  halt(){this.naturalIdleFall=true;this.passivePhysics=false;this.abortVersion++;this.pathfinder?.stop();this.clearControlStates?.();if(this.mining)this.breakAction={action:'abort_break',position:this.mining,face:1};this.mining=null;this.usingItem=false;}
- finish(){if(this.ended)return;this.ended=true;this.connected=false;this.connectionPhase='切断済み';this.halt();this.emit('end');}
- disconnect(){if(this.ended)return;this.halt();try{this.closeContainer();}catch{}try{this.client.disconnect('Stopping');}catch{}finally{try{this.client.close();}catch{}this.finish();}}
- chat(text,immediate=false){if(!this.connected||this.ended)return false;const params=require('./chat-output').publicPacket(this,text);if(immediate&&this.client.write)this.client.write('text',params);else this.client.queue('text',params);return true;}
+ finish(){this.chatQueue?.close();if(this.ended)return;this.ended=true;this.connected=false;this.connectionPhase='切断済み';this.halt();this.emit('end');}
+ disconnect(){this.chatQueue?.close();if(this.ended)return;this.halt();try{this.closeContainer();}catch{}try{this.client.disconnect('Stopping');}catch{}finally{try{this.client.close();}catch{}this.finish();}}
+ chat(text,immediate=false){this.chatQueue??=new(require('./chat-queue').ChatQueue)(this);return this.chatQueue.enqueue(String(text).slice(0,220),immediate);}
  whisper(recipient,text){if(!this.connected||this.ended)throw Error('Botが未接続です');const params=require('./chat-output').whisperPacket(this,recipient,text);this.client.queue('command_request',params);}
  logout(message='バイバイ！',delayMs=80){if(this._logoutPromise)return this._logoutPromise;if(!this.connected||this.ended){this.disconnect();return Promise.resolve();}this.loggingOut=true;this.halt();this._logoutPromise=(async()=>{try{this.client._tick?.();this.chat(require('./chat-output').automatic(message),true);}catch(e){this.emit('diagnostic','切断前の挨拶を送れませんでした: '+e.message);}await sleep(delayMs);this.disconnect();})();return this._logoutPromise;}
  reach(block){const p=this.entity?.position;if(!p||!block)return false;return p.offset(0,1.62,0).distanceTo(block.position.offset(.5,.5,.5))<=4.4;}

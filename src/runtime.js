@@ -14,7 +14,7 @@ class Runtime{
   this.bot.on('collisionBlocked',()=>{this.worker.stop();this.noticeOnce('ブロック内への落下を止めました。サーバーの位置補正を待ちます');});
   this.bot.on('forcedMove',()=>{this.travel.rollback();this.safety.invalidate();});
   this.bot.on('end',()=>this.destroy());
-  this.timer=setInterval(()=>this.tick().catch(e=>{if(e.message!==this.lastError){this.lastError=e.message;this.notice(e.message);}this.receiving=false;this.paused=true;this.retryAt=Date.now()+5000;this.worker.stop();this.bot.closeContainer();this.travel.cancel();}),100);this.timer.unref?.();
+  this.timer=setInterval(()=>this.tick().catch(e=>{if(e.code==='PATH_WAIT'){this.lastError=e.message;this.travel.waiting=e.message+'（5秒後に再確認）';this.retryAt=Date.now()+5000;this.bot.clearControlStates();this.noticeOnce(this.travel.waiting);return;}if(e.message!==this.lastError){this.lastError=e.message;this.notice(e.message);}this.receiving=false;this.paused=true;this.retryAt=Date.now()+5000;this.worker.stop();this.bot.closeContainer();this.travel.cancel();}),100);this.timer.unref?.();
  }
  notice(text){this.events.push({at:Date.now(),text:String(text).slice(0,250)});this.events=this.events.slice(-12);this.manager.notice(this.worker.id,text);}
  async maintenance(name,fn,signal){this.featureErrors??={};const previous=this.featureErrors[name];if(previous?.retryAt>Date.now())return false;this.operation=name;try{await fn();delete this.featureErrors[name];return true;}catch(e){if(signal.aborted)throw e;this.featureErrors[name]={message:e.message,at:Date.now(),retryAt:Date.now()+30000};this.bot.closeContainer();this.notice(`${name}: ${e.message}。この機能だけ30秒待って再試行します`);return false;}}
