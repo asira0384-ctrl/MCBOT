@@ -11,6 +11,7 @@ class Manager{
   const bot=new BedrockBot({id,name,host:destination?.host||process.env.MC_HOST||'2b2e.org',port:integer(destination?.port||process.env.MC_PORT||19132,1,65535),version:process.env.MC_VERSION||undefined,
    inventoryMode:this.store.bot(id).inventoryMode||'auto',authDir:path.join(this.store.dir,'auth',String(id))},data=>{if(!attempt.active||this.attempts.get(id)!==attempt)return;this.auth.set(id,{...data,expires:Date.now()+(data.expires_in||900)*1000});this.onNotice(id,'Microsoft認証待ちです。/authでコードを表示してください');});
   const worker=new Worker(this,id,bot);this.workers.set(id,worker);
+  this.trace(id,`グリーター設定: ${this.greetings.target||'未設定（OFF）'}`);
   bot.on('serverMessage',text=>{if(!current())return;this.trace(id,text);});
   bot.on('diagnostic',text=>{if(current())this.trace(id,text);});
   bot.on('serverTransfer',p=>{if(!current())return;const host=String(p.server_address||'').trim(),port=Number(p.port);const n=(this.transfers.get(id)||0)+1;
@@ -26,7 +27,7 @@ class Manager{
   bot.on('error',e=>{if(!current())return;worker.stop();const message=e.message==='Connect timed out'?`サーバーへのUDP接続がタイムアウトしました (${process.env.MC_HOST||'2b2e.org'}:${process.env.MC_PORT||19132})。Microsoft認証後の通信で止まっています。`:e.message;this.notice(id,`${message} [段階: ${bot.connectionPhase}]`);});
   bot.on('end',()=>{clearTimeout(watchdog);if(!current())return;attempt.active=false;this.auth.delete(id);this.attempts.delete(id);worker.stop();worker.mode='disconnected';this.trace(id,`切断: ${bot.lastDisconnect||'切断理由のパケットはありません'}。最終受信から${bot.lastPacketAt?Math.round((Date.now()-bot.lastPacketAt)/1000):'不明'}秒`);this.notice(id,'接続が切れました。connectで再接続できます');});
   bot.on('spawn',()=>{if(!current())return;if(!bot.onlineAnnounced){bot.onlineAnnounced=true;bot.chat(require('./chat-output').automatic('オンラインになりました！'));}clearTimeout(watchdog);this.auth.delete(id);this.notice(id,`${bot.username} の接続先でspawnを受信しました。本ワールドへの到着は未確認です。messagesでサーバー案内を確認できます`);});
-  bot.on('chat',p=>{if(current())this.greetings.handle(id,p);if(!p.message?.startsWith('!')||!this.store.authorized(p,bot.players))return;
+  bot.on('chat',p=>{if(current())try{this.greetings.handle(id,p);}catch(e){this.trace(id,'グリーター送信失敗: '+e.message);}if(!p.message?.startsWith('!')||!this.store.authorized(p,bot.players))return;
    const k=`${p.xuid}:${p.message}`;const now=Date.now();if(now-(this.seen.get(k)||0)<1500)return;this.seen.set(k,now);for(const[k,t]of this.seen)if(now-t>10000)this.seen.delete(k);
    const parts=p.message.slice(1).trim().split(/\s+/);const command=parts.shift(),target=parts.shift();if(!target)return;
    this.execute(target,[command,...parts].join(' '),'game').then(result=>bot.chat(result.slice(0,220))).catch(e=>bot.chat(e.message));
@@ -47,7 +48,8 @@ class Manager{
  whisper(target,recipient,text){const helpers=require('./chat-output'),name=helpers.name(recipient),message=helpers.message(text),ids=this.targets(String(target)),workers=ids.map(id=>this.worker(id));for(const w of workers)w.bot.whisper(name,message);return `${name}へtellを送信しました（Bot ${ids.join(', ')}）`;}
  async shutdown(){if(this.shuttingDown)return;this.shuttingDown=true;clearTimeout(this.chatTimer);for(const timer of this.transferTimers.values())clearTimeout(timer);await Promise.allSettled([...this.workers.values()].map(async w=>{w.runtime?.stop();w.stop();await w.bot.logout('バイバイ！');}));this.destroy();}
  async execute(target,text,origin='discord'){const ids=this.targets(String(target));const [cmd,...args]=text.trim().split(/\s+/);if(!cmd)throw Error('コマンドを入力してください');
-  if(origin==='game'&&['connect','disconnect','clear-recovery','diagnose','say','w','tell','movement','connection','enemy','log'].includes(cmd))throw Error('この操作はDiscordから行ってください');
+  if(origin==='game'&&['connect','disconnect','clear-recovery','diagnose','say','w','tell','greeter','movement','connection','enemy','log'].includes(cmd))throw Error('この操作はDiscordから行ってください');
+  if(cmd==='greeter'){if(!args.length||args[0]==='status')return this.greetings.status();if(args.length===1&&args[0]==='test')return this.greetings.test(ids[0]);throw Error('greeter status / greeter test');}
   if(cmd==='say')return this.say(target,text.replace(/^\s*say\s+/u,''));if(cmd==='w'||cmd==='tell'){const parsed=require('./chat-output').parseTell(text);return this.whisper(target,parsed.recipient,parsed.text);}
   if(['start','scaffold','area','floor','ceiling','supply','chat','respawn','stats-reset','recover','clear-recovery','diagnose'].includes(cmd)){
    // Validate all targets before changing any persistent setting.

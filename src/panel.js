@@ -20,6 +20,7 @@ class ControlPanel{
    components.push(row(button('receive','装備・箱を受け取る',ButtonStyle.Primary,!connected),button('page:travel','移動',ButtonStyle.Primary),button('view','視点画像',ButtonStyle.Secondary,!connected||!one),button('report','状態レポート')));
    components.push(row(button('page:gear','装備設定'),button('page:combat','敵・戦闘'),button('page:mining','整地'),button('page:logs','ログ・管理者'),button('page:chat','チャット')));
   }else if(s.page==='chat'){components.push(row(button('form:say','公開チャットに送信',ButtonStyle.Primary,!connected),button('form:w','tellを送信',ButtonStyle.Primary,!connected)));
+   components.push(row(button('greeter-status','グリーター設定確認'),button('greeter-test','挨拶をテスト送信',ButtonStyle.Secondary,!connected)));
   }else if(s.page==='gear'){
    components.push(row(this.toggle(s,'gear','自動防具'),this.toggle(s,'autototem','AutoTotem'),this.toggle(s,'autoslot','AutoSlot'),this.toggle(s,'heal','回復'),button('respawn',`自動リスポーン: ${selected.every(id=>this.manager.store.bot(id).respawn)?'ON':'OFF'}`,selected.every(id=>this.manager.store.bot(id).respawn)?ButtonStyle.Success:ButtonStyle.Secondary)));
    components.push(row(button('receive','装備・箱を受け取る',ButtonStyle.Primary,!connected),button('sort','今すぐ並べる',ButtonStyle.Primary,!connected),button('recover-box','箱の回収を再試行',ButtonStyle.Secondary,!connected),button('form:heal','回復する体力を設定')));
@@ -44,6 +45,7 @@ class ControlPanel{
   const fields=selected.map(id=>{const w=this.manager.workers.get(id),b=w?.bot,r=w?.runtime?.snapshot(),p=b?.entity?.position;const status=!b?.connected?(b?.connectionPhase||'未接続'):b.dead?'死亡・リスポーン待ち':r?.waterSafety?.active?r.waterSafety.state:r?.operation?`処理中: ${r.operation}`:r?.pendingMove?'移動命令待ち':r?.movement||w.mode;
    const errors=Object.entries(r?.featureErrors||{}).map(([k,e])=>`${k}: ${e.message}`).join('\n');const text=[status,p?`座標: ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)} / ${['現世','ネザー','エンド'][b.dimensionId]}`:'',`体力: ${b?.health===null||b?.health===undefined?'未受信':b.health/2+'♥'} / 手: ${r?.offhand||'なし'}`,errors||r?.lastError||r?.lastEvent?.text||''].filter(Boolean).join('\n');return {name:`Bot${id} / ${this.manager.names.get(id)}`,value:text.slice(0,480),inline:false};});
   let description=s.page==='gear'?'受け取り後は剣1・ツルハシ2・ガップル3へ並べます。':s.page==='travel'?'方法と世界を選び、座標入力を押してください。ネザー座標はネザー内の値です。':s.page==='combat'?'登録した敵だけを攻撃します。ボタンは機能の設定です。':s.page==='mining'?'床Y以下は残します。開始前に範囲・床・装備を設定してください。':'操作するBotを選んでボタンを押してください。';
+  if(s.page==='chat')description=this.manager.greetings?.status()||'公開チャットとtellを送信できます。';
   if(s.result)description+='\n'+s.result.slice(0,600);
   return {content:'',embeds:[{title:`Bot管理 / ${pages[s.page]} / v${require('../package.json').version}`,description,fields,color:0x5865f2}],components,allowedMentions:{parse:[]}};
  }
@@ -83,7 +85,7 @@ class ControlPanel{
    else if(parts[0]==='toggle'){const key=parts[1];if(!['gear','autototem','autoslot','heal','killaura','anticrystal','autolog'].includes(key))throw Error('設定が不正です');const on=!this.settings(s).every(c=>c[key]);s.result=await this.manager.execute(s.target,`${key} ${on?'on':'off'}`);}
    else if(parts[0]==='respawn')s.result=await this.manager.execute(s.target,`respawn ${this.ids(s).every(id=>this.manager.store.bot(id).respawn)?'off':'on'}`);
    else if(parts[0]==='live')s.result=await this.manager.execute(s.target,`log ${this.manager.store.data.liveLog?'off':'on'}`);
-   else if(parts[0]!=='refresh'){const cmd={connect:'connect',disconnect:'disconnect',stop:'stop',receive:'autoslot receive',sort:'autoslot now','recover-box':'autoslot recover',start:'start','scaffold-receive':'scaffold receive',recover:'recover',escape:'escape'}[parts[0]];if(!cmd)throw Error('操作がありません');s.result=await this.manager.execute(s.target,cmd);}
+   else if(parts[0]!=='refresh'){const cmd={connect:'connect',disconnect:'disconnect',stop:'stop',receive:'autoslot receive',sort:'autoslot now','recover-box':'autoslot recover',start:'start','scaffold-receive':'scaffold receive',recover:'recover',escape:'escape','greeter-status':'greeter status','greeter-test':'greeter test'}[parts[0]];if(!cmd)throw Error('操作がありません');s.result=await this.manager.execute(s.target,cmd);}
    await i.editReply(this.render(s));
   }catch(e){if(i.deferred||i.replied){if(modal||['auth','view','report','messages','enemy-list','admin-list','stats'].includes(parts[0]))await i.editReply({content:e.message.slice(0,1900),allowedMentions:{parse:[]}});else{s.result='操作できません: '+e.message;await i.editReply(this.render(s));}}else await i.reply({content:e.message.slice(0,1900),flags:MessageFlags.Ephemeral});}
   return true;
