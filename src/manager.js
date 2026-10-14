@@ -9,7 +9,7 @@ class Manager{
  async connect(id,destination){if(this.workers.has(id))return '接続済み・認証中です。statusで現在の段階を確認できます';const name=this.names.get(id);if(!name)throw Error('番号が未登録です');
   if(!destination)this.transfers.delete(id);this.auth.delete(id);const attempt={active:true};this.attempts.set(id,attempt);
   const bot=new BedrockBot({id,name,host:destination?.host||process.env.MC_HOST||'2b2e.org',port:integer(destination?.port||process.env.MC_PORT||19132,1,65535),version:process.env.MC_VERSION||undefined,
-   authDir:path.join(this.store.dir,'auth',String(id))},data=>{if(!attempt.active||this.attempts.get(id)!==attempt)return;this.auth.set(id,{...data,expires:Date.now()+(data.expires_in||900)*1000});this.onNotice(id,'Microsoft認証待ちです。/authでコードを表示してください');});
+   inventoryMode:this.store.bot(id).inventoryMode||'auto',authDir:path.join(this.store.dir,'auth',String(id))},data=>{if(!attempt.active||this.attempts.get(id)!==attempt)return;this.auth.set(id,{...data,expires:Date.now()+(data.expires_in||900)*1000});this.onNotice(id,'Microsoft認証待ちです。/authでコードを表示してください');});
   const worker=new Worker(this,id,bot);this.workers.set(id,worker);
   bot.on('serverMessage',text=>{if(!current())return;this.trace(id,text);});
   bot.on('diagnostic',text=>{if(current())this.trace(id,text);});
@@ -74,6 +74,8 @@ class Manager{
     case 'goto':{if(args.length!==5)throw Error('goto walk|dig|fly overworld|nether x y z');const worker=this.worker(id);worker.runtime.requestMove(...args);results.push(`移動: ${args.join(' ')}`);break;}
     case 'elytrafly':{const worker=this.worker(id),r=worker.runtime;if(args[0]==='off'){r.travel.cancel();results.push('ElytraFlyを終了・着地処理');break;}if(args.length!==4)throw Error('elytrafly overworld|nether x y z / elytrafly off');r.requestMove('fly',...args);results.push(`ElytraFly: ${args.join(' ')}`);break;}
     case 'flyspeed':{const config=runtimeConfig(),h=Number(args[0]),v=Number(args[1]);if(!Number.isFinite(h)||!Number.isFinite(v)||h<=0||h>3||v<=0||v>1.5)throw Error('flyspeed 1.5 0.7（ブロック/tick）');config.flyHorizontal=h;config.flyVertical=v;results.push(`飛行速度 横${h} / 上下${v} ブロック/tick`);break;}
+    case 'inventorymode':{if(!['auto','stack','legacy'].includes(args[0]))throw Error('inventorymode auto / stack / legacy');const worker=this.worker(id);worker.bot.inventoryMode=args[0];state.inventoryMode=args[0];worker.runtime.featureErrors={};worker.runtime.retryAt=0;worker.runtime.dirty=true;results.push(`インベントリ方式: ${args[0]} / サーバー指定: ${worker.bot.serverAuthoritativeInventory}`);break;}
+    case 'escape':{const r=this.worker(id).runtime;r.safety.arm();results.push('水中避難を開始。受信済み地形を確認します');break;}
     case 'runtime':results.push(JSON.stringify(this.worker(id).runtime.snapshot()));break;
     case 'messages':results.push((this.logs.get(id)||[]).slice(-12).join('\n').slice(-1700)||'受信メッセージなし');break;
     case 'say':{const text=args.join(' ');if(!text||text.length>220)throw Error('say のあとに送信文を220文字以内で指定');this.worker(id).bot.chat(text);results.push(`Bot${id}から送信しました`);break;}

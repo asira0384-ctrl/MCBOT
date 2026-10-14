@@ -5,7 +5,7 @@ class Worker {
   bot.on('inventory',(old,item)=>{if(item?.network_id&&(!old||item.network_id!==old.network_id||item.count>old.count)){
    this.lastReceive=Date.now();if(this.receiving){const name=bot.name(item);if(bot.registry?.blocksByName[name]){this.state.scaffold=name;this.receivedBlock=true;manager.store.save();}}
   }});
-  bot.on('health',()=>{if(bot.health!==null&&bot.health<12&&bot.health>0&&this.mode!=='healing'){bot.halt();}});
+  bot.on('health',()=>{if(bot.health!==null&&bot.health<12&&bot.health>0&&this.running&&this.mode!=='healing'){bot.halt();}});
   bot.on('forcedMove',()=>{if(!this.running)return;this.corrections=this.corrections.filter(t=>Date.now()-t<10000);this.corrections.push(Date.now());if(this.corrections.length>=5){this.stop();this.notice('ロールバックが続いたので停止しました');}});
   bot.on('death',()=>{this.mode='dead';this.running=false;this.notice('死亡しました。装備の補給待ちです');});
   bot.on('respawnReady',()=>{if(this.state.respawn){try{bot.respawn();this.mode='waiting';this.missing='死亡後の装備';}catch(e){this.notice(e.message);}}});
@@ -117,6 +117,6 @@ class Worker {
    await this.recoverChest(cp,signal);this.state.supplyPending=null;this.manager.store.save();this.mode='stopped';return '補給用の箱を回収しました。startで再開できます';
   }finally{this.busy=false;this.bot.closeContainer();}}
  destroy(){this.runtime?.destroy();this.stop();clearInterval(this.timer);this.bot.disconnect();}
- status(){return {version:require('../package.json').version,number:this.id,name:this.bot.username,mode:this.mode,connectionPhase:this.bot.connectionPhase,endpoint:{host:this.bot.config?.host,port:this.bot.config?.port},terrainReady:this.bot.terrainReady,passivePhysics:this.bot.passivePhysics,naturalIdleFall:this.bot.naturalIdleFall,serverPosition:this.bot.serverPosition,positionCorrections:this.bot.positionCorrections||0,packets:this.bot.packetCounts,lastDisconnect:this.bot.lastDisconnect,position:this.bot.entity?.position,health:this.bot.health===null?null:this.bot.health/2,missing:this.missing,scaffold:this.state.scaffold,stats:this.state.stats,session:this.state.session,ownedScaffolds:Object.values(this.state.owned).filter(o=>o.kind==='scaffold').length};}
+ status(){return {version:require('../package.json').version,number:this.id,name:this.bot.username,mode:this.mode,connectionPhase:this.bot.connectionPhase,endpoint:{host:this.bot.config?.host,port:this.bot.config?.port},terrainReady:this.bot.terrainReady,inventoryMode:this.bot.inventoryMode,serverAuthoritativeInventory:this.bot.serverAuthoritativeInventory,inventoryOpenState:this.bot.inventoryOpenState,lastInventoryOperation:this.bot.lastStackResponse,waterSafety:this.runtime?.safety?.snapshot(),passivePhysics:this.bot.passivePhysics,naturalIdleFall:this.bot.naturalIdleFall,serverPosition:this.bot.serverPosition,positionCorrections:this.bot.positionCorrections||0,packets:this.bot.packetCounts,lastDisconnect:this.bot.lastDisconnect,position:this.bot.entity?.position,health:this.bot.health===null?null:this.bot.health/2,missing:this.missing,scaffold:this.state.scaffold,stats:this.state.stats,session:this.state.session,ownedScaffolds:Object.values(this.state.owned).filter(o=>o.kind==='scaffold').length};}
 }
 module.exports={Worker};

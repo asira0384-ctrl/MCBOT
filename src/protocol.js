@@ -19,13 +19,16 @@ function adaptInput(bot,p) {
  if(bot.pendingTeleport){flags.handled_teleport=true;bot.pendingTeleport=false;}
  if(bot.pendingServerData){flags.received_server_data=true;bot.pendingServerData=false;}
  if(bot.pendingGlide){flags[bot.pendingGlide==='start'?'start_gliding':'stop_gliding']=true;bot.pendingGlide=null;}
- if(bot.usingItem) flags.start_using_item=true;
+ if(bot.usingItem&&!bot.lastUsingItem)flags.start_using_item=true;bot.lastUsingItem=!!bot.usingItem;
  const jumping=!!bot.controlState.jump;flags.start_jumping=jumping&&!bot.lastJump;flags.jump_pressed_raw=jumping&&!bot.lastJump;flags.jump_current_raw=jumping;bot.lastJump=jumping;
+ flags.start_sprinting=!!bot.controlState.sprint&&!bot.lastSprint;flags.stop_sprinting=!bot.controlState.sprint&&bot.lastSprint;bot.lastSprint=!!bot.controlState.sprint;
  flags.start_sneaking=!!bot.controlState.sneak&&!bot.lastSneak; flags.stop_sneaking=!bot.controlState.sneak&&bot.lastSneak;bot.lastSneak=!!bot.controlState.sneak;
  const arrayFlags=bot.registry.protocol.types.packet_player_auth_input?.[1]?.find(f=>f.name==='input_data')?.type?.[0]==='array';
  const deg=180/Math.PI;
- return {...p,pitch:(p.pitch||0)*deg,yaw:(p.yaw||0)*deg,head_yaw:(p.head_yaw||0)*deg,tick:p.tick??BigInt(bot.tick||0),input_data:arrayFlags?Object.keys(flags).filter(k=>flags[k]):flags,input_mode:'mouse',play_mode:'normal',interaction_model:'crosshair',
-  interact_rotation:{x:(p.pitch||0)*deg,y:(p.yaw||0)*deg},camera_orientation:{x:0,y:0,z:1},raw_move_vector:p.move_vector||{x:0,y:0}};
+ const vector={x:-(p.move_vector?.x||0),y:-(p.move_vector?.y||0)};
+ const yaw=p.yaw||0,pitch=p.pitch||0;const camera={x:-Math.sin(yaw)*Math.cos(pitch),y:-Math.sin(pitch),z:Math.cos(yaw)*Math.cos(pitch)};
+ return {...p,move_vector:vector,analogue_move_vector:vector,pitch:(p.pitch||0)*deg,yaw:(p.yaw||0)*deg,head_yaw:(p.head_yaw||0)*deg,tick:p.tick??BigInt(bot.tick||0),input_data:arrayFlags?Object.keys(flags).filter(k=>flags[k]):flags,input_mode:'mouse',play_mode:'normal',interaction_model:'crosshair',
+  interact_rotation:{x:(p.pitch||0)*deg,y:(p.yaw||0)*deg},camera_orientation:camera,raw_move_vector:vector};
 }
 function legacyMove(bot,p){return {runtime_id:BigInt(bot._runtimeEntityId),position:p.position,pitch:p.pitch,yaw:p.yaw,head_yaw:p.head_yaw,mode:'normal',on_ground:!!bot.entity?.onGround,ridden_runtime_id:0n,tick:p.tick};}
 function attack(bot,actor){return {transaction:{legacy:{legacy_request_id:0},transaction_type:'item_use_on_entity',actions:[],transaction_data:{entity_runtime_id:BigInt(actor.id),action_type:'attack',hotbar_slot:bot.quickBarSlot,held_item:bot.items[bot.quickBarSlot]||emptyItem(),player_pos:{x:bot.entity.position.x,y:bot.entity.position.y+1.62,z:bot.entity.position.z},click_pos:{x:0,y:0,z:0}}}};}

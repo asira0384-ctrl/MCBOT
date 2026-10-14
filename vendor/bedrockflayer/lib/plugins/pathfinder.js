@@ -307,6 +307,10 @@ function pathfinderPlugin(bot) {
                         const newPath = astar(bot, bot.entity.position, goal, maxNodes)
                         if (newPath && newPath.length > 0) {
                             path = newPath
+                            if (path.length === 1) {
+                                pathIndex = path.length
+                                return moveToNext()
+                            }
                             const currentPos = bot.entity.position
                             let closestIdx = 1
                             let closestDist = Infinity

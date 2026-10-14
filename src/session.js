@@ -29,7 +29,7 @@ function installSession(bot){
  bot.client.on('change_dimension',p=>{
   if(!bot.entity||bot.ended)return;
   bot.halt();bot.worldGeneration++;bot.initialDataAcknowledged=false;bot.terrainReady=false;bot.pendingDimensionAck=true;
-  bot.dimensionId=typeof p.dimension==='number'?p.dimension:({overworld:0,the_nether:1,the_end:2}[p.dimension]??0);
+  bot.dimensionId=typeof p.dimension==='number'?p.dimension:({overworld:0,nether:1,end:2,the_nether:1,the_end:2}[p.dimension]??0);
   bot.worldMirror.reset();
   if(p.position){bot.serverPosition={...p.position};bot.entity.position.x=p.position.x;bot.entity.position.y=p.position.y-1.62;bot.entity.position.z=p.position.z;bot._lastSentPos=bot.entity.position.clone();bot.position=bot.entity.position;}
   bot.entity.velocity.x=bot.entity.velocity.y=bot.entity.velocity.z=0;

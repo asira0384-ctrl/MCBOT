@@ -32,7 +32,7 @@ class World {
   if(override!==undefined){const data=this.registry.blocksByRuntimeId[override];if(!data)return this.unknown(p);b={...data,position:p,stateId:override};}
   else{const cx=p.x>>4,cz=p.z>>4;if(!this.known.has(`${cx},${p.y>>4},${cz}`))return null;const c=this.columns.get(`${cx},${cz}`);if(!c)return null;
    const native=c.getBlock(new Vec3(p.x&15,p.y,p.z&15));if(!native||!native.name)return this.unknown(p);b={name:native.name,type:native.type,hardness:native.hardness,material:native.material,diggable:native.diggable,boundingBox:native.boundingBox,position:p,
-    stateId:native.runtimeId??(this.hashed?native.getHash():native.stateId)};
+    properties:native.getProperties?.()||{},stateId:native.runtimeId??(this.hashed?native.getHash():native.stateId)};
   }
   b.isAir=['air','cave_air','void_air'].includes(b.name);b.isLiquid=/^(flowing_)?(water|lava)$/.test(b.name);b.solid=b.boundingBox==='block'&&!b.isAir;b.isClimbable=['ladder','vine','scaffolding'].includes(b.name);return b;
  }

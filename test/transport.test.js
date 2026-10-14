@@ -16,4 +16,15 @@ test('Native RakNet real UDP discovery and Bedrock handshake match the advertise
  const ack=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('teleport response never reached local server')),3000);peer.once('player_action',p=>{clearTimeout(timer);resolve(p);});});
  peer.write('move_player',{runtime_id:bot._runtimeEntityId,position:{x:128.5,y:2.13,z:128.5},pitch:0,yaw:0,head_yaw:0,mode:'teleport',on_ground:true,ridden_runtime_id:0n,teleport:{cause:'command',source_entity_type:'player'},tick:10n});
  const received=await ack;assert.equal(received.action,'handled_teleport');assert.equal(received.runtime_entity_id,bot._runtimeEntityId);assert.equal(bot.entity.position.x,128.5);assert.equal(bot.sessionResponses.handled_teleport,1);assert.equal(errors.length,0);
+ // Use the actual adapter and equipment module over the encrypted connection.
+ // The local server acknowledges opening the inventory and the exact offhand
+ // swap; the bot must wait for both responses before reporting success.
+ const fs=require('node:fs'),os=require('node:os');const dir=fs.mkdtempSync(os.tmpdir()+'/asira-wire-');const original=bedrock.createClient;let inventoryBot;
+ bedrock.createClient=()=>client;try{inventoryBot=new(require('../src/bedrock').BedrockBot)({id:1,name:'LocalTransportTest',host:'127.0.0.1',port,authDir:dir},()=>{});}finally{bedrock.createClient=original;}
+ t.after(()=>{inventoryBot.disconnect();fs.rmSync(dir,{recursive:true,force:true});});inventoryBot.on('error',e=>errors.push(e));
+ client.startGameData={runtime_entity_id:9223372036854775807n,player_position:{x:0,y:65.62,z:0},rotation:{x:0,y:0},dimension:0,server_authoritative_inventory:true};client.emit('start_game',client.startGameData);inventoryBot.physicsEnabled=false;client.emit('spawn');
+ const raw={...require('../src/protocol').emptyItem(),network_id:inventoryBot.registry.itemsByName.totem_of_undying.id,count:1,has_stack_id:true,stack_id:15};inventoryBot.items[12]=raw;
+ let opened=false,requested=false;peer.on('interact',p=>{assert.equal(p.target_entity_id,0n);opened=true;peer.write('container_open',{window_id:'inventory',window_type:'inventory',coordinates:{x:0,y:64,z:0},runtime_entity_id:0n});});
+ peer.on('item_stack_request',p=>{assert(opened);requested=true;const req=p.requests[0],a=req.actions[0];assert.equal(a.source.stack_id,15);assert.equal(a.destination.slot_type.container_id,'offhand');peer.write('item_stack_response',{responses:[require('./helpers/stack-response').stackResponse(inventoryBot,req)]});});
+ await require('../src/equipment').wear(inventoryBot,{armor:false,totem:true});assert(requested);assert.equal(inventoryBot.name(inventoryBot.offhand[0]),'totem_of_undying');assert.equal(inventoryBot.items[12],null);assert.equal(inventoryBot.inventoryOpenState.acknowledged,true);assert.equal(errors.length,0);
 });

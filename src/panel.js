@@ -7,6 +7,7 @@ const row=(...components)=>new ActionRowBuilder().addComponents(...components);
 function button(id,label,style=ButtonStyle.Secondary,disabled=false){return new ButtonBuilder().setCustomId(CID+id).setLabel(label.slice(0,80)).setStyle(style).setDisabled(disabled);}
 class ControlPanel{
  constructor(manager,owner){this.manager=manager;this.owner=owner;this.sessions=new Map();}
+ entryMessage(){return {content:`Minecraft Bot v${require('../package.json').version} 起動済み。下のボタンで管理画面を開けます。`,components:[row(button('open','操作パネルを開く',ButtonStyle.Primary))],allowedMentions:{parse:[]}};}
  ids(s){return this.manager.targets(s.target);}
  settings(s){return this.ids(s).map(id=>Object.assign({},defaults,this.manager.store.bot(id).runtime));}
  toggle(s,key,label){const all=this.settings(s).every(c=>c[key]),any=this.settings(s).some(c=>c[key]);return button('toggle:'+key,`${label}: ${all?'ON':any?'混在':'OFF'}`,all?ButtonStyle.Success:ButtonStyle.Secondary);}
@@ -21,6 +22,7 @@ class ControlPanel{
   }else if(s.page==='gear'){
    components.push(row(this.toggle(s,'gear','自動防具'),this.toggle(s,'autototem','AutoTotem'),this.toggle(s,'autoslot','AutoSlot'),this.toggle(s,'heal','回復'),button('respawn',`自動リスポーン: ${selected.every(id=>this.manager.store.bot(id).respawn)?'ON':'OFF'}`,selected.every(id=>this.manager.store.bot(id).respawn)?ButtonStyle.Success:ButtonStyle.Secondary)));
    components.push(row(button('receive','装備・箱を受け取る',ButtonStyle.Primary,!connected),button('sort','今すぐ並べる',ButtonStyle.Primary,!connected),button('recover-box','箱の回収を再試行',ButtonStyle.Secondary,!connected),button('form:heal','回復する体力を設定')));
+   const mode=selected.length===1?this.manager.workers.get(selected[0])?.bot.inventoryMode||'auto':'auto';components.push(row(new StringSelectMenuBuilder().setCustomId(CID+'inventory-mode').setPlaceholder('インベントリ通信方式').addOptions([{label:'サーバー指定で自動',value:'auto',default:mode==='auto'},{label:'スロットの成功応答を使う',value:'stack',default:mode==='stack'},{label:'従来方式・実スロット更新で確認',value:'legacy',default:mode==='legacy'}])));
   }else if(s.page==='combat'){
    components.push(row(this.toggle(s,'killaura','指定敵を攻撃'),this.toggle(s,'anticrystal','AntiCrystal'),this.toggle(s,'autolog','AutoLog')));
    components.push(row(button('form:enemy-add','敵を登録',ButtonStyle.Primary),button('form:enemy-remove','敵を解除'),button('enemy-list','敵一覧'),button('form:autolog','切断する体力')));
@@ -28,7 +30,7 @@ class ControlPanel{
   }else if(s.page==='travel'){
    components.push(row(new StringSelectMenuBuilder().setCustomId(CID+'mode').setPlaceholder('移動方法').addOptions([{label:'歩く',value:'walk',default:s.mode==='walk'},{label:'邪魔なブロックを掘って歩く',value:'dig',default:s.mode==='dig'},{label:'エリトラで飛ぶ',value:'fly',default:s.mode==='fly'}])));
    components.push(row(new StringSelectMenuBuilder().setCustomId(CID+'dimension').setPlaceholder('移動先の世界').addOptions([{label:'現世',value:'overworld',default:s.dimension==='overworld'},{label:'ネザー（入口を探す）',value:'nether',default:s.dimension==='nether'}])));
-   components.push(row(button('form:move','座標を入力して移動',ButtonStyle.Primary,!connected),button('form:speed','飛行速度'),button('stop','停止',ButtonStyle.Danger)));
+   components.push(row(button('form:move','座標を入力して移動',ButtonStyle.Primary,!connected),button('form:speed','飛行速度'),button('escape','水から避難',ButtonStyle.Secondary,!connected),button('stop','停止',ButtonStyle.Danger)));
   }else if(s.page==='mining'){
    components.push(row(button('form:area','範囲と床を設定',ButtonStyle.Primary),button('start','整地を開始',ButtonStyle.Success,!connected),button('stop','停止',ButtonStyle.Danger),button('form:scaffold','足場を指定')));
    components.push(row(button('scaffold-receive','足場を受け取る',ButtonStyle.Secondary,!connected),button('recover','EC補給の回収',ButtonStyle.Secondary,!connected),button('stats','採掘数')));
@@ -38,7 +40,7 @@ class ControlPanel{
    components.push(row(button('form:admin-add','ゲーム内管理者を登録',ButtonStyle.Primary),button('form:admin-remove','管理者を解除'),button('admin-list','管理者一覧')));
   }
   if(s.page!=='home')components.push(row(button('page:home','戻る'),button('refresh','更新')));
-  const fields=selected.map(id=>{const w=this.manager.workers.get(id),b=w?.bot,r=w?.runtime?.snapshot(),p=b?.entity?.position;const status=!b?.connected?(b?.connectionPhase||'未接続'):b.dead?'死亡・リスポーン待ち':r?.operation?`処理中: ${r.operation}`:r?.pendingMove?'移動命令待ち':r?.movement||w.mode;
+  const fields=selected.map(id=>{const w=this.manager.workers.get(id),b=w?.bot,r=w?.runtime?.snapshot(),p=b?.entity?.position;const status=!b?.connected?(b?.connectionPhase||'未接続'):b.dead?'死亡・リスポーン待ち':r?.waterSafety?.active?r.waterSafety.state:r?.operation?`処理中: ${r.operation}`:r?.pendingMove?'移動命令待ち':r?.movement||w.mode;
    const errors=Object.entries(r?.featureErrors||{}).map(([k,e])=>`${k}: ${e.message}`).join('\n');const text=[status,p?`座標: ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)} / ${['現世','ネザー','エンド'][b.dimensionId]}`:'',`体力: ${b?.health===null||b?.health===undefined?'未受信':b.health/2+'♥'} / 手: ${r?.offhand||'なし'}`,errors||r?.lastError||r?.lastEvent?.text||''].filter(Boolean).join('\n');return {name:`Bot${id} / ${this.manager.names.get(id)}`,value:text.slice(0,480),inline:false};});
   let description=s.page==='gear'?'受け取り後は剣1・ツルハシ2・ガップル3へ並べます。':s.page==='travel'?'方法と世界を選び、座標入力を押してください。ネザー座標はネザー内の値です。':s.page==='combat'?'登録した敵だけを攻撃します。ボタンは機能の設定です。':s.page==='mining'?'床Y以下は残します。開始前に範囲・床・装備を設定してください。':'操作するBotを選んでボタンを押してください。';
   if(s.result)description+='\n'+s.result.slice(0,600);
@@ -54,8 +56,9 @@ class ControlPanel{
   area:['整地の範囲と床',[['x1','始点X',''],['z1','始点Z',''],['x2','終点X',''],['z2','終点Z',''],['floor','残す床のY','64']]],scaffold:['足場を指定',[['block','ブロック名（例: cobblestone）','cobblestone']]]};
   const def=definitions[form];if(!def)throw Error('入力画面がありません');return new ModalBuilder().setCustomId(`${CID}modal:${form}:${id}`).setTitle(def[0]).addComponents(def[1].map(([key,label,value,required=true])=>row(new TextInputBuilder().setCustomId(key).setLabel(label).setStyle(TextInputStyle.Short).setRequired(required).setMaxLength(80).setValue(String(value)))));
  }
- diagnostic(s){return {version:require('../package.json').version,at:new Date().toISOString(),bots:this.ids(s).map(id=>{const w=this.manager.workers.get(id),b=w?.bot,p=b?.entity?.position;return {number:id,name:this.manager.names.get(id),mode:w?.mode,connectionPhase:b?.connectionPhase,runtimeEntityId:b?._runtimeEntityId?.toString(),position:p,serverPosition:b?.serverPosition,health:b?.health,dead:b?.dead,terrainReady:b?.terrainReady,feet:p?b.blockAt(p)?.name:null,below:p?b.blockAt(p.offset(0,-.1,0))?.name:null,knownSections:b?.worldMirror?.known.size,packets:b?.packetCounts,lastMove:b?.lastMovePacket,runtime:w?.runtime?.snapshot(),inventoryOpenRequests:b?.inventoryOpenRequests,pendingStack:b?.pendingStackRequest,lastStackResponse:b?.lastStackResponse,inventory:b?.list().map(i=>({slot:i.slot,name:i.name,count:i.count,networkId:i.raw.network_id,stackId:i.raw.stack_id})),serverMessages:(this.manager.logs.get(id)||[]).slice(-12)};})};}
+ diagnostic(s){return {version:require('../package.json').version,at:new Date().toISOString(),bots:this.ids(s).map(id=>{const w=this.manager.workers.get(id),b=w?.bot,p=b?.entity?.position;return {number:id,name:this.manager.names.get(id),mode:w?.mode,connectionPhase:b?.connectionPhase,runtimeEntityId:b?._runtimeEntityId?.toString(),position:p,serverPosition:b?.serverPosition,health:b?.health,dead:b?.dead,terrainReady:b?.terrainReady,feet:p?b.blockAt(p)?.name:null,below:p?b.blockAt(p.offset(0,-.1,0))?.name:null,knownSections:b?.worldMirror?.known.size,packets:b?.packetCounts,lastMove:b?.lastMovePacket,runtime:w?.runtime?.snapshot(),inventoryMode:b?.inventoryMode,serverAuthoritativeInventory:b?.serverAuthoritativeInventory,inventoryOpenState:b?.inventoryOpenState,inventoryOpenRequests:b?.inventoryOpenRequests,pendingStack:b?.pendingStackRequest,lastStackResponse:b?.lastStackResponse,inventory:b?.list().map(i=>({slot:i.slot,name:i.name,count:i.count,networkId:i.raw.network_id,stackId:i.raw.stack_id})),serverMessages:(this.manager.logs.get(id)||[]).slice(-12)};})};}
  async handle(i){if(!i.customId?.startsWith(CID))return false;if(i.user.id!==this.owner){await i.reply({content:'このBotの管理者だけ操作できます。',flags:MessageFlags.Ephemeral});return true;}
+  if(i.customId===CID+'open'){await i.deferReply({flags:MessageFlags.Ephemeral});await this.create(i);return true;}
   const modal=i.isModalSubmit?.(),parts=i.customId.slice(CID.length).split(':'),id=modal?parts[2]:i.message?.id,s=this.sessions.get(id);if(!s){await i.reply({content:'/panel をもう一度開いてください。',flags:MessageFlags.Ephemeral});return true;}s.updatedAt=Date.now();
   try{
    if(parts[0]==='form'){await i.showModal(this.modal(id,s,parts[1]));return true;}
@@ -73,11 +76,12 @@ class ControlPanel{
    else if(parts[0]==='page'){if(!pages[parts[1]])throw Error('画面がありません');s.page=parts[1];}
    else if(parts[0]==='mode'){if(!['walk','dig','fly'].includes(i.values[0]))throw Error('移動方法が不正です');s.mode=i.values[0];}
    else if(parts[0]==='dimension'){if(!['overworld','nether'].includes(i.values[0]))throw Error('世界が不正です');s.dimension=i.values[0];}
+   else if(parts[0]==='inventory-mode')s.result=await this.manager.execute(s.target,`inventorymode ${i.values[0]}`);
    else if(parts[0]==='channel'){const channel=await i.guild.channels.fetch(i.values[0]);if(!channel?.isTextBased())throw Error('テキストチャンネルを選んでください');this.manager.store.data.logChannel=channel.id;this.manager.store.data.liveMessageId=null;this.manager.store.save();s.result='ログの通知先を設定しました';}
    else if(parts[0]==='toggle'){const key=parts[1];if(!['gear','autototem','autoslot','heal','killaura','anticrystal','autolog'].includes(key))throw Error('設定が不正です');const on=!this.settings(s).every(c=>c[key]);s.result=await this.manager.execute(s.target,`${key} ${on?'on':'off'}`);}
    else if(parts[0]==='respawn')s.result=await this.manager.execute(s.target,`respawn ${this.ids(s).every(id=>this.manager.store.bot(id).respawn)?'off':'on'}`);
    else if(parts[0]==='live')s.result=await this.manager.execute(s.target,`log ${this.manager.store.data.liveLog?'off':'on'}`);
-   else if(parts[0]!=='refresh'){const cmd={connect:'connect',disconnect:'disconnect',stop:'stop',receive:'autoslot receive',sort:'autoslot now','recover-box':'autoslot recover',start:'start','scaffold-receive':'scaffold receive',recover:'recover'}[parts[0]];if(!cmd)throw Error('操作がありません');s.result=await this.manager.execute(s.target,cmd);}
+   else if(parts[0]!=='refresh'){const cmd={connect:'connect',disconnect:'disconnect',stop:'stop',receive:'autoslot receive',sort:'autoslot now','recover-box':'autoslot recover',start:'start','scaffold-receive':'scaffold receive',recover:'recover',escape:'escape'}[parts[0]];if(!cmd)throw Error('操作がありません');s.result=await this.manager.execute(s.target,cmd);}
    await i.editReply(this.render(s));
   }catch(e){if(i.deferred||i.replied){if(modal||['auth','view','report','messages','enemy-list','admin-list','stats'].includes(parts[0]))await i.editReply({content:e.message.slice(0,1900),allowedMentions:{parse:[]}});else{s.result='操作できません: '+e.message;await i.editReply(this.render(s));}}else await i.reply({content:e.message.slice(0,1900),flags:MessageFlags.Ephemeral});}
   return true;

@@ -44,6 +44,13 @@ function physicsPlugin(bot) {
         _stopPhysicsLoop(bot)
     })
 
+    // Respect authoritative knockback and currents for our own actor.
+    bot.client.on('set_entity_motion', packet => {
+        if (String(packet.runtime_entity_id) === String(bot._runtimeEntityId) && packet.velocity && bot.entity) {
+            bot.entity.velocity = new Vec3(packet.velocity.x, packet.velocity.y, packet.velocity.z)
+        }
+    })
+
     // ---- Handle server position corrections ----
     bot.client.on('correct_player_move_prediction', (packet) => {
         if (packet.position && packet.position.x !== undefined && bot.entity) {
@@ -97,7 +104,8 @@ function physicsPlugin(bot) {
 
 function _simulateTick(bot) {
     if (!bot.entity) return
-    if (bot.motion?.step()) {
+    const escapingWater = bot.safety?.update();
+    if (!escapingWater && bot.motion?.step()) {
         bot.position = bot.entity.position.clone()
         _sendPositionPacket(bot, 0, 0); bot.tick++; bot.emit('physicsTick'); return
     }
@@ -193,9 +201,10 @@ function _simulateTick(bot) {
     }
 
     // --- Apply gravity ---
-    if (!entity.onGround && !onClimbable) {
+    if (!onClimbable) {
         const gravity = inWater ? C.WATER_GRAVITY : C.GRAVITY
-        entity.velocity.y -= gravity
+        if (!entity.onGround) entity.velocity.y -= gravity
+        else if (entity.velocity.y <= 0) entity.velocity.y = -gravity
     }
 
     // Clamp terminal velocity

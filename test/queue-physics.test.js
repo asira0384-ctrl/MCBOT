@@ -9,7 +9,7 @@ test('stopped controls allow natural falling; own corrections sync and foreign p
  assert(bot.entity.position.y<68.38);assert.equal(sent.length,20);assert(sent.at(-1).delta.y<0);assert.equal(bot.entity.position.x,128);assert.equal(sent.at(-1).move_vector.x,0);assert.equal(sent.at(-1).move_vector.y,0);
  bot.client.emit('move_player',{runtime_id:99n,mode:'teleport',position:{x:9,y:9,z:9}});assert.equal(bot.entity.position.x,128);
  bot.client.emit('move_player',{runtime_id:7n,mode:'normal',position:{x:128,y:70,z:128}});assert.equal(forced,0);assert.equal(bot.entity.position.y,70-1.62);
- bot.client.emit('move_player',{runtime_id:7n,mode:'reset',position:{x:128,y:72,z:128},on_ground:true});assert.equal(forced,1);t.mock.timers.tick(50);assert.equal(sent.at(-1).delta.y,0);assert.equal(sent.at(-1).position.y,72);
+ bot.client.emit('move_player',{runtime_id:7n,mode:'reset',position:{x:128,y:72,z:128},on_ground:true});assert.equal(forced,1);t.mock.timers.tick(50);assert(Math.abs(sent.at(-1).delta.y+.08)<1e-6);assert(Math.abs(sent.at(-1).position.y-71.92)<1e-6);
  bot.client.emit('move_player',{runtime_id:7n,mode:2,position:{x:128,y:73,z:128}});assert.equal(forced,2);assert.equal(bot.pendingTeleport,true);
  bot.registry={protocol:{types:{}}};const first=adaptInput(bot,{input_data:0n});assert.equal(first.input_data.handled_teleport,true);assert.equal(adaptInput(bot,{input_data:0n}).input_data.handled_teleport,undefined);bot.emit('end');
 });
