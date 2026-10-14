@@ -8,3 +8,11 @@ for(const name of ['glass','ice'])test(`real ${name} blocks support the player e
 test('bottom slab uses its actual half-height collision shape',t=>{const {b}=world(t,'smooth_stone_slab');for(let i=0;i<80;i++)t.mock.timers.tick(50);assert.equal(b.entity.position.y,64.5);});
 test('small floor rounding is repaired while deep penetration is held instead of repeated sinking',t=>{const {b}=world(t);b.entity.position.y=64.94;assert.equal(guardPenetration(b),false);assert.equal(b.entity.position.y,65);b.entity.position.y=64.4;assert.equal(guardPenetration(b),true);const y=b.entity.position.y;for(let i=0;i<20;i++)t.mock.timers.tick(50);assert.equal(b.entity.position.y,y);assert.equal(b.collisionState.held,true);});
 test('after standing on a real floor a missing section cannot turn into a fall through air',t=>{const {b}=world(t);t.mock.timers.tick(4000);assert.equal(b.entity.position.y,65);assert(b.terrainEstablished);b.blockAt=()=>null;b.entity.velocity.y=-4;t.mock.timers.tick(500);assert.equal(b.entity.position.y,65);assert.equal(b.entity.velocity.y,0);});
+test('interrupted flight releases the real physics loop and falls onto the received floor instead of hovering',t=>{
+ const {b}=world(t),{Travel}=require('../src/travel');
+ const runtime={bot:b,config:{flyHorizontal:1.5,flyVertical:.7},notice:()=>{}},travel=new Travel(runtime);
+ b.gliding=true;travel.flight={goal:b.entity.position.clone(),paused:true};
+ const start=b.entity.position.y;t.mock.timers.tick(50);
+ assert(b.entity.position.y<start);assert.equal(b.gliding,false);assert.equal(b.physicsState.mode,'normal');
+ t.mock.timers.tick(4000);assert.equal(b.entity.position.y,65);assert.equal(b.entity.onGround,true);
+});

@@ -14,6 +14,7 @@
 const { Vec3 } = require('../utils/vec3')
 const { moveEntity, isInWater, isInLava, isOnClimbable } = require('./collision')
 const C = require('./constants')
+const { markPhysics } = require('../../../../src/debug')
 
 function physicsPlugin(bot) {
     // ---- Control state ----
@@ -112,10 +113,12 @@ function _simulateTick(bot) {
     if (!bot.entity) return
     const escapingWater = bot.safety?.update();
     if (!escapingWater && bot.motion?.step()) {
+        markPhysics(bot, 'motion_override', bot.motion.embed ? 'AntiCrystalの位置制御' : '飛行・着地の位置制御')
         bot.position = bot.entity.position.clone()
         _sendPositionPacket(bot, 0, 0); bot.tick++; bot.emit('physicsTick'); return
     }
     if (require('../../../../src/positions').guardPenetration(bot)) {
+        markPhysics(bot, 'collision_hold', '体とブロックの重なり・位置補正待ち')
         _sendPositionPacket(bot, 0, 0); bot.tick++; bot.emit('physicsTick'); return
     }
     // Stopping controls does not freeze gravity. Apply normal collision and
@@ -125,11 +128,13 @@ function _simulateTick(bot) {
     const floor = bot.blockAt?.(bot.entity.position.offset(0, -0.1, 0))
     if (floor?.solid && floor.name !== 'unknown' && bot.entity.onGround) bot.terrainEstablished = true
     if ((!bot.naturalIdleFall || bot.terrainEstablished || bot.terrainDecodeFailed) && (!floor || floor.name === 'unknown')) {
+        markPhysics(bot, 'terrain_wait', bot.terrainDecodeFailed ? '地形デコード失敗・再受信待ち' : '足元の地形が未受信・判別不能')
         bot.entity.velocity = new Vec3(0, 0, 0)
         _sendPositionPacket(bot, 0, 0); bot.tick++; bot.emit('physicsTick'); return
     }
 
     const entity = bot.entity
+    markPhysics(bot, 'normal', escapingWater ? '水中避難・通常物理' : '通常の重力・衝突処理')
     const cs = bot.controlState
 
     // --- Determine environment ---

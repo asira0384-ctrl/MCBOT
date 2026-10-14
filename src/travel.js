@@ -24,7 +24,8 @@ class Travel{
   if(this.embed){b.entity.position.y=this.embed.y;b.entity.velocity=new Vec3(0,0,0);return true;}
   if(!this.flight)return false;
   const f=this.flight,p=b.entity.position;
-  if(f.paused){b.entity.velocity=new Vec3(0,0,0);return true;}
+  // A suspended flight must release the physics override, not hover forever.
+  if(f.paused){b.controlState.jump=false;if(b.gliding)this.glide(false);return false;}
   if(!f.jetpack&&!b.gliding&&b.entity.onGround){b.controlState.jump=true;return false;}
   b.controlState.jump=!!f.jetpack;if(!f.jetpack&&!b.gliding)this.glide(true);
   const delta=f.goal.minus(p);if(delta.norm()<.15){if(f.landing){b.entity.onGround=true;this.flight=null;this.glide(false);this.waiting='着地済み';}b.entity.velocity=new Vec3(0,0,0);return true;}
