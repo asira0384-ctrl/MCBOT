@@ -16,7 +16,7 @@ async function consume(bot,item,kind,signal){
   const changed=()=>{const current=bot.items[slot],name=bot.name(current),transition=!current||kind==='potion'&&name==='glass_bottle'||name===item.name&&(current.metadata||0)===metadata&&(current.count||0)<initialCount;return transition&&count()<before;};
   const pause=async ms=>{for(let elapsed=0;elapsed<ms&&!changed();elapsed+=50){await wait(Math.min(50,ms-elapsed),undefined,{signal});if(!bot.connected||bot.dead)throw Error('停止・切断しました');}};
   const legacy=bot.serverAuthoritativeInventory===false||bot.inventoryMode==='legacy';
-  const duration=bot.itemUseDurationMs??2100,timeout=bot.itemUseTimeoutMs??1800;
+  const duration=bot.itemUseDurationMs??1650,timeout=bot.itemUseTimeoutMs??1800;
   for(let attempt=1;attempt<=(bot.itemUseAttempts??2);attempt++){
    if(signal?.aborted)throw Error('停止しました');if(changed())break;
    if(bot.name(bot.items[slot])!==item.name)throw Error('使用中のアイテムがサーバーで変更されました');

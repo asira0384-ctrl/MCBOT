@@ -1,0 +1,4 @@
+Minecraft texture images: (c) Mojang AB. All rights reserved.
+Source: https://github.com/Mojang/bedrock-samples/tree/main/resource_pack/textures
+Subject to the Minecraft EULA: https://www.minecraft.net/eula
+These are official sample textures, arranged into a UI atlas. No affiliation with Mojang.

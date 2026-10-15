@@ -3,7 +3,7 @@ const point=p=>p?{x:p.x,y:p.y,z:p.z}:null;
 function markPhysics(bot,mode,reason){const at=Date.now();bot.physicsState={mode,reason,since:bot.physicsState?.mode===mode?bot.physicsState.since:at,at};}
 function sample(runtime){
  const b=runtime.bot,p=b.entity;
- return {at:Date.now(),position:point(p?.position),serverPosition:point(b.serverPosition),velocity:point(p?.velocity),onGround:!!p?.onGround,
+ return {at:Date.now(),bps:runtime.telemetry?.value?.bps||0,verticalBps:runtime.telemetry?.value?.verticalBps||0,antiPausedUntil:runtime.burrowBlockedUntil||0,speedPausedUntil:runtime.speedBlockedUntil||0,desiredMoveWorld:b.desiredMoveWorld||null,restock:runtime.restock?.snapshot(),position:point(p?.position),serverPosition:point(b.serverPosition),velocity:point(p?.velocity),onGround:!!p?.onGround,
   tick:b.tick,physics:b.physicsState?{...b.physicsState}:null,connected:!!b.connected,dead:!!b.dead,health:b.health,
   controls:{...b.controlState},terrainReady:!!b.terrainReady,terrainEstablished:!!b.terrainEstablished,terrainDecodeFailed:!!b.terrainDecodeFailed,
   sentInputs:b.sentInputs,sentLegacyMoves:b.sentLegacyMoves,corrections:b.positionCorrections||0,

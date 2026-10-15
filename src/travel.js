@@ -20,8 +20,8 @@ class Travel{
  glide(on){if(this.bot.gliding===on)return;this.bot.gliding=on;this.bot.pendingGlide=on?'start':'stop';this.bot.client.queue('player_action',{runtime_entity_id:BigInt(this.bot._runtimeEntityId),action:on?'start_glide':'stop_glide',position:{x:0,y:0,z:0},result_position:{x:0,y:0,z:0},face:0});}
  cancel(land=true){this.bot.straightTimerActive=false;this.stopFollowing();this.bot.clearControlStates?.();this.bot.controlState.forward=false;this.route=null;this.unbury();this.waiting='';if(this.flight&&land){const floor=landingFloor(this.bot,this.bot.entity.position,16);if(floor){this.flight={goal:floor,landing:true};this.waiting='着地中';return;}this.flight={goal:this.bot.entity.position.clone(),paused:true};this.waiting='着地点が未受信・飛行待機';return;}this.flight=null;if(this.bot.gliding)this.glide(false);}
  rollback(){
-  this.bot.straightTimerActive=false;this.corrections=(this.corrections||0)+1;this.flightSlowUntil=Date.now()+10000;
-  if(this.embed)this.runtime.burrowBlockedUntil=Date.now()+10000;this.embed=null;
+  this.bot.straightTimerActive=false;const now=Date.now();this.recentCorrections=(this.recentCorrections||[]).filter(t=>now-t<6000);this.recentCorrections.push(now);this.corrections=(this.corrections||0)+1;this.flightSlowUntil=now+5000;
+  const duration=this.recentCorrections.length>=3?5000:1500;this.runtime.speedBlockedUntil=now+duration;this.runtime.burrowBlockedUntil=now+duration+300;if(this.embed)this.antiRecovery={original:this.embed.original,at:now};this.embed=null;this.bot.desiredMoveSpeed=undefined;this.bot.clearControlStates?.();if(this.following){this.following.path=null;this.following.plannedAt=0;}
   if(this.flight?.jetpack||this.flight?.gap){this.flight=null;this.bot.controlState.forward=false;this.glide(false);this.waiting='位置補正を受けて追尾飛行を終了';return;}
   if(this.flight){this.flight.path=null;this.flight.paused='replan';this.flight.retryAt=Date.now()+Math.min(4000,500+this.corrections*100);this.waiting='位置補正後に減速して迂回経路を再探索';}
  }
@@ -38,29 +38,31 @@ class Travel{
   const b=this.bot,pose=this.embed?new Vec3(b.entity.position.x,this.embed.original,b.entity.position.z):b.entity.position;
   if(pose.distanceTo(destination)<=stopRadius){this.stopFollowing();return false;}
   if(this.flight?.combat||this.flight?.gap)return true;
+  if(Date.now()<(this.runtime.speedBlockedUntil||0))speed=0;
   const old=this.following;this.following={kind,destination:destination.clone(),stopRadius,speed,plannedAt:old?.plannedAt||0,path:old?.kind===kind?old.path:null};
   if(!old||old.destination.distanceTo(destination)>1)this.following.plannedAt=0;
   const f=this.following;if(Date.now()-f.plannedAt>250||!f.path?.length){f.path=require('./navigation').groundPath(b,pose,destination);f.plannedAt=Date.now();}
   while(f.path?.length&&pose.distanceTo(f.path[0].position.offset(.5,0,.5))<.3)f.path.shift();
   const gap=kind==='chase'?this.gapGoal(destination):null;if(gap&&(!f.path?.length||f.path.length>pose.distanceTo(gap)*1.8)){this.flight={goal:gap,gap:true,combat:true,landing:true,expires:Date.now()+4000};this.waiting='約4ブロック以内の隙間を低速GLIDEで追尾';return true;}
-  const next=f.path?.[0];if(!next||next.action==='scaffold'){b.clearControlStates();b.desiredMoveSpeed=undefined;this.waiting='移動経路を再確認中';return false;}
+  const next=f.path?.[0];if(!next||next.action==='scaffold'){b.clearControlStates();b.desiredMoveSpeed=undefined;b.desiredMoveWorld=null;this.waiting='移動経路を再確認中';return false;}
   if(b.actionHandBusy)return true;
-  const point=next.position.offset(.5,0,.5);b.lookAt(point.offset(0,1.62,0),false);b.setControlState('forward',true);b.setControlState('jump',next.action==='swim'||next.action==='shore'||point.y>pose.y+.6);b.setControlState('sprint',false);b.desiredMoveSpeed=speed>0?Math.min(speed,Math.hypot(point.x-pose.x,point.z-pose.z)):undefined;
+  const point=next.position.offset(.5,0,.5),direction=point.minus(pose),length=Math.hypot(direction.x,direction.z)||1;b.desiredMoveWorld={x:direction.x/length,z:direction.z/length};b.lookAt(point.offset(0,1.62,0),false);b.setControlState('forward',true);b.setControlState('jump',next.action==='shore'||require('./navigation').water(b.blockAt(pose.offset(0,1.62,0)))||point.y>pose.y+.6);b.setControlState('sprint',false);b.desiredMoveSpeed=speed>0?Math.min(speed,Math.hypot(point.x-pose.x,point.z-pose.z)):undefined;
   this.waiting=kind==='chase'?`敵を追尾中${speed?' / 速度'+speed:''}`:'徒歩移動中';return true;
  }
- stopFollowing(){if(this.following){this.following=null;this.bot.desiredMoveSpeed=undefined;this.bot.clearControlStates();}}
+ stopFollowing(){if(this.following){this.following=null;this.bot.desiredMoveSpeed=undefined;this.bot.desiredMoveWorld=null;this.bot.clearControlStates();}}
  step(){const b=this.bot;b.straightTimerActive=false;if(!b.connected||b.dead)return false;
   if(this.flight&&this.embed)this.unbury();
-  if(this.embed&&!this.runtime.config.anticrystal)this.unbury();
+  if(this.embed&&(!this.runtime.config.anticrystal||Date.now()<(this.runtime.burrowBlockedUntil||0)))this.unbury();
   if(this.embed){
    if(this.following&&b.controlState.forward){const {moveEntity}=require('../vendor/bedrockflayer/lib/physics/collision'),logical=new Vec3(b.entity.position.x,this.embed.original,b.entity.position.z),yaw=b.entity.yaw||0,speed=b.desiredMoveSpeed||.21;
     const vertical=b.controlState.jump&&b.entity.onGround? .42:(b.entity.velocity.y||0)-.08;
-    const result=moveEntity(b,{...b.entity,position:logical},new Vec3(-Math.sin(yaw)*speed,Math.max(-3.92,vertical),Math.cos(yaw)*speed),.6,1.8);
+    const result=moveEntity(b,{...b.entity,position:logical},new Vec3((b.desiredMoveWorld?.x??-Math.sin(yaw))*speed,Math.max(-3.92,vertical),(b.desiredMoveWorld?.z??Math.cos(yaw))*speed),.6,1.8);
     const depth=this.embed.original-this.embed.y;this.embed.original=result.position.y;this.embed.y=result.position.y-depth;b.entity.position=new Vec3(result.position.x,result.position.y-depth,result.position.z);b.entity.velocity=new Vec3(result.velocity.x,result.velocity.y,result.velocity.z);b.entity.onGround=result.onGround;
    }else{b.entity.position.y=this.embed.y;b.entity.velocity=new Vec3(0,0,0);}return true;
   }
   if(!this.flight)return false;
   const f=this.flight,p=b.entity.position,now=Date.now();
+  if(require('./navigation').water(b.blockAt(p))||require('./navigation').water(b.blockAt(p.offset(0,1.62,0)))){this.flight=null;b.controlState.forward=false;b.controlState.jump=false;if(b.gliding)this.glide(false);this.waiting='水中では飛行を解除し、通常の泳ぎで移動';return false;}
   if(f.jetpack&&(!f.expires||now>=f.expires)||f.gap&&now>=f.expires){this.flight=null;b.controlState.forward=false;b.controlState.jump=false;if(b.gliding)this.glide(false);this.waiting='追尾飛行を終了・通常落下';return false;}
   if(f.paused){b.controlState.forward=false;b.controlState.jump=false;if(b.gliding)this.glide(false);if(f.paused!=='replan'||now<(f.retryAt||0))return false;f.paused=false;f.path=null;}
   if(!f.jetpack&&!b.gliding&&b.entity.onGround){b.controlState.jump=true;return false;}
@@ -89,15 +91,15 @@ class Travel{
   }
   const corridor=sweptClear(b,p,next,margin);
   if(!corridor){
-   if(now<(f.planAt||0)+250)return false;f.planAt=now;
-   const path=require('./navigation').airPath(b,p,f.goal,sweptClear,margin);
+   b.controlState.forward=false;b.controlState.jump=false;if(now<(f.planAt||0)+250)return false;f.planAt=now;
+   const path=require('./navigation').airDetour(b,p,f.goal,sweptClear,margin)||require('./navigation').airPath(b,p,f.goal,sweptClear,margin);
    if(!path.length||f.landing||f.gap){f.paused='replan';f.retryAt=now+1000;f.path=null;b.entity.velocity=new Vec3(0,0,0);this.waiting='1ブロックの間隔がある迂回経路を再探索中';return false;}
    f.path=path;f.bestDistance=undefined;this.waiting='壁から1ブロック離して迂回中';return true;
   }
   const movement=next.minus(p),direction=Math.abs(movement.x)<.001&&Math.abs(movement.z)>.001?'z':Math.abs(movement.z)<.001&&Math.abs(movement.x)>.001?'x':null;
   const heading=direction?direction+Math.sign(movement[direction]):null;
   b.straightTimerActive=!!(heading&&heading===f.lastHeading&&Math.abs(movement.y)<.001&&!f.jetpack&&!f.gap&&!f.landing&&!b.handUse&&!b.usingItem&&!b.mining&&!b.controlState.left&&!b.controlState.right&&!b.controlState.back&&this.runtime.config.straightTimer>0&&now>=(this.flightSlowUntil||0));f.lastHeading=heading;
-  b.controlState.forward=Math.hypot(movement.x,movement.z)>.001;b.entity.velocity=movement;b.entity.position=next;b.entity.onGround=false;b.lookAt(target.offset(0,1.62,0),false);return true;
+  b.controlState.forward=Math.hypot(movement.x,movement.z)>.001;b.entity.velocity=movement;b.entity.position=next;b.entity.onGround=false;b.lookAt(next.offset(0,1.62,0),false);return true;
  }
 
  async tick(signal){const r=this.route,b=this.bot;if(!r)return;if(!b.terrainReady){this.waiting='足元の地形受信待ち';return;}
@@ -117,16 +119,24 @@ class Travel{
   const stocked=b.list?.().find(i=>i.name===this.runtime.worker.state.scaffold)||b.list?.().find(i=>['cobblestone','stone','dirt','obsidian','slime','slime_block'].includes(i.name));
   const path=require('./navigation').groundPath(b,p,destination,{block:stocked});const next=path[0];
   if(next){if(next.action==='scaffold'){await this.runtime.worker.placeOwned(next.position.offset(0,-1,0),stocked,'scaffold',signal);this.waiting='足場を作って移動中';}
-   if(next.action==='swim'){this.waiting='水面を泳いで移動中';b.lookAt(next.position.offset(.5,1,.5),false);b.setControlState('forward',true);b.setControlState('jump',true);await new Promise((resolve,reject)=>{const timer=setTimeout(resolve,200);const abort=()=>{clearTimeout(timer);reject(Error('停止しました'));};signal?.addEventListener('abort',abort,{once:true});setTimeout(()=>signal?.removeEventListener('abort',abort),210);});return;}
+   if(next.action==='swim'){this.waiting='水面を泳いで移動中';b.lookAt(next.position.offset(.5,1,.5),false);b.setControlState('forward',true);b.setControlState('jump',require('./navigation').water(b.blockAt(b.entity.position.offset(0,1.62,0)))||next.position.y>b.entity.position.y+.2);await new Promise((resolve,reject)=>{const timer=setTimeout(resolve,200);const abort=()=>{clearTimeout(timer);reject(Error('停止しました'));};signal?.addEventListener('abort',abort,{once:true});setTimeout(()=>signal?.removeEventListener('abort',abort),210);});return;}
    b.setControlState?.('jump',false);try{await b.go(next.position,signal);}catch(e){if(b.dimensionId!==beforeDimension)return;throw e;}return;
   }
   if(mode!=='dig')throw Object.assign(Error('受信済み地形に安全な徒歩経路がありません'),{code:'PATH_WAIT'});
   const sx=Math.abs(dx)>=Math.abs(dz)?Math.sign(dx):0,sz=sx?0:Math.sign(dz),q=new Vec3(Math.floor(p.x)+sx,Math.floor(p.y),Math.floor(p.z)+sz);
   if(!solid(b.blockAt(q.offset(0,-1,0))))throw Error('移動先の足場がありません');
-  for(const target of [q.offset(0,1,0),q]){const block=b.blockAt(target);if(!block)throw Error('採掘する地形が未受信です');if(air(block))continue;if(require('./navigation').water(block)){b.lookAt(destination.offset(0,1,0),false);b.setControlState('forward',true);b.setControlState('jump',true);this.waiting='水面を泳いで移動中';return;}if(hazard(block)||!block.diggable||block.hardness<0)throw Error('移動先に破壊できない・危険なブロックがあります');if(this.runtime.worker.state.floor!==null&&target.y<=this.runtime.worker.state.floor)throw Error('保護している床は掘りません');await b.dig(block,signal);const w=this.runtime.worker;if(!w.owned(target)){const {addStat}=require('./util');addStat(w.state.stats,block.name);addStat(w.state.session,block.name);w.recordMined(block.name);this.runtime.manager.store.save();}}
+  for(const target of [q.offset(0,1,0),q]){const block=b.blockAt(target);if(!block)throw Error('採掘する地形が未受信です');if(air(block))continue;if(require('./navigation').water(block)){b.lookAt(destination.offset(0,1,0),false);b.setControlState('forward',true);b.setControlState('jump',require('./navigation').water(b.blockAt(b.entity.position.offset(0,1.62,0))));this.waiting='水面を泳いで移動中';return;}if(hazard(block)||!block.diggable||block.hardness<0)throw Error('移動先に破壊できない・危険なブロックがあります');if(this.runtime.worker.state.floor!==null&&target.y<=this.runtime.worker.state.floor)throw Error('保護している床は掘りません');await b.dig(block,signal);const w=this.runtime.worker;if(!w.owned(target)){const {addStat}=require('./util');addStat(w.state.stats,block.name);addStat(w.state.session,block.name);w.recordMined(block.name);this.runtime.manager.store.save();}}
   await b.go(q,signal);
  }
- bury(depth){const b=this.bot,p=b.entity.position,floor=b.blockAt(p.offset(0,-.1,0));if(!b.entity.onGround||!solid(floor)||!bodyClear(b,p))return false;this.embed={y:p.y-depth,original:p.y};return true;}
- unbury(){if(this.embed){this.bot.entity.position.y=this.embed.original;this.bot.entity.velocity=new Vec3(0,0,0);this.embed=null;}}
+ recoverAnti(){
+  const recovery=this.antiRecovery,b=this.bot;if(!recovery||Date.now()-recovery.at>2500||!b.entity){this.antiRecovery=null;return false;}
+  if(Date.now()-recovery.at<200)return false;
+  const p=b.entity.position,check=require('./positions').inspect(b,p);
+  if(!check.overlaps.length){this.antiRecovery=null;return false;}
+  const candidate=new Vec3(p.x,recovery.original,p.z),verified=require('./positions').inspect(b,candidate);
+  if(Math.abs(candidate.y-p.y)<=1.65&&verified.known&&!verified.overlaps.length&&verified.support){b.entity.position=candidate;b.entity.velocity=new Vec3(0,0,0);b.entity.onGround=true;this.antiRecovery=null;this.waiting='Antiの直前に確認した足場へ復帰';return true;}return false;
+ }
+ bury(depth){const b=this.bot,p=b.entity.position,floor=b.blockAt(p.offset(0,-.1,0));if(!b.entity.onGround||!solid(floor)||!bodyClear(b,p))return false;this.antiRecovery=null;this.embed={y:p.y-depth,original:p.y};return true;}
+ unbury(){if(this.embed){this.bot.entity.position.y=this.embed.original;this.bot.entity.velocity=new Vec3(0,0,0);this.embed=null;}else this.recoverAnti();}
 }
 module.exports={Travel,bodyClear,sweptClear,landingFloor,nearestPortal,dimension,validateGoal,wallDistance};
