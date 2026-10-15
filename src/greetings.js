@@ -1,10 +1,10 @@
 'use strict';
-const {norm,clean}=require('./util');const {name,automatic}=require('./chat-output');const {randomInt}=require('node:crypto');
+const {norm}=require('./util');const {clean,textOf,publicChat}=require('./chat-input');const {name,automatic}=require('./chat-output');const {randomInt}=require('node:crypto');
 const pools={join:['Yo!','Inmu Kingがきたぞー！！','アイスティーはいかがですか？🫖'],leave:['Bye!','GoodBye! InmuKing👋🏻','またね！'],chat:['こんにちは！','聞こえてるで！','メッセージ届いてるで！']};
 const escape=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-function event(packet,target){if(!target)return null;const text=clean(packet.message||'');
+function event(packet,target){if(!target||packet.type==='whisper')return null;const text=textOf(packet),chat=publicChat(packet);if(chat&&norm(chat.name)===norm(target)&&!chat.message.startsWith('!'))return 'chat';
  if(packet.type==='chat')return norm(packet.source_name)===norm(target)?'chat':null;
- if(!['raw','system','translation'].includes(packet.type)||packet.source_name)return null;
+ if(!['raw','system','translation'].includes(packet.type))return null;
  const membership=text.match(/^\[([+-])\]\s+(.+)$/u);if(membership)return norm(membership[2])===norm(target)?membership[1]==='+'?'join':'leave':null;
  const ign=text.match(/^(?:<:[A-Za-z0-9_]+:\d+>\s*)?`?(.+?) (decided to join us for some PvP\.|had enough PvP for now\.)`?$/u);if(ign)return norm(ign[1])===norm(target)?ign[2].startsWith('decided')?'join':'leave':null;
  if(packet.type==='translation'&&(packet.parameters||[]).some(p=>norm(p)===norm(target))){if(text==='multiplayer.player.joined')return 'join';if(text==='multiplayer.player.left')return 'leave';}
@@ -19,7 +19,7 @@ class FleetGreetings{
  handle(observer,packet){const w=this.manager.workers.get(observer),bot=w?.bot,watched=bot&&this.targetFor(bot);if(!watched||!bot?.connected||bot.ended||bot.loggingOut||[...this.manager.names.values()].some(n=>norm(n)===norm(watched)))return false;
   const kind=event(packet,watched);if(!kind)return false;const realm=`${bot.config?.host||''}:${bot.config?.port||19132}`,target=realm+':'+norm(watched),now=this.clock();
   if(kind!=='chat'){const previous=this.presence.get(target);if(previous?.kind===kind&&now-previous.at<2500)return false;}
-  const key=target+':'+kind;const wait=kind==='chat'?60000:30000;if(now-(this.lastSent.get(key)??-Infinity)<wait)return false;
+  const key=target+':'+kind;const wait=kind==='chat'?60000:5000;if(now-(this.lastSent.get(key)??-Infinity)<wait)return false;
   const candidates=[...this.manager.workers.entries()].filter(([,w])=>w.bot.connected&&!w.bot.ended&&!w.bot.loggingOut&&!w.bot.dead&&(w.id===observer||this.manager.workers.get(observer)===w||w.bot.terrainEstablished)&&`${w.bot.config?.host||''}:${w.bot.config?.port||19132}`===realm);if(!candidates.length)return false;
   const [sender,selected]=candidates[this.choose(candidates.length)],options=pools[kind],text=automatic(options[this.choose(options.length)],watched);if(selected.bot.chat(text)===false)return false;this.lastSent.set(key,now);if(kind!=='chat')this.presence.set(target,{kind,at:now});this.record(sender,kind,text,watched);return true;
  }

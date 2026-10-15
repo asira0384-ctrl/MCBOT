@@ -28,9 +28,7 @@ async function startDiscord(manager){const token=process.env.DISCORD_TOKEN;if(!t
     case 'panel':await panel.create(i);return;
     case 'bot':{const target=i.options.getString('target',true),command=i.options.getString('command',true).trim();
      if(command==='panel'||command==='gui'){await panel.create(i,target);return;}
-     if(command==='view'){const ids=manager.targets(target);if(ids.length!==1)throw Error('view はBot番号を1つ指定してください');const id=ids[0],w=manager.workers.get(id);if(!w)throw Error('先にBotを接続してください');const view=require('./view').renderView(w.bot),status=w.status();
-      const messages=(manager.logs.get(id)||[]).slice(-5).join('\n');const content=`Bot${id} / v${require('../package.json').version} / ${w.bot.username}\n受信地形から描いたBot視点（マイクラ本体の画面ではありません）\n紫の格子＝未受信・判別できない地形。空の色＝受信済みの空気。UI・プレイヤーは描画しません。\n座標: ${JSON.stringify(status.position)}\nサーバー位置: ${JSON.stringify(status.serverPosition)}\n位置固定: ${status.passivePhysics} / 補正: ${status.positionCorrections}\n描画: ${JSON.stringify(view.hits)}\n${messages}`;
-      await i.editReply({content:content.slice(0,1950),files:[{attachment:view.buffer,name:`bot-${id}-view.png`}],allowedMentions:{parse:[]}});return;
+     if(command==='view'){const ids=manager.targets(target);if(ids.length!==1)throw Error('view はBot番号を1つ指定してください');const id=ids[0],w=manager.workers.get(id);if(!w)throw Error('先にBotを接続してください');await i.editReply(require('./view').reply(w.bot,id));return;
      }result=await manager.execute(target,command);break;}
 
     case 'auth':result=manager.authStatus(i.options.getInteger('target',true));break;

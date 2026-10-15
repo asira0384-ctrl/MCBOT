@@ -2,9 +2,9 @@
 const path=require('node:path');const {BedrockBot}=require('./bedrock');const {Worker}=require('./worker');const {norm,itemName,integer,sleep,emptyStats}=require('./util');
 class Manager{
  constructor(store){this.store=store;this.workers=new Map();this.claims=new Map();this.auth=new Map();this.logs=new Map();this.transfers=new Map();this.transferTimers=new Map();this.attempts=new Map();this.seen=new Map();this.lastNotice=new Map();this.onNotice=()=>{};
-  const names=(process.env.BOT_NAMES||'Aslrq 1st').split(',').map(s=>s.trim()).filter(Boolean);if(!names.length||names.length>10)throw Error('BOT_NAMESは1〜10アカウント');if(new Set(names.map(norm)).size!==names.length)throw Error('同じアカウントは重複登録できません');
+  const names=(process.env.BOT_NAMES||Array.from({length:10},(_,i)=>`Aslrq${String(i+1).padStart(2,'0')}x`).join(',')).split(',').map(s=>s.trim()).filter(Boolean);if(!names.length||names.length>10)throw Error('BOT_NAMESは1〜10アカウント');if(new Set(names.map(norm)).size!==names.length)throw Error('同じアカウントは重複登録できません');
   this.names=new Map(names.map((name,i)=>[i+1,name]));this.greetings=new (require('./greetings').FleetGreetings)(this);this.chatTimer=setTimeout(()=>this.chatter(),600000+Math.random()*600000);
-  if(process.env.IGN_BOT_NAME?.trim()){if(!process.env.IGN_HOST?.trim())throw Error('IGN_BOT_NAMEを使う時はIGN_HOSTも設定してください');if([...this.names.values()].some(n=>norm(n)===norm(process.env.IGN_BOT_NAME)))throw Error('ignには別アカウントを設定してください');this.names.set(11,process.env.IGN_BOT_NAME.trim());}
+  const ignName=process.env.IGN_BOT_NAME?.trim()||'Aslrq00x';if([...this.names.values()].some(n=>norm(n)===norm(ignName)))throw Error('ignには別アカウントを設定してください');this.names.set(11,ignName);
   this.reentries=new Map();this.victories=new Map();this.reentryTimer=setInterval(()=>this.checkReentries().catch(e=>this.trace(0,'再接続監視: '+e.message)),1000);this.reentryTimer.unref?.();
  }
  watchReentry(id,bot,target){if(this.reentries.has(id))return;const enemies=this.store.data.enemies||[],threats=[...(bot.actors?.values()||[])].filter(a=>a.player&&enemies.some(e=>norm(e.name)===norm(a.name))&&a.position.distanceTo(bot.entity.position)<20).map(a=>norm(a.name));if(target&&!threats.includes(norm(target.name)))threats.push(norm(target.name));this.reentries.set(id,{spot:bot.entity.position.clone(),dimension:bot.dimensionId,host:bot.config.host,port:bot.config.port,threats,dead:new Set(),at:Date.now()});this.trace(id,'AutoLog後: 他Botの新しい観測で全ての敵が15ブロック以上離れたことを確認してから再接続します');}
@@ -15,8 +15,8 @@ class Manager{
  targets(target){if(target==='all')return [...this.names.keys()];const id=integer(target,1,11);if(!this.names.has(id))throw Error('その番号のアカウントは未設定です');return[id];}
  async connect(id,destination){if(this.workers.has(id))return '接続済み・認証中です。statusで現在の段階を確認できます';const name=this.names.get(id);if(!name)throw Error('番号が未登録です');
   if(!destination)this.transfers.delete(id);this.reentries.delete(id);this.auth.delete(id);const attempt={active:true};this.attempts.set(id,attempt);
-  const ign=id===11,bot=new BedrockBot({id,name,host:destination?.host||(ign?process.env.IGN_HOST:process.env.MC_HOST)||'2b2e.org',port:integer(destination?.port||(ign?process.env.IGN_PORT:process.env.MC_PORT)||19132,1,65535),version:(ign?process.env.IGN_VERSION:process.env.MC_VERSION)||undefined,greetTarget:ign?process.env.IGN_GREET_TARGET_ID?.trim():undefined,
-   inventoryMode:this.store.bot(id).inventoryMode||'auto',authDir:path.join(this.store.dir,'auth',String(id))},data=>{if(!attempt.active||this.attempts.get(id)!==attempt)return;this.auth.set(id,{...data,expires:Date.now()+(data.expires_in||900)*1000});this.onNotice(id,'Microsoft認証待ちです。/authでコードを表示してください');});
+  const ign=id===11;if(ign&&!destination&&!process.env.IGN_HOST?.trim())throw Error('Bot11の接続にはRailway Variablesで IGN_HOST を設定してください');const bot=new BedrockBot({id,name,host:destination?.host||(ign?process.env.IGN_HOST:process.env.MC_HOST)||'2b2e.org',port:integer(destination?.port||(ign?process.env.IGN_PORT:process.env.MC_PORT)||19132,1,65535),version:(ign?process.env.IGN_VERSION:process.env.MC_VERSION)||undefined,greetTarget:ign?(process.env.IGN_GREET_TARGET_ID?.trim()||undefined):undefined,
+   inventoryMode:this.store.bot(id).inventoryMode||'auto',authDir:path.join(this.store.dir,'auth',String(id),require('node:crypto').createHash('sha256').update(norm(name)).digest('hex').slice(0,16))},data=>{if(!attempt.active||this.attempts.get(id)!==attempt)return;this.auth.set(id,{...data,expires:Date.now()+(data.expires_in||900)*1000});this.onNotice(id,'Microsoft認証待ちです。/authでコードを表示してください');});
   const worker=new Worker(this,id,bot);this.workers.set(id,worker);
   this.trace(id,`グリーター設定: ${this.greetings.targetFor(bot)||'未設定（OFF）'}`);
   bot.on('serverMessage',text=>{if(!current())return;this.trace(id,text);});
@@ -35,7 +35,7 @@ class Manager{
   bot.on('error',e=>{if(!current())return;worker.stop();const detail=require('./auth-network').details(e);if(detail)this.trace(id,detail);const message=detail|| (e.message==='Connect timed out'?`サーバーへのUDP接続がタイムアウトしました (${process.env.MC_HOST||'2b2e.org'}:${process.env.MC_PORT||19132})。Microsoft認証後の通信で止まっています。`:e.message);this.notice(id,`${message} [段階: ${bot.connectionPhase}]`);});
   bot.on('end',()=>{clearTimeout(watchdog);if(!current())return;attempt.active=false;this.auth.delete(id);this.attempts.delete(id);worker.stop();worker.mode='disconnected';this.trace(id,`切断: ${bot.lastDisconnect||'切断理由のパケットはありません'}。最終受信から${bot.lastPacketAt?Math.round((Date.now()-bot.lastPacketAt)/1000):'不明'}秒`);this.notice(id,'接続が切れました。connectで再接続できます');});
   bot.on('spawn',()=>{if(!current())return;if(!bot.onlineAnnounced){bot.onlineAnnounced=true;bot.chat(require('./chat-output').automatic('オンラインになりました！'));}clearTimeout(watchdog);this.auth.delete(id);this.notice(id,`${bot.username} の接続先でspawnを受信しました。本ワールドへの到着は未確認です。messagesでサーバー案内を確認できます`);});
-  bot.on('chat',p=>{if(!current())return;if(require('./coordinates').gameCoordinates(this,id,p))return;if(current())try{this.greetings.handle(id,p);}catch(e){this.trace(id,'グリーター送信失敗: '+e.message);}if(!p.message?.startsWith('!')||!this.store.authorized(p,bot.players))return;
+  bot.on('chat',p=>{if(!current())return;if(require('./coordinates').gameCoordinates(this,id,p))return;if(current())try{this.greetings.handle(id,p);}catch(e){this.trace(id,'グリーター送信失敗: '+e.message);}const parsed=require('./chat-input').publicChat(p);if(!parsed?.message.startsWith('!'))return;const profile=bot.players.get(norm(parsed.name));const verified={...p,type:'chat',source_name:parsed.name,message:parsed.message,xuid:p.xuid||profile?.xuid};if(!this.store.authorized(verified,bot.players))return;p=verified;
    const k=`${p.xuid}:${p.message}`;const now=Date.now();if(now-(this.seen.get(k)||0)<1500)return;this.seen.set(k,now);for(const[k,t]of this.seen)if(now-t>10000)this.seen.delete(k);
    const parts=p.message.slice(1).trim().split(/\s+/);const command=parts.shift(),target=parts.shift();if(!target)return;
    this.execute(target,[command,...parts].join(' '),'game').then(result=>bot.chat(result.slice(0,220))).catch(e=>bot.chat(e.message));
@@ -55,7 +55,7 @@ class Manager{
  say(target,text){const ids=this.targets(String(target)),message=require('./chat-output').message(text),workers=ids.map(id=>this.worker(id));for(const w of workers)w.bot.chat(message);return `公開チャットへ送信しました（Bot ${ids.join(', ')}）`;}
  whisper(target,recipient,text){const helpers=require('./chat-output'),name=helpers.name(recipient),message=helpers.message(text),ids=this.targets(String(target)),workers=ids.map(id=>this.worker(id));for(const w of workers)w.bot.whisper(name,message);return `${name}へtellを送信しました（Bot ${ids.join(', ')}）`;}
  async shutdown(){if(this.shuttingDown)return;this.shuttingDown=true;clearTimeout(this.chatTimer);for(const timer of this.transferTimers.values())clearTimeout(timer);await Promise.allSettled([...this.workers.values()].map(async w=>{w.runtime?.stop();w.stop();await w.bot.logout('バイバイ！');}));this.destroy();}
- async execute(target,text,origin='discord'){const ids=this.targets(String(target));text=text.trim().replace(/^(ka|ca|pa)(on|off)$/u,'$1 $2');let [cmd,...args]=text.split(/\s+/);cmd=({ka:'killaura',ca:'crystalaura',pa:'pistoncrystal',autoeat:'heal'})[cmd]||cmd;if(!cmd)throw Error('コマンドを入力してください');
+ async execute(target,text,origin='discord'){const ids=this.targets(String(target));text=text.trim().replace(/^(ka|ca|pa|anticrystal|autototem|autoslot|armor)(on|off)$/iu,'$1 $2');let [cmd,...args]=text.split(/\s+/);cmd=({ka:'killaura',ca:'crystalaura',pa:'pistoncrystal',autoeat:'heal',armor:'gear'})[cmd]||cmd;if(!cmd)throw Error('コマンドを入力してください');
   if(origin==='game'&&['connect','disconnect','clear-recovery','diagnose','debug','say','w','tell','greeter','movement','connection','enemy','log'].includes(cmd))throw Error('この操作はDiscordから行ってください');
   if(cmd==='greeter'){if(!args.length||args[0]==='status')return ids.map(n=>`Bot${n}: `+this.greetings.status(this.workers.has(n)?this.greetings.targetFor(this.workers.get(n).bot):n===11?process.env.IGN_GREET_TARGET_ID?.trim():this.greetings.target)).join('\n');if(args.length===1&&args[0]==='test')return this.greetings.test(ids[0]);throw Error('greeter status / greeter test');}
   if(cmd==='say')return this.say(target,text.replace(/^\s*say\s+/u,''));if(cmd==='w'||cmd==='tell'){const parsed=require('./chat-output').parseTell(text);return this.whisper(target,parsed.recipient,parsed.text);}
@@ -67,7 +67,7 @@ class Manager{
   for(const id of ids){const state=this.store.bot(id),w=this.workers.get(id);
    const runtimeConfig=()=>w?.runtime?.config||(state.runtime=Object.assign({},require('./runtime').defaults,state.runtime));
    switch(cmd){
-    case 'connect':clearTimeout(this.transferTimers.get(id));this.transferTimers.delete(id);if(w&&w.mode==='disconnected'){w.destroy();this.workers.delete(id);}results.push(await this.connect(id));break;
+    case 'connect':if(id===11&&!process.env.IGN_HOST?.trim()&&target==='all'){results.push('Bot11: IGN_HOST未設定のため接続を省略');break;}clearTimeout(this.transferTimers.get(id));this.transferTimers.delete(id);if(w&&w.mode==='disconnected'){w.destroy();this.workers.delete(id);}results.push(await this.connect(id));break;
     case 'disconnect':this.reentries.delete(id);clearTimeout(this.transferTimers.get(id));this.transferTimers.delete(id);if(w){w.runtime?.stop();w.stop();await w.bot.logout('バイバイ！');w.destroy();}this.workers.delete(id);this.auth.delete(id);this.attempts.delete(id);results.push(`Bot${id}を切断`);break;
     case 'stop':w?.runtime?.stop();w?.stop();results.push(`Bot${id}停止`);break;
     case 'start':this.worker(id).start();results.push(`Bot${id}開始`);break;
@@ -101,7 +101,7 @@ class Manager{
     case 'recover':this.worker(id).stop();results.push(await this.worker(id).recover());break;
     case 'clear-recovery':if(args[0]!=='confirm')throw Error('箱を手動回収した後、clear-recovery confirm を実行');if(w?.busy)throw Error('操作中です');state.supplyPending=null;results.push(`Bot${id}補給待機情報を解除`);break;
     default:throw Error('connect / start / stop / view / status / runtime / messages / enemy / killaura / autototem / gear / heal / autolog / anticrystal / autoslot / goto / flyspeed / log / stats / area / floor / ceiling / scaffold / supply / chat / respawn / recover');
-   }this.store.save();
+   }if(w?.runtime&&['gear','autototem','killaura','crystalaura','pistoncrystal','jetpack','heal','anticrystal','autoslot','pvp'].includes(cmd))w.runtime.prioritize(cmd,args[0]!=='off');this.store.save();
    if(cmd==='connect'&&ids.length>1)await sleep(1500);
   }
   if(cmd==='stats'&&ids.length>1)results.push(`全体合計: ${ids.reduce((sum,id)=>sum+this.store.bot(id).stats.total,0)}ブロック`);

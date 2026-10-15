@@ -5,7 +5,11 @@ function best(bot,suffix){return bot.list().filter(i=>i.name.endsWith(suffix)).s
 function strengthPotion(bot){return bot.list().find(i=>i.name==='potion'&&([31,32,33].includes(i.raw.metadata)||/strength/.test(String(bot.nbt(i.raw)?.Potion||''))));}
 function wanted(name){return /_sword$|_pickaxe$|_helmet$|_chestplate$|_leggings$|_boots$|^elytra$|totem|^shield$|^enchanted_golden_apple$|^potion$|^firework_rocket$|^end_crystal$|^piston$|^sticky_piston$|^redstone_block$|^obsidian$/.test(name);}
 function slotChoices(bot,{pistoncrystal=false}={}){return [[0,best(bot,'_sword')],[1,bot.tool()],[2,bot.find('enchanted_golden_apple')],[3,strengthPotion(bot)],[4,bot.find('totem')||bot.find('totem_of_undying')],[5,bot.find('shield')],...(pistoncrystal?[[6,bot.find('end_crystal')],[7,bot.find('piston')||bot.find('sticky_piston')],[8,bot.find('redstone_block')]]:[[6,bot.find('firework_rocket')]])].filter(([,item])=>item);}
-async function autoSlots(bot,signal,options){await bot.openInventory(signal);try{for(const [dest,choice] of slotChoices(bot,options)){const item=bot.list().find(i=>i.raw.stack_id===choice.raw.stack_id&&i.name===choice.name)||bot.find(choice.name);if(item&&item.slot!==dest)await bot.swap(item.slot,dest,signal);}}finally{bot.closeContainer();}if(bot.name(bot.items[0]).endsWith('_sword'))bot.select(0);else if(bot.tool()?.slot<9)bot.select(bot.tool().slot);}
+async function autoSlots(bot,signal,options){
+ const needs=()=>slotChoices(bot,options).some(([dest,item])=>item.slot!==dest);if(!needs())return;
+ await bot.openInventory(signal);try{for(let dest=0;dest<9;dest++){if(signal?.aborted)throw Error('停止しました');const choice=slotChoices(bot,options).find(([d])=>d===dest)?.[1];if(choice&&choice.slot!==dest)await bot.swap(choice.slot,dest,signal);}}finally{bot.closeContainer();}
+ if(bot.name(bot.items[0]).endsWith('_sword'))bot.select(0);else if(bot.tool()?.slot<9)bot.select(bot.tool().slot);
+}
 async function wear(bot,{armor=true,totem=true,elytra=false},signal){
  const upgrades=[];if(armor)for(const [index,suffix]of ['_helmet','_chestplate','_leggings','_boots'].entries()){const item=index===1&&elytra?bot.find('elytra'):best(bot,suffix),current=bot.armor[index];if(item&&(!current||(elytra&&index===1&&bot.name(current)!=='elytra')||(!(index===1&&elytra)&&rank(bot,item)>rank(bot,{raw:current}))))upgrades.push([item,index]);}
  const held=totem?(bot.find('totem')||bot.find('totem_of_undying')||(!/totem/.test(bot.name(bot.offhand[0]))?bot.find('shield'):null)):null;

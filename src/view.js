@@ -27,3 +27,5 @@ function renderView(bot,{width=256,height=144,range=32}={}){
  return {buffer:png(width,height,pixels),hits,eye};
 }
 module.exports={renderView,png};
+function reply(bot,id){const view=renderView(bot),at=Date.now(),stamp=new Date(at).toISOString(),p=bot.entity.position;return {content:`Bot${id} / ${stamp}\n現在の足元: ${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)} / 向き: ${(bot.entity.yaw*180/Math.PI||0).toFixed(0)}°\n受信地形から生成した視点です。画像は更新ボタンで撮り直せます。`,attachments:[],files:[{attachment:view.buffer,name:`bot-${id}-view-${at}.png`}],components:[{type:1,components:[{type:2,style:1,label:'今の視点に更新',custom_id:`acb:view-refresh:${id}`}]}],allowedMentions:{parse:[]}};}
+module.exports.reply=reply;

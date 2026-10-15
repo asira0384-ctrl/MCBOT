@@ -7,7 +7,7 @@ function changesWithTypes(bot,changes){return changes.map(c=>({...c,type:c.array
 function current(bot,c){return bot.array(c.type)?.[c.slot]||null;}
 function matches(bot,changes){return changes.every(c=>same(current(bot,c),c.item));}
 function windowId(bot,type){return type==='inventory'?0:type==='armor'?120:type==='offhand'?119:typeof bot.window?.id==='number'?bot.window.id:({first:1,last:100}[bot.window?.id]);}
-async function openInventory(bot,signal){
+async function openInventory(bot,signal){signal??=bot.operationSignal;
  if(signal?.aborted||!bot.connected)throw Error('停止・切断しました');if(bot.inventoryOpening)return bot.inventoryOpening;if(bot.inventoryOpen)return;
  bot.closeContainer();bot.inventoryOpen=true;bot.inventoryOpenRequests++;bot.inventoryOpenState={phase:'opening',requestedAt:Date.now(),acknowledged:false};
  bot.inventoryOpening=new Promise((resolve,reject)=>{let timer;
@@ -22,7 +22,7 @@ async function openInventory(bot,signal){
  });
  try{await bot.inventoryOpening;}finally{bot.inventoryOpening=null;}
 }
-async function transact(bot,action,changes,signal){
+async function transact(bot,action,changes,signal){signal??=bot.operationSignal;
  if(signal?.aborted||!bot.connected)throw Error('停止・切断しました');if(bot.inventoryOpening)await bot.inventoryOpening;else if(!bot.inventoryOpen&&!bot.window)await bot.openInventory(signal);
  const id=bot.requestId--,epoch=bot.abortVersion,list=changesWithTypes(bot,changes),legacy=bot.inventoryMode==='legacy'||bot.inventoryMode!=='stack'&&bot.serverAuthoritativeInventory===false;
  bot.pendingStackRequest={id,action:action.type_id,mode:legacy?'legacy':'stack',at:Date.now(),source:action.source,destination:action.destination};

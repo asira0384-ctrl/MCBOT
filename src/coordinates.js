@@ -15,12 +15,7 @@ async function discordCoordinates(i,manager){
  await i.reply({content:content.slice(0,1900),flags:64,allowedMentions:{parse:[]}});return true;
 }
 function gameCoordinates(manager,id,packet){
- let text=String(packet.message||'').replace(/§./gu,'').replace(/[\u200B-\u200D\uFEFF]/gu,'').normalize('NFKC').trim();
- if(packet.type==='translation'&&Array.isArray(packet.parameters)){
-  const values=packet.parameters.map(v=>String(v).replace(/§./gu,'').normalize('NFKC').trim());
-  if(values.length===2&&/^!/.test(values[1]))text=values[1];
- }
- if(!text.startsWith('!')){const wrapped=text.match(/^[^\r\n]+?\s*[»›❯➤>]\s*(![^\r\n]+)$/u);if(!wrapped)return false;text=wrapped[1];}
+ const input=require('./chat-input');let text=input.textOf(packet);if(!text.startsWith('!'))text=input.publicChat(packet)?.message||'';
  const match=text.match(/^!(coord|pos|position)(?:\s+(\d+|all))?$/iu);if(!match)return false;
  const bot=manager.workers.get(id)?.bot;if(!bot?.connected)return true;
  const realm=b=>`${b.config?.host}:${b.config?.port}`;
@@ -30,7 +25,7 @@ function gameCoordinates(manager,id,packet){
  if(Date.now()-(manager.lastCoordinateReply?.get(realm(bot))||0)<1000)return true;
  manager.lastCoordinateReply??=new Map();manager.lastCoordinateReply.set(realm(bot),Date.now());
  const target=match[2]?.toLowerCase()||String(id);
- try{const ids=target==='all'?peers:manager.targets(target);if(ids.some(n=>!peers.includes(n)))throw Error('このサーバーに接続中のBot番号を指定してください');for(const n of ids)bot.chat(coordinates(manager,String(n)));}catch(e){bot.chat(e.message);}
+ try{const ids=target==='all'?peers:manager.targets(target);if(ids.some(n=>!peers.includes(n)))throw Error('このサーバーに接続中のBot番号を指定してください');for(const n of ids)bot.chat(coordinates(manager,String(n)),false,{priority:true,dedupeMs:5000,key:'coord:'+n,replace:true,render:()=>coordinates(manager,String(n))});}catch(e){bot.chat(e.message);}
  return true;
 }
 module.exports={aliases,coordinates,discordCoordinates,gameCoordinates};
