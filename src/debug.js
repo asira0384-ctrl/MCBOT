@@ -10,6 +10,7 @@ function sample(runtime){
   busy:!!runtime.busy,operation:runtime.operation||null,paused:!!runtime.paused,workerBusy:!!runtime.worker?.busy,
   flight:runtime.travel?.flight?{goal:point(runtime.travel.flight.goal),paused:runtime.travel.flight.paused||false,landing:!!runtime.travel.flight.landing,jetpack:!!runtime.travel.flight.jetpack}:null,
   movement:runtime.travel?.waiting||'',combatWaiting:runtime.combatWaiting||'',crystalState:runtime.crystals?.state||'',
+  consumption:b.handUse?{...b.handUse}:null,lastItemUse:b.lastItemUse||null,timerActive:!!b.straightTimerActive,legacyMovementFallback:!!b.legacyMovementFallback,
   inventoryOpen:!!b.inventoryOpen,inventoryOpenState:b.inventoryOpenState,inventoryOpenRequests:b.inventoryOpenRequests};
 }
 function reasons(runtime){

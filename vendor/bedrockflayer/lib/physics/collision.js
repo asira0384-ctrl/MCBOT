@@ -218,7 +218,7 @@ function moveEntity(bot, entity, velocity, width, height) {
     const onGroundBefore = entity.onGround || origDy !== dy
 
     if (collidedHorizontally && onGroundBefore) {
-        const stepResult = _tryStepUp(bot, entity, velocity, blockBBs, width, height)
+        const stepResult = _tryStepUp(bot, entity, velocity, blockBBs, width, height, dx * dx + dz * dz)
         if (stepResult) {
             return stepResult
         }
@@ -253,7 +253,7 @@ function moveEntity(bot, entity, velocity, width, height) {
  * Try stepping up a small ledge.
  * @private
  */
-function _tryStepUp(bot, entity, velocity, blockBBs, width, height) {
+function _tryStepUp(bot, entity, velocity, blockBBs, width, height, collidedDistanceSq) {
     // Save original position
     const origBB = AABB.fromPlayer(entity.position, width, height)
     let dx = velocity.x
@@ -293,7 +293,7 @@ function _tryStepUp(bot, entity, velocity, blockBBs, width, height) {
     stepBB.maxZ += stepDz
 
     // Calculate original distance before collision resolution
-    const origDistSq = dx * dx + dz * dz
+    const origDistSq = collidedDistanceSq
 
     // Drop back down
     let dropDy = -STEP_HEIGHT

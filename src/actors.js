@@ -3,8 +3,10 @@ const {Vec3}=require('vec3');const {norm}=require('./util');
 function trackActors(bot){
  bot.actors=new Map();
  const playerPosition=p=>require('./positions').serverPosition({blockAt:bot.blockAt},p,'actor');
- const add=(p,player)=>{if(String(p.runtime_id)===String(bot._runtimeEntityId)||!p.position)return;const position=player?playerPosition(p.position):new Vec3(p.position.x,p.position.y,p.position.z);bot.actors.set(String(p.runtime_id),{id:BigInt(p.runtime_id),uniqueId:String(p.unique_id??p.runtime_id),uuid:p.uuid,name:p.username||p.entity_type||'',player,position,rawPosition:player?p.position:null,seen:Date.now(),dimension:bot.dimensionId});};
+ const metadata=(a,list=[])=>{const flags=list.find(m=>m.key===0||m.key==='flags');if(flags){try{a.sneaking=!!(BigInt(flags.value)&2n);a.flagsKnown=true;}catch{}}};
+ const add=(p,player)=>{if(String(p.runtime_id)===String(bot._runtimeEntityId)||!p.position)return;const position=player?playerPosition(p.position):new Vec3(p.position.x,p.position.y,p.position.z);bot.actors.set(String(p.runtime_id),{id:BigInt(p.runtime_id),uniqueId:String(p.unique_id??p.runtime_id),uuid:p.uuid,name:p.username||p.entity_type||'',player,position,rawPosition:player?p.position:null,seen:Date.now(),dimension:bot.dimensionId});metadata(bot.actors.get(String(p.runtime_id)),p.metadata);bot.emit('actorAdded',bot.actors.get(String(p.runtime_id)));};
  bot.client.on('add_player',p=>add(p,true));bot.client.on('add_entity',p=>add(p,false));
+ bot.client.on('set_entity_data',p=>{const a=bot.actors.get(String(p.runtime_entity_id));if(a)metadata(a,p.metadata);});
  bot.client.on('move_player',p=>{const a=bot.actors.get(String(p.runtime_id));if(a&&p.position){a.rawPosition=p.position;a.position=playerPosition(p.position);a.seen=Date.now();}});
  bot.client.on('move_entity',p=>{const a=bot.actors.get(String(p.runtime_entity_id));if(a&&p.position){a.rawPosition=null;a.position=new Vec3(p.position.x,p.position.y,p.position.z);a.seen=Date.now();}});
  bot.client.on('move_entity_delta',p=>{const a=bot.actors.get(String(p.runtime_entity_id));if(a){for(const k of ['x','y','z'])if(p[k]!==undefined&&p[k]!==null)a.position[k]=p[k];a.seen=Date.now();}});

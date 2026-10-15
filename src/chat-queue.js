@@ -7,7 +7,7 @@ class ChatQueue {
   // Logout must not wait for a queue, nor bypass a server cooldown.
   if(immediate){if(now<this.nextAt)return false;this.send({text,key,immediate});return true;}
   if(this.pending.length>=20){this.bot.emit('diagnostic','チャット待機が20件に達したため追加を省略しました');return false;}
-  if(options.priority)this.pending.unshift({text,...options,key});else this.pending.push({text,...options,key});this.pump();return true;
+  if(options.priority){const index=this.pending.findIndex(m=>!m.priority);this.pending.splice(index<0?this.pending.length:index,0,{text,...options,key});}else this.pending.push({text,...options,key});this.pump();return true;
  }
  send(m){if(!this.bot.connected||this.bot.ended)return;this.nextAt=this.now()+5000;this.recent.set(m.key,this.now());const packet=require('./chat-output').publicPacket(this.bot,m.render?m.render():m.text);if(m.immediate&&this.bot.client.write)this.bot.client.write('text',packet);else this.bot.client.queue('text',packet);}
  pump(){if(this.closed||this.timer||!this.pending.length)return;const wait=this.nextAt-this.now();if(wait>0){this.timer=this.schedule(()=>{this.timer=null;this.pump();},wait);this.timer?.unref?.();return;}this.send(this.pending.shift());this.pump();}

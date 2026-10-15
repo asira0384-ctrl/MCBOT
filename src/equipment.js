@@ -8,7 +8,7 @@ function slotChoices(bot,{pistoncrystal=false}={}){return [[0,best(bot,'_sword')
 async function autoSlots(bot,signal,options){
  const needs=()=>slotChoices(bot,options).some(([dest,item])=>item.slot!==dest);if(!needs())return true;
  await bot.openInventory(signal);try{for(let dest=0;dest<9;dest++){if(signal?.aborted)throw Error('停止しました');const choice=slotChoices(bot,options).find(([d])=>d===dest)?.[1];if(choice&&choice.slot!==dest&&!require('./item-use').protects(bot,'inventory',dest)&&!require('./item-use').protects(bot,'inventory',choice.slot))await bot.swap(choice.slot,dest,signal);}}finally{bot.closeContainer();}
- if(!bot.handUse&&bot.name(bot.items[0]).endsWith('_sword'))bot.select(0);else if(!bot.handUse&&bot.tool()?.slot<9)bot.select(bot.tool().slot);
+ if(!bot.handUse&&!bot.actionHandBusy&&bot.name(bot.items[0]).endsWith('_sword'))bot.select(0);else if(!bot.handUse&&!bot.actionHandBusy&&bot.tool()?.slot<9)bot.select(bot.tool().slot);
  if(slotChoices(bot,options).some(([dest,item])=>item.slot!==dest))return false;return true;
 }
 async function wear(bot,{armor=true,totem=true,elytra=false},signal){

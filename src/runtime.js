@@ -1,6 +1,6 @@
 'use strict';
 const {Vec3}=require('vec3');const {norm,key,solid}=require('./util');const equipment=require('./equipment');const {nearestEnemy,lineOfSight}=require('./actors');const {Travel}=require('./travel');
-const defaults={gear:true,autototem:true,autoslot:true,heal:true,healHearts:8,killaura:false,crystalaura:false,pistoncrystal:false,jetpack:false,range:3.2,chaseRange:16,autolog:true,logHearts:4,anticrystal:false,burrowDepth:.55,flyHorizontal:1.5,flyVertical:.7,chaseSpeed:.27};
+const defaults={gear:true,autototem:true,autoslot:true,heal:true,healHearts:8,killaura:false,crystalaura:false,pistoncrystal:false,jetpack:false,range:3.2,chaseRange:16,autolog:true,logHearts:4,anticrystal:false,burrowDepth:.55,flyHorizontal:1.5,flyVertical:.7,chaseSpeed:.27,flightClearance:1,straightTimer:.24,crystalPredict:10,attackDelay:100,crystalPlaceDelay:200,crystalBreakDelay:100};
 class Runtime{
  constructor(worker){this.worker=worker;this.bot=worker.bot;this.manager=worker.manager;this.config=worker.state.runtime=Object.assign({},defaults,worker.state.runtime);this.travel=new Travel(this);this.safety=new (require('./safety').WaterSafety)(this);this.busy=false;this.paused=false;this.dirty=false;this.receiving=false;this.attacks=0;this.totemsUsed=0;this.lastAttack=0;this.lastHeal=0;this.lastStrength=0;this.processedBoxes=new Set();this.events=[];this.target=null;this.lastError='';
   if(!worker.state.combatRevision){this.config.autolog=true;this.config.logHearts=4;this.config.healHearts=8;worker.state.combatRevision=26;}
@@ -30,11 +30,17 @@ class Runtime{
    finally{this.consumeTask=null;this.consumeAbort=null;}
   })();return this.consumeTask;
  }
+ meleeTick(enemy){
+  const b=this.bot;if(!this.config.killaura||b.handUse||b.actionHandBusy||b.pendingStackRequest||this.consumeTask||b.dead||this.paused||this.config.heal&&b.health!==null&&b.health<=this.config.healHearts*2)return;
+  if(b.entity.position.distanceTo(enemy.position)>this.config.range||!lineOfSight(b,enemy.position.offset(0,1,0))||Date.now()-this.lastAttack<(this.config.attackDelay||100))return;
+  const sword=equipment.best(b,'_sword');if(!sword||sword.slot>=9)return;
+  b.select(sword.slot);b.lookAt(enemy.position.offset(0,1,0),false);if(b.attack(enemy)!==false){this.lastAttack=Date.now();this.attacks++;}
+ }
  motionTick(){
   const b=this.bot;if(!b.connected||b.ended||b.dead||this.paused||this.safety.active||!b.entity)return;
   const enemies=(this.manager.store.data.enemies||[]).filter(e=>![...(this.manager.names?.values()||[])].some(n=>norm(n)===norm(e.name)));
-  const enemy=this.config.killaura&&!this.travel.route?nearestEnemy(b,enemies,this.config.chaseRange):null;
-  if(enemy){this.target=enemy;this.travel.follow(enemy.position,this.config.chaseSpeed,'chase',this.config.range*.85);}
+  const enemy=this.config.killaura&&!this.travel.route?nearestEnemy(b,enemies,this.config.jetpack?Math.max(48,this.config.chaseRange):this.config.chaseRange):null;
+  if(enemy){this.target=enemy;this.meleeTick(enemy);this.travel.follow(enemy.position,this.config.chaseSpeed,'chase',this.config.range*.85);}
   else if(this.travel.route&&['walk','dig'].includes(this.travel.route.mode)&&this.travel.route.dimension===b.dimensionId)this.travel.follow(this.travel.route.destination,undefined,'route',.65);
   else if(this.travel.following){this.travel.stopFollowing();}
  }
@@ -56,6 +62,7 @@ class Runtime{
   this.busy=true;w.controlBusy=true;this.abort=new AbortController();const signal=this.abort.signal;b.operationSignal=signal;
   try{
    if(low)w.mode='healing';
+   if(low&&b.find('enchanted_golden_apple')&&Date.now()-this.lastHeal>=5000)this.startUse('体力回復',b.find('enchanted_golden_apple'));
    if(low)await this.maintenance('オフハンド装着',()=>equipment.wear(b,{armor:false,totem:this.config.autototem},signal),signal);
    if(low&&b.find('enchanted_golden_apple')){w.mode='healing';if(Date.now()-this.lastHeal>=5000)this.startUse('体力回復',b.find('enchanted_golden_apple'));}
    if(low&&!b.find('enchanted_golden_apple'))this.noticeOnce('回復用エンチャント金リンゴがありません。指定座標への移動は続けます');
@@ -70,30 +77,41 @@ class Runtime{
    if(!this.paused&&!this.receiving&&w.state.autoSupply&&Date.now()-(this.lastSupplyScan||0)>3000&&!this.travel.flight&&!this.travel.route&&!nearestEnemy(b,this.manager.store.data.enemies||[],this.config.chaseRange)){this.lastSupplyScan=Date.now();await this.maintenance('シュルカー補給',()=>this.receiveBox(signal),signal);}
    if(this.paused)return;
    if(this.config.anticrystal&&!this.travel.route&&!this.travel.flight&&!this.travel.embed&&Date.now()>(this.burrowBlockedUntil||0))this.travel.bury(this.config.burrowDepth);
-   if(this.config.jetpack&&!this.config.killaura&&!this.config.crystalaura&&!this.config.pistoncrystal&&!this.travel.flight&&!this.travel.route&&b.entity.onGround&&solid(b.blockAt(b.entity.position.offset(0,-.1,0))))this.travel.flight={goal:b.entity.position.offset(0,2,0),jetpack:true};
+   
    const ownNames=[...(this.manager.names?.values()||[])].map(norm),enemies=(this.manager.store.data.enemies||[]).filter(e=>!ownNames.includes(norm(e.name)));
-   const enemy=(this.config.killaura||this.config.crystalaura||this.config.pistoncrystal)&&!low?nearestEnemy(b,enemies,this.config.chaseRange):null;this.target=enemy;this.combatWaiting=low?'回復を優先しています':enemy?`敵: ${enemy.name}`:'登録した敵が検知範囲にいません';
-   if(enemy&&!this.travel.route){this.operation='指定した敵との戦闘';if(w.running)w.stop();if(this.travel.flight){if(!this.travel.flight.landing&&!this.travel.flight.paused)this.travel.cancel();return;}await this.combat(enemy,signal);return;}
+   const enemy=(this.config.killaura||this.config.crystalaura||this.config.pistoncrystal)&&!low?nearestEnemy(b,enemies,this.config.jetpack?Math.max(48,this.config.chaseRange):this.config.chaseRange):null;this.target=enemy;this.combatWaiting=low?'回復を優先しています':enemy?`敵: ${enemy.name}`:'登録した敵が検知範囲にいません';
+   if(enemy&&!this.travel.route){this.operation='指定した敵との戦闘';if(w.running)w.stop();if(this.travel.flight&&!this.travel.flight.combat){if(!this.travel.flight.landing&&!this.travel.flight.paused)this.travel.cancel();return;}await this.combat(enemy,signal);return;}
    if(this.crystals.piston)await this.crystals.cleanup(signal);
    this.operation=this.travel.route?'座標移動':null;if(!this.config.anticrystal||this.travel.route)this.travel.unbury();b.setControlState('sneak',false);await this.travel.tick(signal);this.lastError='';
   }catch(e){if(!signal.aborted)throw e;}finally{if(b.operationSignal===signal)b.operationSignal=null;this.operation=null;this.busy=false;w.controlBusy=false;}
  }
  noticeOnce(text,game=true){if(this.lastWarning===text&&Date.now()-(this.lastWarningAt||0)<30000)return;this.lastWarning=text;this.lastWarningAt=Date.now();this.notice(text,game);}
- async combat(enemy,signal){const b=this.bot,point=enemy.position.offset(0,1,0);this.travel.flight=null;
+ async combat(enemy,signal){const b=this.bot,point=enemy.position.offset(0,1,0);
   if(this.config.anticrystal&&!this.travel.embed&&Date.now()>(this.burrowBlockedUntil||0))this.travel.bury(this.config.burrowDepth);
   const effect=b.effects.get(5);const potion=equipment.strengthPotion(b);
   if(potion&&(!effect||effect.expires<=Date.now())&&Date.now()-this.lastStrength>10000)this.startUse('力のポーション',potion);
   if(signal?.aborted||!b.actors.has(String(enemy.id))||![...(this.manager.store.data.enemies||[])].some(e=>norm(e.name)===norm(enemy.name))||[...(this.manager.names?.values()||[])].some(n=>norm(n)===norm(enemy.name)))return;
   if(this.consumeTask||b.handUse){this.combatWaiting='飲食しながら追尾中';return;}
-  let crystalHandled=false;if((this.config.crystalaura||this.config.pistoncrystal||this.crystals.piston)&&!(this.config.killaura&&this.latestFeature==='killaura'&&b.entity.position.distanceTo(enemy.position)<=this.config.range)){if(await this.maintenance('Crystal/PA',async()=>{crystalHandled=await this.crystals.tick(enemy,signal);},signal)&&crystalHandled&&!this.config.killaura)return;}
-  if((this.config.crystalaura||this.config.pistoncrystal)&&!this.config.killaura&&b.entity.position.distanceTo(enemy.position)>5){this.travel.follow(enemy.position,this.config.chaseSpeed,'chase',this.config.range*.85);return;}
-  if(!this.config.killaura)return;
-  const sword=equipment.best(b,'_sword');if(!sword){this.combatWaiting='戦闘用の剣がありません。シュルカーか手渡しで補給してください';this.noticeOnce(this.combatWaiting);return;}if(sword.slot>=9){await b.openInventory(signal);await b.equip(sword.slot);b.closeContainer();}else await b.equip(sword.slot);
-  const current=b.actors.get(String(enemy.id)),active=nearestEnemy(b,this.manager.store.data.enemies||[],this.config.chaseRange);if(signal?.aborted||!current||this.paused||!this.config.killaura||active?.id!==enemy.id)return;
-  if(b.entity.position.distanceTo(enemy.position)>this.config.range){this.travel.follow(enemy.position,this.config.chaseSpeed,'chase',this.config.range*.85);return;}
-  if(!lineOfSight(b,point)){this.combatWaiting='敵との間に壁または未受信の地形があります';return;}
-  b.clearControlStates();b.lookAt(point,false);if(b.name(b.offhand[0])==='shield')b.setControlState('sneak',true);
-  if(Date.now()-this.lastAttack>=400){b.attack(enemy);this.attacks++;this.lastAttack=Date.now();if(this.lastEnemy!==enemy.name){this.lastEnemy=enemy.name;this.notice(`指定した敵を攻撃: ${enemy.name}`);}}
+  if(this.config.jetpack&&b.entity.position.distanceTo(enemy.position)>8){await this.maintenance('Jetpack',()=>this.crystals.jetpackTick(enemy,signal),signal);if(this.travel.flight?.jetpack)return;}
+  const doCrystals=async()=>{if(this.config.crystalaura||this.config.pistoncrystal||this.crystals.piston)await this.maintenance('Crystal/PA',()=>this.crystals.tick(enemy,signal),signal);};
+  const distance=b.entity.position.distanceTo(enemy.position);
+  if(this.config.killaura&&distance<=this.config.range&&lineOfSight(b,point)){
+   const sword=equipment.best(b,'_sword');
+   if(sword){
+    if(Date.now()-this.lastAttack>=(this.config.attackDelay||100)){
+     await b.equip(sword.slot,signal);
+     const current=b.actors.get(String(enemy.id));
+     if(signal?.aborted||!current||this.paused||!this.config.killaura||b.handUse)return;
+     b.lookAt(current.position.offset(0,1,0),false);
+     if(b.attack(current)!==false){this.attacks++;this.lastAttack=Date.now();}
+    }
+   }else this.combatWaiting='戦闘用の剣がありません';
+  }else if(this.config.killaura||this.config.crystalaura||this.config.pistoncrystal){
+   this.travel.follow(enemy.position,this.config.chaseSpeed,'chase',this.config.range*.85);
+   if(distance<=this.config.range&&!lineOfSight(b,point))this.combatWaiting='壁を避けて敵に接近中';
+  }
+  await doCrystals();
+
  }
  async receiveBox(signal){const b=this.bot,w=this.worker;let state=w.state.autoBox;
   if(!state){let position=null,name=null;const p=b.entity.position;for(let x=Math.floor(p.x)-10;x<=Math.floor(p.x)+10;x++)for(let z=Math.floor(p.z)-10;z<=Math.floor(p.z)+10;z++)for(let y=Math.floor(p.y)-3;y<=Math.floor(p.y)+3;y++){const q=new Vec3(x,y,z),block=b.blockAt(q);if(block&&/shulker_box$/.test(block.name)&&p.distanceTo(q)<=10&&Date.now()-(this.boxVisited?.get(key(q))||0)>10000&&(!position||p.distanceTo(q)<p.distanceTo(position))){position=q;name=block.name;}}
@@ -118,6 +136,6 @@ class Runtime{
   }else this.notice('中身入りシュルカーを保持しました。エンダーチェストとシルクタッチがあれば収納できます');
   this.processedBoxes.add(item.name+':'+item.raw.stack_id);w.state.autoBox=null;this.manager.store.save();this.dirty=true;this.receivedAt=Date.now();this.notice('シュルカーから装備を取り出しました');return true;
  }
- destroy(){if(this.destroyed)return;this.destroyed=true;this.consumeAbort?.abort();clearInterval(this.motionTimer);this.travel.stopFollowing();this.debug.destroy();this.safety.cancel();clearInterval(this.timer);this.abort?.abort();this.travel.route=null;this.travel.flight=null;this.travel.embed=null;}
+ destroy(){if(this.destroyed)return;this.destroyed=true;this.consumeAbort?.abort();clearInterval(this.motionTimer);this.travel.stopFollowing();this.debug.destroy();this.crystals.destroy();this.safety.cancel();clearInterval(this.timer);this.abort?.abort();this.travel.route=null;this.travel.flight=null;this.travel.embed=null;}
 }
 module.exports={Runtime,defaults};

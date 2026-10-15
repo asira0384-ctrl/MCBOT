@@ -115,7 +115,7 @@ function _simulateTick(bot) {
     if (!escapingWater && bot.motion?.step()) {
         markPhysics(bot, 'motion_override', bot.motion.embed ? 'AntiCrystalの位置制御' : '飛行・着地の位置制御')
         bot.position = bot.entity.position.clone()
-        _sendPositionPacket(bot, 0, bot.motion?.following && bot.controlState.forward ? -1 : 0); bot.tick++; bot.emit('physicsTick'); return
+        _sendPositionPacket(bot, 0, (bot.motion?.following || bot.motion?.flight) && bot.controlState.forward ? -1 : 0); bot.tick++; bot.emit('physicsTick'); return
     }
     if (require('../../../../src/positions').guardPenetration(bot)) {
         markPhysics(bot, 'collision_hold', '体とブロックの重なり・位置補正待ち')
@@ -239,7 +239,14 @@ function _simulateTick(bot) {
     if (bot.blockAt) {
         const width = entity.width || C.PLAYER_WIDTH
         const height = cs.sneak ? C.SNEAK_HEIGHT : (entity.height || C.PLAYER_HEIGHT)
+        const requested = { ...entity.velocity }
         const result = moveEntity(bot, entity, entity.velocity, width, height)
+        const head = bot.blockAt(entity.position.offset(0, 1.62, 0))
+        if (inWater && cs.jump && head && !head.solid && !head.isLiquid &&
+            ((Math.abs(requested.x) > .01 && result.velocity.x === 0) || (Math.abs(requested.z) > .01 && result.velocity.z === 0))) {
+            // Vanilla-style water exit impulse; normal collision still checks the ledge.
+            result.velocity.y = Math.max(result.velocity.y, .3)
+        }
         entity.position.x = result.position.x
         entity.position.y = result.position.y
         entity.position.z = result.position.z
@@ -385,12 +392,14 @@ function _sendPositionPacket(bot, inputX, inputZ) {
 
 function _startPhysicsLoop(bot) {
     if (bot._physicsInterval) return
+    let extraTicks = 0
     bot._physicsInterval = setInterval(() => {
         try {
             _simulateTick(bot)
-        } catch (err) {
-            bot.emit('error', err)
-        }
+            const boost = bot.straightTimerActive && !bot.handUse && !bot.mining ? Math.min(.5, Math.max(0, bot.motion?.runtime?.config.straightTimer || 0)) : 0
+            if (!boost) extraTicks = 0
+            else { extraTicks += boost; if (extraTicks >= 1) { extraTicks -= 1; _simulateTick(bot) } }
+        } catch (err) { bot.emit('error', err) }
     }, C.TICK_MS)
 }
 
