@@ -152,12 +152,20 @@ function _simulateTick(bot) {
     if (cs.right) inputX += 1
 
     // Normalize diagonal movement
-    const inputLen = Math.sqrt(inputX * inputX + inputZ * inputZ)
+    let inputLen = Math.sqrt(inputX * inputX + inputZ * inputZ)
     if (inputLen > 0) {
         inputX /= inputLen
         inputZ /= inputLen
     }
 
+    // Combat may turn the camera toward a crystal while navigation continues.
+    // Recompute local input so the world-space route is preserved across turns.
+    if (bot.desiredMoveWorld && inputLen > 0) {
+        const d = bot.desiredMoveWorld, yaw = entity.yaw
+        inputX = -d.x * Math.cos(yaw) - d.z * Math.sin(yaw)
+        inputZ = d.x * Math.sin(yaw) - d.z * Math.cos(yaw)
+        inputLen = Math.hypot(inputX, inputZ)
+    }
     // Rotate input by yaw
     const yaw = entity.yaw
     const sinYaw = Math.sin(yaw)
@@ -208,7 +216,7 @@ function _simulateTick(bot) {
 
             bot._jumpCooldown = C.JUMP_COOLDOWN_TICKS
         } else if (inWater || inLava) {
-            entity.velocity.y += 0.04
+            entity.velocity.y = Math.min(.16, entity.velocity.y + 0.04)
         } else if (onClimbable) {
             entity.velocity.y = C.LADDER_CLIMB_SPEED
         }
@@ -371,7 +379,7 @@ function _sendPositionPacket(bot, inputX, inputZ) {
                 y: inputZ || 0
             },
             head_yaw: entity.headYaw !== undefined ? entity.headYaw : (entity.yaw || 0),
-            input_data: _buildInputData(cs),
+            input_data: _buildInputData({ ...cs, forward: inputZ < -.05, back: inputZ > .05, left: inputX < -.05, right: inputX > .05 }),
             input_mode: packetOpts.input_mode,
             play_mode: packetOpts.play_mode,
             interaction_model: packetOpts.interaction_model,
