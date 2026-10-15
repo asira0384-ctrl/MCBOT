@@ -115,7 +115,7 @@ function _simulateTick(bot) {
     if (!escapingWater && bot.motion?.step()) {
         markPhysics(bot, 'motion_override', bot.motion.embed ? 'AntiCrystalの位置制御' : '飛行・着地の位置制御')
         bot.position = bot.entity.position.clone()
-        _sendPositionPacket(bot, 0, 0); bot.tick++; bot.emit('physicsTick'); return
+        _sendPositionPacket(bot, 0, bot.motion?.following && bot.controlState.forward ? -1 : 0); bot.tick++; bot.emit('physicsTick'); return
     }
     if (require('../../../../src/positions').guardPenetration(bot)) {
         markPhysics(bot, 'collision_hold', '体とブロックの重なり・位置補正待ち')
@@ -182,8 +182,15 @@ function _simulateTick(bot) {
     if (inLava) speed = C.LAVA_SPEED
 
     // --- Apply horizontal acceleration ---
-    entity.velocity.x += moveX * speed
-    entity.velocity.z += moveZ * speed
+    if (bot.desiredMoveSpeed > 0 && inputLen > 0) {
+        const length = Math.hypot(moveX, moveZ) || 1
+        const requested = Math.min(bot.desiredMoveSpeed, inWater ? .15 : bot.desiredMoveSpeed)
+        entity.velocity.x = moveX / length * requested
+        entity.velocity.z = moveZ / length * requested
+    } else {
+        entity.velocity.x += moveX * speed
+        entity.velocity.z += moveZ * speed
+    }
 
     // --- Jumping ---
     if (cs.jump) {

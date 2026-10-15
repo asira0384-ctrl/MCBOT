@@ -20,3 +20,9 @@ Aslrq01x,Aslrq02x,Aslrq03x,Aslrq04x,Aslrq05x,Aslrq06x,Aslrq07x,Aslrq08x,Aslrq09x
 - 視点: パネル「視点画像」→「今の視点に更新」。
 
 認証トークン・Discord_TOKENを他の人へ渡さないでください。配布するのはコードのZIPです。
+
+## v0.3.4の追加
+
+追尾速度は初期値0.27。変更は `/bot target:11 command:chasespeed 0.27`。通常速度へ戻すなら `speed off`。AntiCrystalは追尾中も維持します。飲食と追尾は並行し、同じ手を使う攻撃は飲食が終わってから再開します。
+
+AutoSlotが未完了なら状態レポートの `lastStackResponse` と `autoSlotPending`、飲食は `lastItemUse` を確認できます。所持品に防具がなければ自動装備はできません。近くの補給箱か手渡しで用意してください。
