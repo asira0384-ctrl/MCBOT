@@ -5,6 +5,7 @@ COPY package.json package-lock.json ./
 COPY scripts ./scripts
 RUN git config --global url."https://github.com/".insteadOf "ssh://git@github.com/" && npm ci --omit=dev --ignore-scripts && node scripts/prepare-raknet.js
 COPY src ./src
+COPY web ./web
 COPY vendor ./vendor
 ENV NODE_ENV=production DATA_DIR=/data
 EXPOSE 3000

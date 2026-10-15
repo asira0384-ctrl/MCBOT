@@ -1,4 +1,16 @@
-# ボタンで使う（v0.3.5）
+# ボタンで使う（v0.3.6）
+
+## v0.3.6 Web管理画面
+
+同じRailwayで動くWeb管理画面を追加しました。スマホ・PCからBot単体、2b2e全体、IGN、全体を操作できます。接続・移動・装備・戦闘・整地・チャット・1秒更新ログ・視点・状態レポートに対応します。Discordの既存操作も維持します。
+
+**使い方**: 全ファイルをGitHubへ上書き → 再デプロイ → RailwayのNetworkingでGenerate Domain → Discordで `/web url:取得したhttpsのURL` → 本人用リンクを開く。2回目からは `/web` だけです。詳細は **WEB-GUIDE-JA.md** を参照してください。
+
+ログインはDISCORD_OWNER_IDの本人だけが発行できる一度限りのリンクです。別のパスワード設定は不要です。Webからゲーム内の管理者登録はできません。登録は引き続きDiscordの `/admin` を使います。
+
+全198テスト成功。Webの認証・HTTP/APIと既存Botのテストを確認しています。本番Railway・Minecraftでの接続とブラウザの実表示は未検証です。
+
+今回のWeb画面は既存のBot実装を操作します。Minecraft側のモジュールはv0.3.5と同じです。既存のVariables・アカウント・設定・dataを維持してください。webフォルダとDockerfileの更新も必要です。
 
 ## v0.3.5 飲食・戦闘連携・移動・全員の座標
 

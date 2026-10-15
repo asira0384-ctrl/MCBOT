@@ -1,3 +1,35 @@
+# v0.3.6 Web管理画面
+
+## v0.3.6 Web管理画面
+
+同じRailwayで動くWeb管理画面を追加しました。スマホ・PCからBot単体、2b2e全体、IGN、全体を操作できます。接続・移動・装備・戦闘・整地・チャット・1秒更新ログ・視点・状態レポートに対応します。Discordの既存操作も維持します。
+
+**使い方**: 全ファイルをGitHubへ上書き → 再デプロイ → RailwayのNetworkingでGenerate Domain → Discordで `/web url:取得したhttpsのURL` → 本人用リンクを開く。2回目からは `/web` だけです。詳細は **WEB-GUIDE-JA.md** を参照してください。
+
+ログインはDISCORD_OWNER_IDの本人だけが発行できる一度限りのリンクです。別のパスワード設定は不要です。Webからゲーム内の管理者登録はできません。登録は引き続きDiscordの `/admin` を使います。
+
+今回のWeb画面は既存のBot実装を操作します。Minecraft側のモジュールはv0.3.5と同じです。既存のVariables・アカウント・設定・dataを維持してください。webフォルダとDockerfileの更新も必要です。
+
+# v0.3.5 更新後に最初に試すこと
+
+1. **vendorも含めて全ファイルをGitHubに上書き** → Railwayの新しいデプロイを待つ → Botを接続し直す。起動ログ・パネルでv0.3.5を確認。
+2. `/panel` →「装備設定」→「今すぐ金リンゴ」「力ポーション」で手動確認。状態レポートの `lastItemUse.status=confirmed` は実個数の減少を確認できた場合だけです。
+3. 自動回復を8ハート以下にする: `/bot target:1 command:autoeat on 8`。以前の4ハート設定は自動で書き換えません。
+4. 戦闘: 敵登録 → `ka on` + `ca on`。PAも使うなら `pa on`。ホールにいる、しゃがんでいない敵だけPA対象です。
+5. 全員の座標は、ゲーム内で誰でも `!pos all`。同じサーバーにいるBotをまとめて返します。
+
+| 設定 | Discordのcommand欄に入れる内容 |
+| --- | --- |
+| 今すぐ食べる / 力ポーション | `eat` / `drink` |
+| 回復する体力 | `autoeat on 8` |
+| KA・CA・PA | `ka on` / `ca on` / `pa on` |
+| 爆風を受けて短時間Jetpack | `jetpack on` |
+| CrystalのID予測 | `predict 10` / `predict off` |
+| 直進のみ追加24%加速 | `timer on 0.24` / `timer off` |
+| 追尾速度 | `chasespeed 0.27` |
+
+Timerの0.24は「追加倍率」と解釈しています。飛行速度・各設定はサーバー側の制限も受けます。実サーバーは未検証です。詳細はCOMMANDS-JA.md冒頭を参照してください。
+
 # 更新後の使い方
 
 1. ZIPのAsiraClearBotフォルダ内をGitHubの既存ファイルへ上書き。vendorも含めます。
