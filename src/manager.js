@@ -15,9 +15,10 @@ class Manager{
  targets(target){if(target==='all')return [...this.names.keys()];const id=integer(target,1,11);if(!this.names.has(id))throw Error('その番号のアカウントは未設定です');return[id];}
  async connect(id,destination){if(this.workers.has(id))return '接続済み・認証中です。statusで現在の段階を確認できます';const name=this.names.get(id);if(!name)throw Error('番号が未登録です');
   if(!destination)this.transfers.delete(id);this.reentries.delete(id);this.auth.delete(id);const attempt={active:true};this.attempts.set(id,attempt);
-  const ign=id===11;if(ign&&!destination&&!process.env.IGN_HOST?.trim())throw Error('Bot11の接続にはRailway Variablesで IGN_HOST を設定してください');const bot=new BedrockBot({id,name,host:destination?.host||(ign?process.env.IGN_HOST:process.env.MC_HOST)||'2b2e.org',port:integer(destination?.port||(ign?process.env.IGN_PORT:process.env.MC_PORT)||19132,1,65535),version:(ign?process.env.IGN_VERSION:process.env.MC_VERSION)||undefined,greetTarget:ign?(process.env.IGN_GREET_TARGET_ID?.trim()||undefined):undefined,
+  const ign=id===11;if(ign&&!destination&&!process.env.IGN_HOST?.trim())throw Error('Bot11の接続にはRailway Variablesで IGN_HOST を設定してください');const bot=new BedrockBot({id,name,host:destination?.host||(ign?process.env.IGN_HOST:process.env.MC_HOST)||'2b2e.org',port:integer(destination?.port||(ign?process.env.IGN_PORT:process.env.MC_PORT)||19132,1,65535),version:require('./server-version').connectionVersion(id),greetTarget:ign?(process.env.IGN_GREET_TARGET_ID?.trim()||undefined):undefined,
    inventoryMode:this.store.bot(id).inventoryMode||'auto',authDir:path.join(this.store.dir,'auth',String(id),require('node:crypto').createHash('sha256').update(norm(name)).digest('hex').slice(0,16))},data=>{if(!attempt.active||this.attempts.get(id)!==attempt)return;this.auth.set(id,{...data,expires:Date.now()+(data.expires_in||900)*1000});this.onNotice(id,'Microsoft認証待ちです。/authでコードを表示してください');});
   const worker=new Worker(this,id,bot);this.workers.set(id,worker);
+  this.trace(id,`接続先: ${bot.config.host}:${bot.config.port} / 通信版: ${bot.config.version||'広告から自動選択'}`);
   this.trace(id,`グリーター設定: ${this.greetings.targetFor(bot)||'未設定（OFF）'}`);
   bot.on('serverMessage',text=>{if(!current())return;this.trace(id,text);});
   bot.on('diagnostic',text=>{if(current())this.trace(id,text);});

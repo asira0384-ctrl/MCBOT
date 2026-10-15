@@ -7,7 +7,7 @@
 Aslrq01x,Aslrq02x,Aslrq03x,Aslrq04x,Aslrq05x,Aslrq06x,Aslrq07x,Aslrq08x,Aslrq09x,Aslrq10x
 ```
 
-3. `IGN_BOT_NAME=Aslrq00x`。`IGN_HOST`にIGNの統合版IP、`IGN_PORT`にポートを指定。未設定ならBot11の接続は省略。
+3. `IGN_BOT_NAME=Aslrq00x`。`IGN_HOST`にIGNの統合版IP、`IGN_PORT`にポートを指定。`IGN_VERSION=1.26.51`を指定できます。未設定時もBot11は1.26.51で接続します。未設定ならBot11の接続は省略。
 4. 再デプロイ後、`/panel`で各Botを選んで接続。または `/bot target:all command:connect`。
 5. `/auth target:1`〜`/auth target:10`を順に開き、その番号のMicrosoftアカウントで認証。Bot11はAslrq00x。
 
