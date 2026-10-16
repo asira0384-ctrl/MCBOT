@@ -27,3 +27,8 @@ test('server transfer follows once, messages survive old connection, manual disc
  clients[1].emit('transfer',{server_address:'next.example',port:19132});await m.execute('1','disconnect');await new Promise(r=>setTimeout(r,350));assert.equal(clients.length,2,'manual disconnect cancels queued reconnection');
  await assert.rejects(m.execute('1','say /join','game'));
 });
+test('standalone login never opens a game connection while pending, and account switching cancels it',async t=>{
+ const dir=fs.mkdtempSync(os.tmpdir()+'/asira-standalone-'),m=new Manager(new Store(dir));t.after(()=>{m.destroy();fs.rmSync(dir,{recursive:true,force:true});});let resolve;
+ class Flow{constructor(u,p,o,code){this.code=code;this.msa={};}getMinecraftBedrockToken(){this.code({user_code:'DEVICE',expires_in:900});return new Promise(r=>{resolve=r;});}}
+ m.accounts.Flow=Flow;m.accounts.run=(_scope,fn)=>fn();assert.equal(m.login(1).state,'waiting');assert.match(m.authStatus(1),/DEVICE/);const before=m.workers.size;assert.match(await m.connect(1),/認証中/);assert.equal(m.workers.size,before);const pending=m.accounts.jobs.get(1).promise;await m.execute('1','account set Changed Name');resolve({chain:[]});await pending;assert.equal(m.accounts.jobs.has(1),false);assert.equal(m.authentication(1).code,null);assert.equal(m.names.get(1),'Changed Name');
+});

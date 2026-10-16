@@ -7,8 +7,8 @@ test('PA refuses a wrong-facing piston and removes its own power when the oppone
 function pistonAdapter(t,options={}){
  const {adapter}=require('./helpers/adapter'),{key}=require('../src/util'),{b,c,item,packets}=adapter(t);
  const blocks=new Map(),trace=[],enemy={id:10n,name:'Enemy',player:true,dimension:0,position:new Vec3(4.5,64,.5)},hole=enemy.position.floored();
- const set=(p,name,properties={})=>blocks.set(key(p),{name,position:p.floored(),solid:true,boundingBox:'block',stateId:1,properties});
- b.blockAt=p=>blocks.get(key(p))||{name:'air',position:p.floored(),solid:false,isAir:true,boundingBox:'empty',stateId:0};
+ const set=(p,name,properties={})=>{if(options.wirePiston&&name==='piston'){const Block=require('prismarine-block')(b.registry),entry=b.registry.blocksByName.piston;let local;for(let id=entry.minStateId;id<=entry.maxStateId;id++)if(Number(Block.fromStateId(id).getProperties().facing_direction)===properties.facing_direction){local=id;break;}c.emit('update_block',{position:p,block_runtime_id:b.worldMirror.wireIds.get(local)??local,layer:0});return;}blocks.set(key(p),{name,position:p.floored(),solid:true,boundingBox:'block',stateId:1,properties});};
+ b.blockAt=p=>options.wirePiston&&b.worldMirror.overrides.has(key(p))?b.worldMirror.get(p):blocks.get(key(p))||{name:'air',position:p.floored(),solid:false,isAir:true,boundingBox:'empty',stateId:0};
  b.entity.position=new Vec3(.5,64,.5);b.health=20;b.reach=()=>true;b.visible=()=>true;b.actors.set('10',enemy);
  set(hole.offset(0,-1,0),'bedrock');for(const [x,z]of [[1,0],[-1,0],[0,1],[0,-1]])set(hole.offset(x,0,z),'obsidian');
  const support=hole.offset(2,0,0);set(support.offset(0,-1,0),'stone');if(options.support)set(support,options.support);
@@ -70,4 +70,8 @@ test('PA waits for its own crystal to be pushed and ignores another crystal in t
  assert.equal(combat.piston.crystalId,'100');assert(!trace.some(x=>x.startsWith('attack:')));
  c.emit('move_entity',{runtime_entity_id:100n,position:hole.offset(.5,1,.5)});
  assert.equal(await combat.tick(enemy),true);assert(trace.includes('attack:100'));assert(!trace.includes('attack:200'));
+});
+
+test('PA continues to crystal and power using the actual live piston update packet instead of injected properties',async t=>{
+ const {b,combat,enemy,trace}=pistonAdapter(t,{support:'obsidian',wirePiston:true});assert(await combat.tick(enemy));assert.equal(Number(b.blockAt(combat.piston.pistonPos).properties.facing_direction),4);assert(trace.includes('redstone_block'));assert(trace.includes('attack:100'));assert.equal(combat.piston.error,undefined);
 });

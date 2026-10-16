@@ -50,3 +50,20 @@ test('restock approvals require owner session, CSRF and the current request ID; 
 test('Minecraft atlas is bundled and includes actual core item and block textures',async t=>{
  const f=await fixture(t);let r=await f.request('/assets/items.png');assert.equal(r.status,200);const bytes=Buffer.from(await r.arrayBuffer());assert.equal(bytes.subarray(1,4).toString(),'PNG');r=await f.request('/assets/items.json');const atlas=await r.json();for(const name of ['enchanted_golden_apple','diamond_sword','totem_of_undying','end_crystal','piston','obsidian','ender_chest'])assert(atlas.items[name],name);assert.equal((await f.request('/assets/../src/store.js')).status,404);
 });
+test('offline Minecraft login starts only through an authenticated CSRF-protected request and repeated IDs do not duplicate it',async t=>{
+ const f=await fixture(t);f.manager.login=id=>{f.calls.push({type:'login',id});return {state:'waiting',code:{value:'OWNER_DEVICE',url:'https://www.microsoft.com/link',expires:Date.now()+600000}};};
+ assert.equal((await f.request('/api/auth',{data:{target:'2'},auth:false})).status,401);await f.login();assert.equal((await f.request('/api/auth',{data:{target:'2'},headers:{'X-CSRF-Token':'bad'}})).status,403);assert.equal(f.calls.length,0);
+ const options={data:{target:'2'},headers:{'X-Request-Id':'one-login-request-038'}};let response=await f.request('/api/auth',options);assert.equal(response.status,200);assert.equal((await response.json()).authentication.code.value,'OWNER_DEVICE');response=await f.request('/api/auth',options);assert.equal(response.status,200);assert.equal(f.calls.length,1);assert.equal((await f.request('/api/auth',{data:{target:'all'}})).status,400);
+});
+test('Web does not create a game connection for an account without saved authentication',async t=>{
+ const f=await fixture(t);await f.login();let saved=false;f.manager.accounts={snapshot:()=>({saved})};let response=await f.request('/api/command',{data:{target:'2',command:'connect'}});assert.equal(response.status,200);assert.match((await response.json()).result,/Microsoft認証/);assert.equal(f.calls.length,0);saved=true;response=await f.request('/api/command',{data:{target:'2',command:'connect'}});assert.equal(response.status,200);assert.equal(f.calls[0].command,'connect');
+});
+test('readable UI retains minimum 14px text, contrast and permanently accessible notification controls',async t=>{
+ const f=await fixture(t),css=await(await f.request('/assets/app.css')).text(),html=await(await f.request('/')).text();assert((await f.request('/assets/ui-state.js')).ok);for(const size of css.matchAll(/font-size:(\d+)px/g))assert(Number(size[1])>=14);assert.match(css,/:root\{font-size:16px/);assert.match(css,/\.inventory-scroll\{overflow-x:auto/);assert.match(html,/id="inventory-drop-zone"/);assert(html.indexOf('id="enable-alerts"')<html.indexOf('id="restock-card"'));assert.match(html,/id="test-sound"/);
+ const luminance=hex=>{const rgb=hex.match(/\w\w/g).map(s=>parseInt(s,16)/255).map(n=>n<=.04045?n/12.92:((n+.055)/1.055)**2.4);return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;};const ratio=(a,b)=>(luminance(a)+.05)/(luminance(b)+.05);assert(ratio('bdc9e3','141825')>4.5);assert(ratio('ffffff','5558c7')>4.5);
+});
+test('Web login and connect buttons both request the same managed auth-to-game flow',async t=>{
+ const f=await fixture(t);await f.login();const requested=[];f.manager.requestConnection=id=>{requested.push(id);return {state:'waiting',autoConnect:true,connection:{state:'offline'}};};
+ let response=await f.request('/api/auth',{data:{target:'2'}});assert.equal(response.status,200);assert.equal((await response.json()).authentication.autoConnect,true);assert.deepEqual(requested,[2]);
+ response=await f.request('/api/command',{data:{target:'2',command:'connect'}});assert.equal(response.status,200);assert.deepEqual(requested,[2,2]);assert.equal(f.calls.length,0);
+});

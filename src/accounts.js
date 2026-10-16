@@ -9,7 +9,7 @@ function refreshSaved(directory){
 function storageInfo(dir,env=process.env){
  const actual=path.resolve(dir),mount=env.RAILWAY_VOLUME_MOUNT_PATH&&path.resolve(env.RAILWAY_VOLUME_MOUNT_PATH),railway=!!(env.RAILWAY_PROJECT_ID||env.RAILWAY_ENVIRONMENT_ID||env.RAILWAY_SERVICE_ID);
  let mounted=false;try{mounted=fs.readFileSync('/proc/self/mountinfo','utf8').split('\n').some(line=>{const p=line.split(' ')[4]?.replace(/\\040/g,' ');return p&&p!=='/'&&(actual===p||actual.startsWith(p+'/'))&&(mount?p===mount:p===actual);});}catch{}
- return {path:actual,persistent:railway?!!mounted:null,message:railway?(mounted?'Volume内に認証を保存':'認証の永続保存を確認できません。Railway VolumeをDATA_DIRにマウントしてください'):'このPCのDATA_DIRに認証を保存'};
+ return {path:actual,persistent:railway?!!mounted:null,message:railway?(mounted?'再起動後も使う認証はVolume内へ保存します':`再起動後の認証保存は未確認です。今の接続とは別の注意です。Railway VolumeのMount Pathを ${actual} にしてください。`):'このPCのDATA_DIRに認証を保存'};
 }
 class Accounts{
  constructor(store,options={}){this.store=store;this.jobs=new Map();this.flows=new Map();this.Flow=options.Flow;this.onChange=options.onChange||(()=>{});this.run=options.run||require('./auth-network').run;}
@@ -35,7 +35,7 @@ class Accounts{
    this.record(id,name,{name:data.extraData?.displayName});
    for(const file of fs.readdirSync(directory))if(file.endsWith('-cache.json'))fs.chmodSync(path.join(directory,file),0o600);
    if(!refreshSaved(directory))throw Error('Microsoft認証は完了しましたが保存用の認証情報を確認できません');
-   job.state='ready';job.code=null;this.onChange(id,'認証して保存しました。「接続」でMinecraftへ入れます');
+   job.state='ready';job.code=null;this.onChange(id,'Microsoft認証完了。現在の保存先へ認証情報を書き込みました（Minecraft入室は別の段階です）');
   }).catch(error=>{if(!current())return;job.state='failed';job.code=null;job.error=require('./auth-network').details(error)||error.message;this.flows.delete(id);this.onChange(id,'認証失敗: '+job.error);}).finally(()=>clearTimeout(timer));
   return this.snapshot(id,name);
  }

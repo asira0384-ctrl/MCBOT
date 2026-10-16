@@ -190,9 +190,11 @@ function _simulateTick(bot) {
     if (inLava) speed = C.LAVA_SPEED
 
     // --- Apply horizontal acceleration ---
-    if (bot.desiredMoveSpeed > 0 && inputLen > 0) {
+    const eatingSpeed = bot.handUse && bot.motion?.runtime?.config?.noSlow !== false ? (bot.motion?.runtime?.config?.eatSpeed ?? .12) : 0
+    if ((bot.desiredMoveSpeed > 0 || eatingSpeed > 0) && inputLen > 0) {
         const length = Math.hypot(moveX, moveZ) || 1
-        const requested = Math.min(bot.desiredMoveSpeed, inWater ? .15 : bot.desiredMoveSpeed)
+        const desired = eatingSpeed || bot.desiredMoveSpeed
+        const requested = Math.min(desired, inWater ? .15 : desired)
         entity.velocity.x = moveX / length * requested
         entity.velocity.z = moveZ / length * requested
     } else {

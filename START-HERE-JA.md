@@ -1,11 +1,11 @@
-# v0.3.8 最初に読む
+# v0.3.9 最初に読む
 
 ## 既存のRailwayを更新する
 
 1. ZIPを解凍します。
 2. AsiraClearBotフォルダの**中身**を既存GitHubリポジトリへ上書きします。src・web・vendor・scripts・package.json・package-lock.json・Dockerfileを含めます。
 3. Railwayの新しいデプロイが成功するまで待ちます。Variablesとdataは引き継ぎます。
-4. 起動ログとWeb右上がv0.3.8か確認します。WebはCtrl+F5で更新してください。
+4. 起動ログとWeb右上がv0.3.9か確認します。WebはCtrl+F5で更新してください。
 
 認証を残すため、MCBOTにVolumeを接続し、Mount Path=/data・DATA_DIR=/dataとします。DATA_DIRだけの設定ではVolumeは作成されません。
 
@@ -13,9 +13,9 @@
 
 1. Discordで /web を実行し、本人専用リンクを開きます。
 2. Bot1を選択。必要なら「Minecraftアカウント」で正確なゲーマータグを保存します。
-3. Microsoft認証を押し、https://www.microsoft.com/link で表示コードを入力します。
-4. Bot用アカウントでサインインし、Webで「認証して保存しました」を確認します。
-5. 「接続」を押します。次からは保存した認証を再利用します。Microsoftで失効した場合は再認証が必要です。
+3. ログイン・接続を押し、コードが出たら https://www.microsoft.com/link で入力します。
+4. Bot用アカウントでサインインすると、Minecraftへの接続を自動で開始します。
+5. 同じ画面で接続の段階・失敗理由を確認できます。再試行・キャンセルもここから操作します。次からは保存した認証を再利用し、失効した場合だけ再認証します。
 
 初回でまだWebのURLがない場合は、RailwayのMCBOT→Settings→Networking→Generate Domainを使い、生成されたhttpsのURLをDiscordの /web url: に設定します。HTTPポートはPORT（未指定なら3000）です。
 
@@ -29,4 +29,4 @@ Node.js 24を入れ、.env.exampleを.envにコピーしてDISCORD_TOKEN等を�
 
 使えない操作があれば、実行直後に「状態レポート」を保存してください。操作待ち・サーバー確認・地形・飲食・PA・Jetpackのどこで止まっているかを記録します。
 
-詳しくはUPDATE-v0.3.8-JA.mdとWEB-GUIDE-JA.mdを参照してください。
+詳しくはUPDATE-v0.3.9-JA.mdとWEB-GUIDE-JA.mdを参照してください。
