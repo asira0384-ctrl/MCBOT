@@ -110,7 +110,7 @@ class WebControl{
   const name=command.split(/\s/)[0].toLowerCase();if(['admin','owner','web'].includes(name))throw fail(403,'管理者の登録はDiscordから行ってください');
   const results=[];for(const [index,id]of ids.entries()){
    if(this.closed)throw fail(503,'終了処理中のため残りの操作を中止しました');
-   try{if(name==='connect'&&this.manager.accounts&&!this.manager.workers.get(id)?.bot.connected&&!this.manager.accounts.snapshot(id,this.manager.names.get(id)).saved)results.push({id,ok:true,result:'先に単体Botを選んで「Microsoft認証」を押してください。未認証のままサーバーには接続しません'});else results.push({id,ok:true,result:await this.manager.execute(String(id),command,'web')});}catch(e){results.push({id,ok:false,result:String(e.message)});}
+   try{if(name==='connect'&&this.manager.requestConnection){this.manager.requestConnection(id);results.push({id,ok:true,result:'ログイン・接続を開始しました。認証画面で進行状況を確認してください'});}else if(name==='connect'&&this.manager.accounts&&!this.manager.workers.get(id)?.bot.connected&&!this.manager.accounts.snapshot(id,this.manager.names.get(id)).saved)results.push({id,ok:true,result:'先に単体Botを選んで「Microsoft認証」を押してください。未認証のままサーバーには接続しません'});else results.push({id,ok:true,result:await this.manager.execute(String(id),command,'web')});}catch(e){results.push({id,ok:false,result:String(e.message)});}
    if(name==='connect'&&index<ids.length-1)await new Promise(resolve=>setTimeout(resolve,1500));
   }
   this.record(ids,name+' / '+(results.every(r=>r.ok)?'受付完了':'一部未完了'));return {ok:results.every(r=>r.ok),result:results.map(r=>`Bot${r.id}: ${r.result}`).join('\n').slice(0,16000),results};
@@ -156,7 +156,7 @@ class WebControl{
     const data=await body(req),result=await this.once(req,session,async()=>{const ids=this.targets(data.target);if(ids.length!==1||typeof data.approve!=='boolean')throw fail(400,'対象と許可・見送りを選んでください');const r=this.manager.worker(ids[0]).runtime;const message=r.restock.decide(String(data.id||''),data.approve);this.record(ids,data.approve?'今回の補充を許可':'今回の補充を見送り');return {ok:true,result:message};});this.json(res,200,result);return;
    }
    if(pathname==='/api/auth'){
-    const data=await body(req),result=await this.once(req,session,async()=>{const ids=this.targets(data.target);if(ids.length!==1)throw fail(400,'認証はBotを1体選んでください');const authentication=this.manager.login(ids[0]);this.record(ids,'Minecraft認証');return {ok:true,authentication,message:this.manager.authStatus(ids[0])};});this.json(res,200,result);return;
+    const data=await body(req),result=await this.once(req,session,async()=>{const ids=this.targets(data.target);if(ids.length!==1)throw fail(400,'認証はBotを1体選んでください');const authentication=this.manager.requestConnection?this.manager.requestConnection(ids[0]):this.manager.login(ids[0]);this.record(ids,'Minecraft認証');return {ok:true,authentication,message:this.manager.authStatus(ids[0])};});this.json(res,200,result);return;
    }
    if(pathname==='/api/account'){
     const data=await body(req),result=await this.once(req,session,async()=>{const ids=this.targets(data.target),name=String(data.name||'').trim();if(ids.length!==1||!name||name.length>64||/[\x00-\x1f]/.test(name))throw fail(400,'単体Botとゲーマータグを指定してください');const message=await this.manager.execute(String(ids[0]),'account set '+name,'web');this.record(ids,'Minecraftアカウント変更');return {ok:true,result:message};});this.json(res,200,result);return;
