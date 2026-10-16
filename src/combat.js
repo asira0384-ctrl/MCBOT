@@ -30,7 +30,7 @@ class CrystalCombat{
   return a&&/end(?:er)?_crystal/.test(a.name)&&Math.hypot(a.position.x-center.x,a.position.z-center.z)<.85&&Math.abs(a.position.y-(p.base.position.y+1))<1?a:null;
  }
  constructor(runtime){this.runtime=runtime;this.bot=runtime.bot;this.lastPlace=0;this.lastBreak=0;this.state='OFF';this.piston=null;this.pendingCrystal=null;this.lastAction=null;this.predictedPackets=0;this.boost=null;
-  this.onMotion=p=>{if(this.boost?.attackedAt&&String(p.runtime_entity_id)===String(this.bot._runtimeEntityId)&&p.velocity&&Date.now()-this.boost.attackedAt<1000&&Math.hypot(p.velocity.x,p.velocity.y,p.velocity.z)>.1)this.boost.knockbackAt=Date.now();};this.bot.client?.on?.('set_entity_motion',this.onMotion);
+  this.onMotion=p=>{if(this.boost?.attackedAt&&String(p.runtime_entity_id)===String(this.bot._runtimeEntityId)&&p.velocity&&Date.now()-this.boost.attackedAt<1000&&Math.hypot(p.velocity.x,p.velocity.y,p.velocity.z)>.1){this.boost.knockbackAt=Date.now();this.runtime.wakeCombat?.();}};this.bot.client?.on?.('set_entity_motion',this.onMotion);
  }
  async tick(enemy,signal){const r=this.runtime,b=this.bot;if(!enemy||buried(b,enemy)){if(this.piston)await this.cleanup(signal);this.state='敵が埋まっています';return false;}
   if(r.config.pistoncrystal&&!enemy.sneaking&&inHole(b,enemy))return this.pistonTick(enemy,signal);
@@ -62,7 +62,7 @@ class CrystalCombat{
   }
   if(!support||!ownClear(r,support.position.offset(.5,1,.5))){this.state='安全で届くCrystal設置面がありません';return false;}
   if(now-this.lastPlace<(r.config.crystalPlaceDelay??100))return false;
-  b.actionHandBusy=true;try{await b.equip(b.find('end_crystal').slot,signal);if(signal?.aborted||b.handUse)return false;
+  b.actionHandBusy=true;try{await b.equip(b.find('end_crystal').slot,signal);if(signal?.aborted||b.dead||b.handUse)return false;if(b.name(b.items[b.quickBarSlot])!=='end_crystal'){this.state='Crystalの持ち替えを再確認';return false;}
   b.lookAt(support.position.offset(.5,1,.5),false);this.pendingCrystal={at:Date.now(),position:support.position.offset(.5,1,.5)};
   b.client.queue('inventory_transaction',useItem(b,'click_block',support.position,1,support.stateId));
   this.lastPlace=Date.now();this.lastAction='place';this.placementScore={...blastScore(r,support.position.offset(.5,1,.5),enemy),position:support.position};this.state='Crystal設置要求';this.predict(this.pendingCrystal.position);return true;}finally{b.actionHandBusy=false;}
@@ -105,8 +105,11 @@ class CrystalCombat{
   if(signal?.aborted)return false;
   const center=plan.q.offset(.5,1,.5);await this.placeCrystal(b.blockAt(plan.q),signal);
   this.boost=boost={at:Date.now(),position:center,crystalId:null};
-  try{await b.waitUntil(()=>[...b.actors.values()].some(a=>/end(?:er)?_crystal/.test(a.name)&&a.position.distanceTo(center)<.8),1000,signal);}catch(e){this.boost=null;this.boostRetryAt=Date.now()+2000;if(signal?.aborted)throw e;return false;}
-  const crystal=[...b.actors.values()].find(a=>/end(?:er)?_crystal/.test(a.name)&&a.position.distanceTo(center)<.8);boost.crystalId=String(crystal.id);boost.attackedAt=Date.now();boost.lastAttack=Date.now();b.lookAt(crystal.position.offset(0,.5,0),false);if(b.attack(crystal)===false)boost.lastAttack=0;return true;
+  // Actor and knockback events continue the sequence on the next pulse.
+  // Waiting here used to block melee and other crystal actions for a second.
+  const crystal=[...b.actors.values()].find(a=>/end(?:er)?_crystal/.test(a.name)&&a.position.distanceTo(center)<.8);
+  if(crystal){boost.crystalId=String(crystal.id);boost.attackedAt=Date.now();boost.lastAttack=Date.now();b.lookAt(crystal.position.offset(0,.5,0),false);if(b.attack(crystal)===false)boost.lastAttack=0;}
+  this.state=crystal?'Jetpack: 自分のCrystalを起爆':'Jetpack: 自分のCrystal受信待ち';return true;
  }
 
  plan(enemy){const b=this.bot,p=enemy.position.floored();for(const [x,z]of [[1,0],[-1,0],[0,1],[0,-1]]){const base=b.blockAt(p.offset(x,0,z)),pistonPos=p.offset(x*2,1,z*2),support=b.blockAt(pistonPos.offset(0,-1,0)),pedestal=air(support)&&!!b.find('obsidian')&&solid(b.blockAt(pistonPos.offset(0,-2,0))),powerPos=pistonPos.offset(z,0,-x);if(base&&['obsidian','bedrock'].includes(base.name)&&air(b.blockAt(base.position.offset(0,1,0)))&&air(b.blockAt(base.position.offset(0,2,0)))&&(solid(support)||pedestal)&&(air(b.blockAt(pistonPos))||['piston','sticky_piston'].includes(b.blockAt(pistonPos)?.name))&&air(b.blockAt(powerPos))&&b.reach(support)&&b.reach(base))return {base,pistonPos,powerPos,pedestal,facing:x===1?4:x===-1?5:z===1?2:3,enemyId:String(enemy.id)};}return null;}
@@ -119,6 +122,7 @@ class CrystalCombat{
    if((!b.find('piston')&&!b.find('sticky_piston'))||!b.find('redstone_block')||!b.find('end_crystal')){this.state='PA: ピストン・レッドストーンブロック・Crystalが必要';return false;}
    if(!plan){this.state='PA: 到達可能な設置配置がありません';return false;}
    if(!ownClear(this.runtime,plan.base.position.offset(.5,1,.5))){this.state='PA: 自分・他Botへの爆発を回避';return false;}
+   this.piston=p={...plan,hole:enemy.position.floored(),placed:false,power:false,createdAt:Date.now(),stage:'pedestal',ownedPiston:air(b.blockAt(plan.pistonPos))};
    const support=plan.pistonPos.offset(0,-1,0);
    // Use the existing floor as-is. Build an obsidian pedestal only in known air.
    if(!solid(b.blockAt(support))){
@@ -127,12 +131,18 @@ class CrystalCombat{
     this.state='PA: 黒曜石の足場を設置';await b.place(support,obsidian,signal);
    }
    if(!this.active(enemy,signal))return false;
-   plan.ownedPiston=air(b.blockAt(plan.pistonPos));if(plan.ownedPiston)await b.place(plan.pistonPos,b.find('piston')||b.find('sticky_piston'),signal,{facing:plan.facing,timeout:1500});
-   this.piston=p={...plan,hole:enemy.position.floored(),placed:true,power:false,createdAt:Date.now(),stage:'piston'};this.state='PA: ピストン方向を確認';
+   p.stage='piston';if(p.ownedPiston)await b.place(plan.pistonPos,b.find('piston')||b.find('sticky_piston'),signal,{facing:plan.facing,timeout:1500});
+   p.placed=true;this.state='PA: ピストン方向を確認';
+  }
+  if(p.placed===false){
+   const support=p.pistonPos.offset(0,-1,0);
+   if(!solid(b.blockAt(support))&&air(b.blockAt(support))){const obsidian=b.find('obsidian');if(!obsidian){this.state='PA: 足場用の黒曜石不足';return false;}await b.place(support,obsidian,signal,{timeout:1500});}
+   if(air(b.blockAt(p.pistonPos))){const piston=b.find('piston')||b.find('sticky_piston');if(!piston){this.state='PA: ピストン不足';return false;}await b.place(p.pistonPos,piston,signal,{facing:p.facing,timeout:1500});}
+   p.placed=['piston','sticky_piston'].includes(b.blockAt(p.pistonPos)?.name);
   }
   const block=b.blockAt(p.pistonPos),facing=Number(block?.properties?.facing_direction);
   if(!['piston','sticky_piston'].includes(block?.name)||facing!==p.facing){p.error='ピストンが敵を向いていません';if(p.ownedPiston&&Date.now()-(p.createdAt||0)>2000&&b.tool()&&!p.power){await b.dig(block,signal,undefined,{timeout:2500});this.piston=null;this.state='PA: 自分の逆向きピストンを回収して配置を再試行';return false;}this.state='PA: ピストンが敵を向いていません。手動で回収するか敵の別面を確認してください';return false;}
-  let crystal=this.placedCrystal(p)||this.pushedCrystal(p);
+  delete p.error;let crystal=this.placedCrystal(p)||this.pushedCrystal(p);
   if(!crystal&&p.crystalId&&b.actors.has(p.crystalId)){this.state='PA: Crystal位置の確認待ち';return true;}
   if(!crystal){
    p.crystalId=null;
@@ -171,7 +181,7 @@ class CrystalCombat{
   if(pushed&&ownClear(this.runtime,pushed.position)&&pushed.position.distanceTo(b.entity.position)<=(this.runtime.config.blockReach||5)&&lineOfSight(b,pushed.position.offset(0,.5,0))&&Date.now()-this.lastBreak>=(this.runtime.config.crystalBreakDelay??50)){b.lookAt(pushed.position.offset(0,.5,0),false);b.attack(pushed);this.lastBreak=Date.now();this.state='PA: 押し込みを確認して起爆要求';}
   return true;
  }
- async prepareCrystal(item,signal){const b=this.bot;if(b.handUse||signal?.aborted)throw Object.assign(Error('手の操作待ち'),{code:'HAND_BUSY'});b.actionHandBusy=true;try{await b.equip(item.slot,signal);if(signal?.aborted||b.handUse)throw Error('Crystal設置を停止');}catch(e){b.actionHandBusy=false;throw e;}}
+ async prepareCrystal(item,signal){const b=this.bot;if(b.handUse||signal?.aborted)throw Object.assign(Error('手の操作待ち'),{code:'HAND_BUSY'});b.actionHandBusy=true;try{await b.equip(item.slot,signal);if(signal?.aborted||b.dead||b.handUse)throw Error('Crystal設置を停止');if(b.name(b.items[b.quickBarSlot])!=='end_crystal')throw Error('手に持ったCrystalを確認できません');}catch(e){b.actionHandBusy=false;throw e;}}
  async placeCrystal(base,signal){const b=this.bot,item=b.find('end_crystal');if(!item)throw Error('Crystal不足');await this.prepareCrystal(item,signal);try{b.lookAt(base.position.offset(.5,1,.5),false);b.client.queue('inventory_transaction',useItem(b,'click_block',base.position,1,base.stateId));}finally{b.actionHandBusy=false;}}
  async feetTrap(enemy,signal){
   const b=this.bot;if(b.handUse||signal?.aborted||Date.now()-(this.lastTrap||0)<80)return false;

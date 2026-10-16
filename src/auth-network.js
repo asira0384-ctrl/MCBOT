@@ -39,4 +39,5 @@ function install(){if(installed)return;installed=true;const originalFetch=global
  auth.authenticate=(client,options)=>{const scope=clients.get(client);return scope?storage.run(scope,()=>originalAuthenticate(client,options)):originalAuthenticate(client,options);};
 }
 function attach(bot){install();const controller=new AbortController(),scope={signal:controller.signal,closed:()=>bot.ended||bot.client._closed,notify:text=>bot.emit('diagnostic',text)};clients.set(bot.client,scope);bot.once('end',()=>{controller.abort();const flow=bot.client.options?.authflow;if(flow?.msa)flow.msa.polling=false;});return scope;}
-module.exports={attach,authFetch,codes,retryable,details};
+function run(scope,fn){install();return storage.run(scope,fn);}
+module.exports={run,attach,authFetch,codes,retryable,details};

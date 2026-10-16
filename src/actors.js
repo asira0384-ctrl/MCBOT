@@ -9,10 +9,10 @@ function trackActors(bot){
  bot.client.on('mob_equipment',p=>{const a=bot.actors.get(String(p.runtime_entity_id));if(!a)return;if(p.window_id==='offhand'||p.window_id===119)a.offhand=p.item?.network_id?p.item:null;else a.mainhand=p.item?.network_id?p.item:null;a.equipmentAt=Date.now();});
  bot.client.on('mob_armor_equipment',p=>{const a=bot.actors.get(String(p.runtime_entity_id));if(a){a.armor=[p.helmet,p.chestplate,p.leggings,p.boots].map(i=>i?.network_id?i:null);a.equipmentAt=Date.now();}});
  bot.client.on('set_entity_data',p=>{const a=bot.actors.get(String(p.runtime_entity_id));if(a)metadata(a,p.metadata);});
- bot.client.on('move_player',p=>{const a=bot.actors.get(String(p.runtime_id));if(a&&p.position){a.rawPosition=p.position;a.position=playerPosition(p.position);a.seen=Date.now();}});
- bot.client.on('move_entity',p=>{const a=bot.actors.get(String(p.runtime_entity_id));if(a&&p.position){a.rawPosition=null;a.position=new Vec3(p.position.x,p.position.y,p.position.z);a.seen=Date.now();}});
- bot.client.on('move_entity_delta',p=>{const a=bot.actors.get(String(p.runtime_entity_id));if(a){for(const k of ['x','y','z'])if(p[k]!==undefined&&p[k]!==null)a.position[k]=p[k];a.seen=Date.now();}});
- bot.client.on('remove_entity',p=>{for(const [id,a] of bot.actors)if(a.uniqueId===String(p.entity_id_self))bot.actors.delete(id);});
+ bot.client.on('move_player',p=>{const a=bot.actors.get(String(p.runtime_id));if(a&&p.position){a.rawPosition=p.position;a.position=playerPosition(p.position);a.seen=Date.now();bot.emit('actorUpdated',a);}});
+ bot.client.on('move_entity',p=>{const a=bot.actors.get(String(p.runtime_entity_id));if(a&&p.position){a.rawPosition=null;a.position=new Vec3(p.position.x,p.position.y,p.position.z);a.seen=Date.now();bot.emit('actorUpdated',a);}});
+ bot.client.on('move_entity_delta',p=>{const a=bot.actors.get(String(p.runtime_entity_id));if(a){for(const k of ['x','y','z'])if(p[k]!==undefined&&p[k]!==null)a.position[k]=p[k];a.seen=Date.now();bot.emit('actorUpdated',a);}});
+ bot.client.on('remove_entity',p=>{for(const [id,a] of bot.actors)if(a.uniqueId===String(p.entity_id_self)){bot.actors.delete(id);bot.emit('actorRemoved',a);}});
  bot.client.on('player_list',p=>{const payload=p.records;const list=Array.isArray(payload)?payload:payload?.records||[];for(const r of list)if((Array.isArray(payload)?r.type:payload.type)==='remove')for(const [id,a]of bot.actors)if(a.uuid===r.uuid)bot.actors.delete(id);});
  bot.client.on('entity_event',p=>{const own=String(p.runtime_entity_id)===String(bot._runtimeEntityId);if(own&&(p.event_id==='consume_totem'||p.event_id===65)){if(/totem/.test(bot.name(bot.offhand?.[0])))bot.offhand[0]=null;bot.emit('totemUsed');}
   if(p.event_id==='death_animation'||p.event_id===3){const actor=bot.actors.get(String(p.runtime_entity_id));if(actor)bot.emit('actorDied',actor);bot.actors.delete(String(p.runtime_entity_id));if(own&&!bot.dead)bot.markDead('entity_event');}

@@ -1,3 +1,29 @@
+# v0.3.8 の追加・変更コマンド
+
+WebはDiscordの `/web`、Discordのボタンは `/panel` です。下記は `/bot target:1 command:内容` の「内容」に入れます。
+
+| 内容 | 動作 |
+| --- | --- |
+| login | Minecraftに接続せずMicrosoft認証を開始 |
+| account set Aslrq01x | ゲーマータグを保存して切り替え。認証はアカウント別に保持 |
+| eatspeed 0.12 | 食事中の移動速度を指定。NoSlowもON |
+| noslow on / noslow off | 食事中の速度制御を切り替え |
+| eat / drink | 今すぐ金リンゴ／力ポーションを使用 |
+| ka on / ca on / pa on | 戦闘機能のON。offで解除 |
+| anticrystal on / anticrystal off | AntiCrystalのON/OFF |
+| goto fly overworld 100 100 100 | 座標へ飛行。00の天井は穴を探して抜ける |
+| elytrafly off | 滑空を終了して着地 |
+| drop 7 16 / swap 1 10 | スロット7から16個破棄／1番と10番を交換。番号は1始まり |
+| bps / nearby / debug | 速度／周辺プレイヤー／状態の診断 |
+
+`/auth target:1` だけで認証を開始・確認できます。認証が終わったら `connect`。Webでは「Microsoft認証」→保存を確認→「接続」の順です。
+
+KAの初期間隔75ms、CA設置50ms・起爆25msへ変更しました。食事中はAntiを維持して速度0.12で退避します。食事にはゲーム側の使用時間が必要です。既存のコマンドは引き続き使用できます。
+
+以下はv0.3.7以前の案内・仕様の履歴です。初期の間隔・飛行・認証・Web操作は上のv0.3.8とUPDATE-v0.3.8-JA.mdを優先してください。
+
+---
+
 # v0.3.7 更新
 
 戦闘・移動・補充の許可とWebのアイテム画像／交換／破棄、BPS、周辺プレイヤー、アカウント変更を追加しました。

@@ -16,7 +16,7 @@ class ControlPanel{
   const menu=new StringSelectMenuBuilder().setCustomId(CID+'target').setPlaceholder('操作するBotを選ぶ').addOptions([...this.manager.names].map(([id,name])=>({label:`Bot${id} / ${name}`.slice(0,100),value:String(id),default:s.target===String(id)}))).addOptions({label:'全Bot',value:'all',default:s.target==='all'});
   const components=[row(menu)];
   if(s.page==='home'){
-   components.push(row(button('connect','接続',ButtonStyle.Success),button('disconnect','切断',ButtonStyle.Danger),button('stop','停止',ButtonStyle.Danger),button('auth','認証コード',ButtonStyle.Secondary,!one),button('refresh','更新')));
+   components.push(row(button('connect','接続',ButtonStyle.Success),button('disconnect','切断',ButtonStyle.Danger),button('stop','停止',ButtonStyle.Danger),button('auth','Microsoft認証',ButtonStyle.Secondary,!one),button('refresh','更新')));
    components.push(row(button('receive','装備・箱を受け取る',ButtonStyle.Primary,!connected),button('page:travel','移動',ButtonStyle.Primary),button('view','視点画像',ButtonStyle.Secondary,!connected||!one),button('report','状態レポート'),button('web-open','Webで開く')));
    components.push(row(button('page:gear','装備設定'),button('page:combat','敵・戦闘'),button('page:mining','整地'),button('page:logs','ログ・管理者'),button('page:chat','チャット')));
   }else if(s.page==='chat'){components.push(row(button('form:say','公開チャットに送信',ButtonStyle.Primary,!connected),button('form:w','tellを送信',ButtonStyle.Primary,!connected)));
@@ -72,7 +72,7 @@ class ControlPanel{
    if(['auth','view','report','messages','enemy-list','admin-list','stats'].includes(parts[0])){await i.deferReply({flags:MessageFlags.Ephemeral});let result;
     if(parts[0]==='report'){await i.editReply({content:'停止理由・地形・直近の移動記録を含む状態レポートです。動かない操作を試した直後のファイルを確認してください。',files:[{attachment:Buffer.from(JSON.stringify(this.diagnostic(s),null,2)),name:'bot-report.json'}],allowedMentions:{parse:[]}});return true;}
     if(parts[0]==='view'){const ids=this.ids(s);if(ids.length!==1)throw Error('Botを1体選んでください');const b=this.manager.worker(ids[0]).bot,view=require('./view').renderView(b);await i.editReply(require('./view').reply(b,ids[0]));return true;}
-    if(parts[0]==='auth'){const ids=this.ids(s);if(ids.length!==1)throw Error('Botを1体選んでください');result=this.manager.authStatus(ids[0]);}
+    if(parts[0]==='auth'){const ids=this.ids(s);if(ids.length!==1)throw Error('Botを1体選んでください');this.manager.login(ids[0]);result=this.manager.authStatus(ids[0]);}
     else if(parts[0]==='admin-list')result=this.manager.store.data.admins.map(a=>`${a.name} / ${a.xuid}`).join('\n')||'登録なし';
     else result=await this.manager.execute(s.target,{'enemy-list':'enemy list',messages:'messages',stats:'stats'}[parts[0]]);
     await i.editReply({content:String(result).slice(0,1900),allowedMentions:{parse:[]}});return true;

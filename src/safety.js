@@ -34,17 +34,17 @@ function findEscape(bot,position,{radius=20,rise=24,maxNodes=6000}={}){
 }
 class WaterSafety{
  constructor(runtime){this.runtime=runtime;this.bot=runtime.bot;this.pending=false;this.active=false;this.route=null;this.state='';this.bot.safety=this;}
- arm(){this.pending=true;this.active=false;this.route=null;this.armedAt=Date.now();this.nextSearch=0;this.state='リスポーン地点の水と足場を確認中';}
- cancel(){if(this.active){this.bot.clearControlStates();this.bot.naturalIdleFall=true;}this.pending=false;this.active=false;this.route=null;this.state='';}
+ arm({resumeTravel=false}={}){this.resumeRoute=resumeTravel?this.runtime.travel.route:null;this.pending=true;this.active=false;this.route=null;this.armedAt=Date.now();this.nextSearch=0;this.state='リスポーン地点の水と足場を確認中';}
+ cancel(){if(this.active){this.bot.clearControlStates();this.bot.naturalIdleFall=true;}this.pending=false;this.active=false;this.route=null;this.resumeRoute=null;this.state='';}
  invalidate(){this.route=null;this.nextSearch=0;}
  requestTerrain(){const b=this.bot,p=b.entity.position,w=b.worldMirror;if(!w?.request)return;const x=Math.floor(p.x)>>4,z=Math.floor(p.z)>>4,y=Math.floor(p.y)>>4;for(let dx=-1;dx<=1;dx++)for(let dz=-1;dz<=1;dz++)w.request(x+dx,z+dz,y-1,y+2);}
  update(){const b=this.bot,r=this.runtime;if(!this.pending&&!this.active)return false;if(!b.connected||b.ended||b.dead||!b.entity){this.cancel();return false;}
   const p=b.entity.position,feet=b.blockAt(p),head=b.blockAt(p.offset(0,1.62,0));
   if(!this.active){if(!feet||!head){if(Date.now()>=(this.nextSearch||0)){this.requestTerrain();this.nextSearch=Date.now()+1000;}return false;}
    if(!water(feet)&&!water(head)){if(feet?.isAir&&b.blockAt(p.offset(0,-.1,0))?.solid||Date.now()-this.armedAt>10000){this.pending=false;this.state='水中ではありません';}return false;}
-   this.wasPaused=!!r.paused;this.active=true;this.pending=false;r.abort?.abort();r.worker.stop();r.travel.cancel(false);r.receiving=false;r.paused=true;b.closeContainer();this.state='水中避難中';r.notice('水中でリスポーン。空気と乾いた足場へ泳いで避難します');
+   this.wasPaused=!!r.paused;this.active=true;this.pending=false;r.abort?.abort();r.worker.stop();r.travel.cancel(false);r.receiving=false;r.paused=true;b.closeContainer();this.state='水中避難中';r.notice('水中から空気と乾いた足場へ泳いで避難します');
   }
-  if(dryStand(b,p.floored())&&b.entity.onGround){b.clearControlStates();b.naturalIdleFall=true;this.active=false;this.route=null;this.state='乾いた足場へ避難済み';r.paused=this.wasPaused;r.dirty=true;r.notice(`水中から避難しました。座標: ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)}`);return false;}
+  if(dryStand(b,p.floored())&&b.entity.onGround){b.clearControlStates();b.naturalIdleFall=true;this.active=false;this.route=null;this.state='乾いた足場へ避難済み';r.paused=this.wasPaused;if(this.resumeRoute){r.travel.route=this.resumeRoute;this.resumeRoute=null;}r.dirty=true;r.notice(`水中から避難しました。座標: ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)}`);return false;}
   b.naturalIdleFall=false;
   if(!this.route||Date.now()-this.plannedAt>2500){if(Date.now()>=(this.nextSearch||0)){this.requestTerrain();this.route=findEscape(b,p);this.index=1;this.plannedAt=Date.now();this.nextSearch=Date.now()+1000;this.state=this.route?.kind==='dry'?'乾いた足場へ泳いで移動':this.route?'空気のある水面へ移動':'避難経路の地形受信待ち';}}
   b.clearControlStates();const path=this.route?.path;let target=path?.[Math.min(this.index,path.length-1)];

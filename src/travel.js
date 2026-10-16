@@ -42,7 +42,7 @@ class Travel{
   const old=this.following;this.following={kind,destination:destination.clone(),stopRadius,speed,plannedAt:old?.plannedAt||0,path:old?.kind===kind?old.path:null};
   if(!old||old.destination.distanceTo(destination)>1)this.following.plannedAt=0;
   const f=this.following;if(Date.now()-f.plannedAt>250||!f.path?.length){f.path=require('./navigation').groundPath(b,pose,destination);f.plannedAt=Date.now();}
-  while(f.path?.length&&pose.distanceTo(f.path[0].position.offset(.5,0,.5))<.3)f.path.shift();
+  while(f.path?.length&&(f.path[0].action==='swim'?Math.hypot(pose.x-f.path[0].position.x-.5,pose.z-f.path[0].position.z-.5)<.35:pose.distanceTo(f.path[0].position.offset(.5,0,.5))<.3))f.path.shift();
   const gap=kind==='chase'?this.gapGoal(destination):null;if(gap&&(!f.path?.length||f.path.length>pose.distanceTo(gap)*1.8)){this.flight={goal:gap,gap:true,combat:true,landing:true,expires:Date.now()+4000};this.waiting='約4ブロック以内の隙間を低速GLIDEで追尾';return true;}
   const next=f.path?.[0];if(!next||next.action==='scaffold'){b.clearControlStates();b.desiredMoveSpeed=undefined;b.desiredMoveWorld=null;this.waiting='移動経路を再確認中';return false;}
   if(b.actionHandBusy)return true;
@@ -54,7 +54,7 @@ class Travel{
   if(this.flight&&this.embed)this.unbury();
   if(this.embed&&(!this.runtime.config.anticrystal||Date.now()<(this.runtime.burrowBlockedUntil||0)))this.unbury();
   if(this.embed){
-   if(this.following&&b.controlState.forward){const {moveEntity}=require('../vendor/bedrockflayer/lib/physics/collision'),logical=new Vec3(b.entity.position.x,this.embed.original,b.entity.position.z),yaw=b.entity.yaw||0,speed=b.desiredMoveSpeed||.21;
+   if(this.following&&b.controlState.forward){const {moveEntity}=require('../vendor/bedrockflayer/lib/physics/collision'),logical=new Vec3(b.entity.position.x,this.embed.original,b.entity.position.z),yaw=b.entity.yaw||0,speed=b.handUse&&this.runtime.config.noSlow!==false?(this.runtime.config.eatSpeed??.12):(b.desiredMoveSpeed||.21);
     const vertical=b.controlState.jump&&b.entity.onGround? .42:(b.entity.velocity.y||0)-.08;
     const result=moveEntity(b,{...b.entity,position:logical},new Vec3((b.desiredMoveWorld?.x??-Math.sin(yaw))*speed,Math.max(-3.92,vertical),(b.desiredMoveWorld?.z??Math.cos(yaw))*speed),.6,1.8);
     const depth=this.embed.original-this.embed.y;this.embed.original=result.position.y;this.embed.y=result.position.y-depth;b.entity.position=new Vec3(result.position.x,result.position.y-depth,result.position.z);b.entity.velocity=new Vec3(result.velocity.x,result.velocity.y,result.velocity.z);b.entity.onGround=result.onGround;
@@ -62,9 +62,11 @@ class Travel{
   }
   if(!this.flight)return false;
   const f=this.flight,p=b.entity.position,now=Date.now();
+  if(f.holdGlide&&!f.roof&&!f.roofScanDone&&b.dimensionId===0&&Math.abs(p.x)<=512&&Math.abs(p.z)<=512&&now>(f.roofScanAt||0)){f.roofScanAt=now+2000;const roof=require('./roof').ceiling(b,p);if(roof&&Math.hypot(f.goal.x-p.x,f.goal.z-p.z)>24)f.roof=new(require('./roof').RoofNavigator)(b,f.goal,roof,sweptClear,.3+(this.runtime.config.flightClearance??1));}
+  if(f.roof){const goal=f.roof.next(p);if(f.goal.distanceTo(goal)>.1){f.goal=goal;f.path=null;f.bestDistance=undefined;}this.waiting=f.roof.phase==='done'?'エリトラ移動中':`00の天井: ${f.roof.phase.includes('entry')?'降りる穴':'上へ抜ける穴'}を探索 / 確認${f.roof.searches}回`;}
   if(require('./navigation').water(b.blockAt(p))||require('./navigation').water(b.blockAt(p.offset(0,1.62,0)))){this.flight=null;b.controlState.forward=false;b.controlState.jump=false;if(b.gliding)this.glide(false);this.waiting='水中では飛行を解除し、通常の泳ぎで移動';return false;}
   if(f.jetpack&&(!f.expires||now>=f.expires)||f.gap&&now>=f.expires){this.flight=null;b.controlState.forward=false;b.controlState.jump=false;if(b.gliding)this.glide(false);this.waiting='追尾飛行を終了・通常落下';return false;}
-  if(f.paused){b.controlState.forward=false;b.controlState.jump=false;if(b.gliding)this.glide(false);if(f.paused!=='replan'||now<(f.retryAt||0))return false;f.paused=false;f.path=null;}
+  if(f.paused){b.controlState.forward=false;b.controlState.jump=false;const preserve=f.holdGlide&&!f.landing&&!f.jetpack&&!f.gap;if(!preserve&&b.gliding)this.glide(false);if(f.paused!=='replan'||now<(f.retryAt||0)){if(preserve&&bodyClear(b,p,.3)){b.entity.velocity=new Vec3(0,0,0);if(!b.gliding)this.glide(true);return true;}return false;}f.paused=false;f.path=null;}
   if(!f.jetpack&&!b.gliding&&b.entity.onGround){b.controlState.jump=true;return false;}
   b.controlState.jump=false;if(!f.jetpack&&!b.gliding)this.glide(true);
   const margin=f.landing||f.gap?.3:.3+(this.runtime.config.flightClearance??1);
@@ -84,16 +86,16 @@ class Travel{
   if(!f.gap&&!f.landing&&Math.abs(delta.y)>.08&&horizontal>.05&&(!sweptClear(b,p,next,margin)||f.path?.length))next=p.offset(0,Math.sign(delta.y)*vs,0);
   if(!f.gap&&!f.landing&&!bodyClear(b,p,margin)){
    const before=wallDistance(b,p),options=[];
-   for(const [x,y,z]of [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[1,0,1],[1,0,-1],[-1,0,1],[-1,0,-1],[0,1,0]]){
+   for(const [x,y,z]of [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[1,0,1],[1,0,-1],[-1,0,1],[-1,0,-1],[0,1,0],[0,-1,0]]){
     const q=p.offset(x*.15,y*.15,z*.15),score=wallDistance(b,q);if(score>before+.005&&sweptClear(b,p,q,.3))options.push({q,score});
    }
    const escape=options.sort((a,c)=>c.score-a.score)[0];if(escape){b.entity.velocity=escape.q.minus(p);b.entity.position=escape.q;b.controlState.forward=Math.hypot(b.entity.velocity.x,b.entity.velocity.z)>.001;b.lookAt(escape.q.offset(0,1.62,0),false);this.waiting='離隔を確保するため低速で壁から退避';return true;}
   }
   const corridor=sweptClear(b,p,next,margin);
   if(!corridor){
-   b.controlState.forward=false;b.controlState.jump=false;if(now<(f.planAt||0)+250)return false;f.planAt=now;
+   b.controlState.forward=false;b.controlState.jump=false;if(now<(f.planAt||0)+250){b.entity.velocity=new Vec3(0,0,0);return !!f.holdGlide;}f.planAt=now;
    const path=require('./navigation').airDetour(b,p,f.goal,sweptClear,margin)||require('./navigation').airPath(b,p,f.goal,sweptClear,margin);
-   if(!path.length||f.landing||f.gap){f.paused='replan';f.retryAt=now+1000;f.path=null;b.entity.velocity=new Vec3(0,0,0);this.waiting='1ブロックの間隔がある迂回経路を再探索中';return false;}
+   if(!path.length||f.landing||f.gap){f.paused='replan';f.retryAt=now+1000;f.path=null;b.entity.velocity=new Vec3(0,0,0);this.waiting='1ブロックの間隔がある迂回経路を再探索中';return !!(f.holdGlide&&!f.landing&&!f.jetpack&&!f.gap&&bodyClear(b,p,.3));}
    f.path=path;f.bestDistance=undefined;this.waiting='壁から1ブロック離して迂回中';return true;
   }
   const movement=next.minus(p),direction=Math.abs(movement.x)<.001&&Math.abs(movement.z)>.001?'z':Math.abs(movement.z)<.001&&Math.abs(movement.x)>.001?'x':null;
@@ -109,9 +111,10 @@ class Travel{
     this.waiting='ポータル内でディメンション切替待ち';if(Date.now()-r.enteredAt>20000)throw Error('ポータルのディメンション切替を確認できません');
    }return;
   }
-  if(b.entity.position.distanceTo(r.destination)<1){if(this.flight){const floor=landingFloor(b,r.destination,3);if(!floor)throw Error('目的地の着地面を確認できません。飛行待機します');this.flight={goal:floor,landing:true};}this.route=null;this.runtime.notice('指定座標へ到着しました');return;}
+  if(b.entity.position.distanceTo(r.destination)<1){if(r.mode==='fly'&&this.flight){this.flight.goal=r.destination.clone();this.flight.roof=null;this.flight.holdGlide=true;this.route=null;this.waiting='指定座標で滑空を維持中。着地ボタンで解除';this.runtime.notice('指定座標へ到着しました。滑空を維持します');return;}if(this.flight){const floor=landingFloor(b,r.destination,3);if(!floor)throw Error('目的地の着地面を確認できません。飛行待機します');this.flight={goal:floor,landing:true};}this.route=null;this.runtime.notice('指定座標へ到着しました');return;}
   if(r.mode==='jetpack'){await this.runtime.crystals.jetpackTick({position:r.destination,player:false},signal);this.waiting=this.runtime.crystals.state;return;}
-  if(r.mode==='fly'){if(!b.terrainEstablished&&!b.entity.onGround){this.waiting='飛行開始前の足場確認待ち';return;}if(r.mode==='fly'){if(b.name(b.armor[1])!=='elytra'){await wear(b,{armor:true,totem:true,elytra:true},signal);if(b.name(b.armor[1])!=='elytra')throw Error('エリトラを補給してください');}if(b.damage(b.armor[1])>=422)throw Error('エリトラの耐久が少なくなりました');}this.flight??={goal:r.destination,landing:false,jetpack:false};this.waiting=this.flight.paused?this.waiting:r.mode==='jetpack'?'Jetpack移動中':'エリトラ移動中';return;}
+  if(r.mode==='fly'&&(require('./navigation').water(b.blockAt(b.entity.position))||require('./navigation').water(b.blockAt(b.entity.position.offset(0,1.62,0))))){if(!this.runtime.safety.active&&!this.runtime.safety.pending)this.runtime.safety.arm({resumeTravel:true});this.waiting='水中から足場へ泳いで抜けてから飛行を再開';return;}
+  if(r.mode==='fly'){if(!b.terrainEstablished&&!b.entity.onGround){this.waiting='飛行開始前の足場確認待ち';return;}if(r.mode==='fly'){if(b.name(b.armor[1])!=='elytra'){await wear(b,{armor:true,totem:true,elytra:true},signal);if(b.name(b.armor[1])!=='elytra')throw Error('エリトラを補給してください');}if(b.damage(b.armor[1])>=422)throw Error('エリトラの耐久が少なくなりました');}if(!this.flight){this.flight={goal:r.destination.clone(),landing:false,jetpack:false,holdGlide:true};if(b.dimensionId===0&&Math.abs(b.entity.position.x)<=512&&Math.abs(b.entity.position.z)<=512){const roof=require('./roof').ceiling(b,b.entity.position);if(roof&&Math.hypot(r.destination.x-b.entity.position.x,r.destination.z-b.entity.position.z)>24)this.flight.roof=new(require('./roof').RoofNavigator)(b,r.destination,roof,sweptClear,.3+(this.runtime.config.flightClearance??1));}}this.waiting=this.flight.paused?this.waiting:r.mode==='jetpack'?'Jetpack移動中':'エリトラ移動中';return;}
   if(r.mode==='walk'&&this.following?.kind==='route'&&this.following.path?.[0]?.action!=='scaffold'){this.follow(r.destination,undefined,'route');return;}
   this.waiting=r.mode==='dig'?'採掘しながら移動中':'徒歩移動中';await this.walk(r.destination,r.mode,signal);
  }

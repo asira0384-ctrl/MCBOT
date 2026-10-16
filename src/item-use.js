@@ -20,7 +20,7 @@ async function consume(bot,item,kind,signal){
   for(let attempt=1;attempt<=(bot.itemUseAttempts??2);attempt++){
    if(signal?.aborted)throw Error('停止しました');if(changed())break;
    if(bot.name(bot.items[slot])!==item.name)throw Error('使用中のアイテムがサーバーで変更されました');
-   state.attempt=attempt;state.phase='using';state.startedAt=Date.now();bot.usingItem=true;
+   state.attempt=attempt;state.phase='using';state.firstUseAt??=Date.now();state.selectDelayMs=state.firstUseAt-state.startedAt;bot.usingItem=true;
    if(attempt>1)bot.select(slot,true);
    bot.client.queue('inventory_transaction',useItem(bot,'click_air',{x:0,y:0,z:0},-1));
    await pause(duration+(attempt-1)*(bot.itemUseDurationMs===undefined?800:0));
@@ -34,7 +34,7 @@ async function consume(bot,item,kind,signal){
    await pause(timeout);if(changed())break;
   }
   if(!changed())throw Error('飲食完了のサーバー更新がありません（タイムアウト）');
-  bot.lastItemUse={kind,name:item.name,slot,status:'confirmed',attempts:state.attempt,confirmedBy:'inventory_decrease',at:Date.now()};return true;
+  bot.lastItemUse={kind,name:item.name,slot,status:'confirmed',attempts:state.attempt,selectDelayMs:state.selectDelayMs,confirmedBy:'inventory_decrease',at:Date.now()};return true;
  }catch(e){bot.lastItemUse={kind,name:item.name,status:signal?.aborted?'cancelled':'unconfirmed',attempts:state.attempt,reason:e.message,at:Date.now()};throw e;}
  finally{bot.usingItem=false;bot.lastUsingItem=false;if(bot.handUse===state)bot.handUse=null;}
 }

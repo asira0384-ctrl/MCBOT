@@ -33,6 +33,7 @@ class WebControl{
   const directory=path.join(__dirname,'..','web');this.assets=new Map([
    ['/',{type:'text/html; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'index.html'))}],
    ['/assets/app.css',{type:'text/css; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'app.css'))}],
+   ['/assets/ui-state.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'ui-state.js'))}],
    ['/assets/app.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'app.js'))}],
    ['/favicon.svg',{type:'image/svg+xml',buffer:fs.readFileSync(path.join(directory,'favicon.svg'))}]
   ]);
@@ -65,7 +66,7 @@ class WebControl{
     position:p?{x:p.x,y:p.y,z:p.z}:null,dimension:b?.dimensionId??0,config:{...defaults,...state.runtime},
     options:{respawn:state.respawn,autoSupply:state.autoSupply,chat:state.chat,floor:state.floor,ceiling:state.ceiling,area:state.area,scaffold:state.scaffold},
     inventory:Array.from({length:36},(_,n)=>item(b?.items?.[n],n)),armor:Array.from({length:4},(_,n)=>item(b?.armor?.[n],n)),offhand:item(b?.offhand?.[0],-1),
-    bps:r?.telemetry?.bps||0,verticalBps:r?.telemetry?.verticalBps||0,restock:r?.restock||null,nearby:w?.runtime?.telemetry?require('./tactics').nearby(w.runtime):[],accounts:state.accountHistory||[name],authCacheSaved:b?.config?.authDir?fs.readdirSync(b.config.authDir).length>0:false,runtime:r?{rollbackRecovery:r.rollbackRecovery,paused:r.paused,operation:r.operation,movement:r.movement,target:r.target,combatWaiting:r.combatWaiting,attacksSent:r.attacksSent,totemsUsed:r.totemsUsed,consumption:r.consumption,lastItemUse:r.lastItemUse,crystalCombat:r.crystalCombat,featureErrors:r.featureErrors,lastError:r.lastError}:null,
+    bps:r?.telemetry?.bps||0,verticalBps:r?.telemetry?.verticalBps||0,restock:r?.restock||null,nearby:w?.runtime?.telemetry?require('./tactics').nearby(w.runtime):[],accounts:state.accountHistory||[name],authentication:this.manager.authentication?.(id)||null,authCacheSaved:this.manager.accounts?.snapshot(id,name).saved||false,runtime:r?{rollbackRecovery:r.rollbackRecovery,paused:r.paused,operation:r.operation,movement:r.movement,target:r.target,combatWaiting:r.combatWaiting,attacksSent:r.attacksSent,totemsUsed:r.totemsUsed,consumption:r.consumption,lastItemUse:r.lastItemUse,crystalCombat:r.crystalCombat,featureErrors:r.featureErrors,lastError:r.lastError}:null,
     packetsReceived:Object.values(b?.packetCounts||{}).reduce((a,n)=>a+Number(n||0),0),corrections:b?.positionCorrections||0,logs:(this.manager.logs.get(id)||[]).slice(-30).map(redact)};
   });
   return {version:require('../package.json').version,at:this.now(),bots,friends:(this.manager.store.data.friends||[]).map(e=>e.name),enemies:(this.manager.store.data.enemies||[]).map(e=>e.name),audit:this.audit.slice(-30)};
@@ -109,7 +110,7 @@ class WebControl{
   const name=command.split(/\s/)[0].toLowerCase();if(['admin','owner','web'].includes(name))throw fail(403,'管理者の登録はDiscordから行ってください');
   const results=[];for(const [index,id]of ids.entries()){
    if(this.closed)throw fail(503,'終了処理中のため残りの操作を中止しました');
-   try{results.push({id,ok:true,result:await this.manager.execute(String(id),command,'web')});}catch(e){results.push({id,ok:false,result:String(e.message)});}
+   try{if(name==='connect'&&this.manager.accounts&&!this.manager.workers.get(id)?.bot.connected&&!this.manager.accounts.snapshot(id,this.manager.names.get(id)).saved)results.push({id,ok:true,result:'先に単体Botを選んで「Microsoft認証」を押してください。未認証のままサーバーには接続しません'});else results.push({id,ok:true,result:await this.manager.execute(String(id),command,'web')});}catch(e){results.push({id,ok:false,result:String(e.message)});}
    if(name==='connect'&&index<ids.length-1)await new Promise(resolve=>setTimeout(resolve,1500));
   }
   this.record(ids,name+' / '+(results.every(r=>r.ok)?'受付完了':'一部未完了'));return {ok:results.every(r=>r.ok),result:results.map(r=>`Bot${r.id}: ${r.result}`).join('\n').slice(0,16000),results};
@@ -133,7 +134,7 @@ class WebControl{
      const connection={res,key:session.key};this.events.add(connection);res.write('event: state\ndata: '+JSON.stringify(this.snapshot())+'\n\n');
      res.on('close',()=>this.events.delete(connection));return;
     }
-    if(pathname==='/api/auth'){const ids=this.targets(url.searchParams.get('target'));if(ids.length!==1)throw fail(400,'Botを1体選んでください');this.json(res,200,{message:this.manager.authStatus(ids[0])});return;}
+    if(pathname==='/api/auth'){const ids=this.targets(url.searchParams.get('target'));if(ids.length!==1)throw fail(400,'Botを1体選んでください');this.json(res,200,{message:this.manager.authStatus(ids[0]),authentication:this.manager.authentication?.(ids[0])||null});return;}
     if(pathname==='/api/report'){
      const ids=this.targets(url.searchParams.get('target'));
      const panel=new(require('./panel').ControlPanel)(this.manager,this.owner);const report=panel.diagnostic({target:ids.length===1?String(ids[0]):'all'});
@@ -153,6 +154,9 @@ class WebControl{
    }
    if(pathname==='/api/restock'){
     const data=await body(req),result=await this.once(req,session,async()=>{const ids=this.targets(data.target);if(ids.length!==1||typeof data.approve!=='boolean')throw fail(400,'対象と許可・見送りを選んでください');const r=this.manager.worker(ids[0]).runtime;const message=r.restock.decide(String(data.id||''),data.approve);this.record(ids,data.approve?'今回の補充を許可':'今回の補充を見送り');return {ok:true,result:message};});this.json(res,200,result);return;
+   }
+   if(pathname==='/api/auth'){
+    const data=await body(req),result=await this.once(req,session,async()=>{const ids=this.targets(data.target);if(ids.length!==1)throw fail(400,'認証はBotを1体選んでください');const authentication=this.manager.login(ids[0]);this.record(ids,'Minecraft認証');return {ok:true,authentication,message:this.manager.authStatus(ids[0])};});this.json(res,200,result);return;
    }
    if(pathname==='/api/account'){
     const data=await body(req),result=await this.once(req,session,async()=>{const ids=this.targets(data.target),name=String(data.name||'').trim();if(ids.length!==1||!name||name.length>64||/[\x00-\x1f]/.test(name))throw fail(400,'単体Botとゲーマータグを指定してください');const message=await this.manager.execute(String(ids[0]),'account set '+name,'web');this.record(ids,'Minecraftアカウント変更');return {ok:true,result:message};});this.json(res,200,result);return;

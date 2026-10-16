@@ -1,6 +1,6 @@
 {
   "name": "asira-clear-bot",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "private": true,
   "description": "Bedrock terraforming bots with owner-only Discord control",
   "main": "src/index.js",
@@ -21,6 +21,7 @@
     "prismarine-registry": "1.12.0",
     "prismarine-nbt": "2.8.0",
     "vec3": "0.2.0",
-    "raknet-native": "1.2.3"
+    "raknet-native": "1.2.3",
+    "prismarine-auth": "3.1.1"
   }
 }

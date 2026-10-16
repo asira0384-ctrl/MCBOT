@@ -11,7 +11,7 @@ function sample(runtime){
   flight:runtime.travel?.flight?{goal:point(runtime.travel.flight.goal),paused:runtime.travel.flight.paused||false,landing:!!runtime.travel.flight.landing,jetpack:!!runtime.travel.flight.jetpack}:null,
   movement:runtime.travel?.waiting||'',combatWaiting:runtime.combatWaiting||'',crystalState:runtime.crystals?.state||'',
   consumption:b.handUse?{...b.handUse}:null,lastItemUse:b.lastItemUse||null,timerActive:!!b.straightTimerActive,legacyMovementFallback:!!b.legacyMovementFallback,
-  inventoryOpen:!!b.inventoryOpen,inventoryOpenState:b.inventoryOpenState,inventoryOpenRequests:b.inventoryOpenRequests};
+  combatBusy:!!runtime.combatBusy,roof:runtime.travel?.flight?.roof?.snapshot()||null,inventoryResponse:b.lastStackResponse||null,inventoryOpen:!!b.inventoryOpen,inventoryOpenState:b.inventoryOpenState,inventoryOpenRequests:b.inventoryOpenRequests};
 }
 function reasons(runtime){
  const b=runtime.bot,out=[];
@@ -19,7 +19,7 @@ function reasons(runtime){
  if(b.dead)out.push('死亡状態・リスポーン待ちです');
  if(b.physicsState?.mode==='terrain_wait')out.push('足元の地形が未受信または判別不能で、移動と落下を止めています');
  if(b.physicsState?.mode==='collision_hold')out.push('体と受信ブロックが重なり、サーバーの位置補正を待っています');
- if(runtime.travel?.flight?.paused)out.push('飛行は中断中です。飛行による位置固定は解除しています');
+ if(runtime.travel?.flight?.paused)out.push(runtime.travel.flight.holdGlide?'飛行の迂回経路を再探索中です。開始した滑空を維持しています':'飛行は中断中です。通常物理へ戻しています');
  if(runtime.travel?.embed)out.push('AntiCrystalの埋まり動作中です');
  if(runtime.paused)out.push('操作は停止状態です。移動先の指定や機能のON操作で再開します');
  if(runtime.busy)out.push('実行・応答待ち: '+(runtime.operation||'処理中'));

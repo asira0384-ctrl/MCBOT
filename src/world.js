@@ -42,7 +42,7 @@ class World {
  update(p){if(p.layer!==undefined&&p.layer!==0)return;this.overrides.set(key(p.position),p.block_runtime_id);this.bot.emit('worldUpdate',p.position);}
  get(p){p=new Vec3(Math.floor(p.x),Math.floor(p.y),Math.floor(p.z));if(!this.registry)return null;
   const override=this.overrides.get(key(p));let b,entry;
-  if(override!==undefined){const data=this.resolve(override);if(!data)return this.unknown(p);const native=require('prismarine-block')(this.registry).fromStateId(data.stateId);b={...data,shapes:native.shapes,position:p,stateId:override};}
+  if(override!==undefined){const data=this.resolve(override);if(!data)return this.unknown(p);const native=require('prismarine-block')(this.registry).fromStateId(data.stateId);b={...data,properties:native.getProperties?.()||{},boundingBox:native.boundingBox,shapes:native.shapes,position:p,stateId:override};}
   else{const cx=p.x>>4,cz=p.z>>4;if(!this.known.has(`${cx},${p.y>>4},${cz}`))return null;const c=this.columns.get(`${cx},${cz}`);if(!c)return null;
    const section=c.getSection(p);entry=section?.blocks[0]?section.getPaletteEntry(0,p.x&15,p.y&15,p.z&15):null;if(entry?.unresolvedRuntimeId!==undefined)return this.unknown(p,entry.unresolvedRuntimeId);const native=c.getBlock(new Vec3(p.x&15,p.y,p.z&15));if(!native||!native.name)return this.unknown(p);b={name:native.name,type:native.type,hardness:native.hardness,material:native.material,diggable:native.diggable,boundingBox:native.boundingBox,position:p,
     properties:native.getProperties?.()||{},shapes:native.shapes,stateId:entry?.runtimeId??this.wireIds.get(native.stateId)??(this.hashed?native.hash:native.stateId)};
