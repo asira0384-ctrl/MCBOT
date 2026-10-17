@@ -7,6 +7,7 @@ class Runtime{
   if((worker.state.tacticsRevision||0)<37){this.config.range=5;this.config.chaseRange=Math.max(30,this.config.chaseRange);this.config.logOnlyEmptyTotem=true;this.config.crystalPlaceDelay=Math.min(100,this.config.crystalPlaceDelay);this.config.crystalBreakDelay=Math.min(50,this.config.crystalBreakDelay);worker.state.tacticsRevision=37;}
   if((worker.state.tacticsRevision||0)<38){this.config.attackDelay=Math.min(75,this.config.attackDelay);this.config.crystalPlaceDelay=Math.min(50,this.config.crystalPlaceDelay);this.config.crystalBreakDelay=Math.min(25,this.config.crystalBreakDelay);this.config.noSlow=true;this.config.eatSpeed??=.12;worker.state.tacticsRevision=38;}
   if(Object.hasOwn(this.config,'attackall')){this.config.attackAll=!!this.config.attackall;delete this.config.attackall;}
+  if(['look','opposite'].includes(worker.state.pistonFacingMode))this.bot.pistonFacingMode=worker.state.pistonFacingMode;
   this.telemetry=new(require('./tactics').Telemetry)(this.bot);this.restock=new(require('./restock').Restock)(this);
   this.crystals=new(require('./combat').CrystalCombat)(this);
   this.debug=new(require('./debug').DebugRecorder)(this);
@@ -16,7 +17,8 @@ class Runtime{
   this.bot.on('dimensionChanged',()=>{this.combatAbort?.abort();this.consumeAbort?.abort();});
   this.bot.on('death',()=>{this.combatAbort?.abort();this.consumeAbort?.abort();this.travel.stopFollowing();this.safety.cancel();this.abort?.abort();this.travel.cancel(false);this.receiving=false;this.target=null;if(worker.state.respawn)this.bot.requestRespawn();this.notice('死亡・自動リスポーン待ち');});
   this.bot.on('respawned',()=>{this.safety.arm();this.dirty=true;this.telemetry.reset();if(this.worker.state.autoSupply)this.restock.request('死亡後の1kit補充','kit',true);const p=this.bot.entity.position;this.notice(`リスポーンしました。座標: ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)} / ${['現世','ネザー','エンド'][this.bot.dimensionId]||this.bot.dimensionId}。装備の補給待ちです`);});
-  this.bot.on('collisionBlocked',()=>{this.burrowBlockedUntil=Date.now()+3000;this.speedBlockedUntil=Date.now()+2000;this.travel.recoverAnti?.(!this.paused);this.noticeOnce('ブロックとの重なりを検知。AntiとSpeedを一時停止して足場と位置補正を確認中',false);});
+  this.bot.on('collisionBlocked',()=>{this.speedBlockedUntil=Date.now()+2000;if(this.protectAnti()){this.travel.recoverAnti();this.noticeOnce('戦闘中のAntiを維持し、受信した足場と追尾経路を再確認中',false);}else{this.burrowBlockedUntil=Date.now()+3000;this.travel.recoverAnti?.(!this.paused);this.noticeOnce('ブロックとの重なりを検知。足場と位置補正を確認中',false);}});
+  this.onHandAvailable=()=>{if(this.pendingFood&&!this.destroyed){this.pendingFood=false;queueMicrotask(()=>{if(this.needsFood())this.startUse('体力回復',this.bot.find('enchanted_golden_apple'));});}};this.bot.on('handAvailable',this.onHandAvailable);
   this.bot.on('forcedMove',()=>{this.travel.rollback();this.telemetry.reset();this.safety.invalidate();});
   this.bot.on('actorAdded',()=>this.wakeCombat());this.bot.on('actorRemoved',()=>this.wakeCombat());this.bot.on('actorUpdated',()=>this.wakeCombat());
   this.bot.on('end',()=>this.destroy());
@@ -27,14 +29,15 @@ class Runtime{
  prioritize(feature,on=true){
   if(!on&&['feettrap','pvp'].includes(feature))this.crystals.trapAbort?.abort();
   this.combatAbort?.abort();this.latestFeature=feature;this.featureOrder??={};this.featureOrder[feature]=Date.now();this.abort?.abort();this.bot.closeContainer();if(!this.bot.handUse)this.bot.halt();else{this.bot.pathfinder?.stop();this.bot.clearControlStates();}this.retryAt=0;this.featureErrors={};this.lastError='';this.paused=false;this.worker.state.runtimePaused=false;this.dirty=true;
-  if(on&&['killaura','crystalaura','pistoncrystal','pvp'].includes(feature)){this.pendingMove=null;this.travel.cancel(false);this.worker.stop();}
+  if(on&&['killaura','crystalaura','pistoncrystal','pvp'].includes(feature)){this.pendingMove=null;this.travel.cancel(false,{preserveAnti:this.config.anticrystal});this.worker.stop();}
   if(feature==='anticrystal'&&!on){this.travel.unbury();this.burrowBlockedUntil=Date.now()+2000;};
  }
  startUse(kind,item){
   if(this.bot.manualInventoryBusy)return null;if(this.consumeTask||this.bot.handUse)return this.consumeTask;if(kind==='体力回復'&&this.healLatch&&!this.needsFood())return null;const error=this.featureErrors?.[kind];if(error?.retryAt>Date.now())return null;
   // Finish/cancel an in-flight placement before selecting food; two concurrent
   // equip continuations can otherwise replace the apple just after click_air.
-  if(this.bot.actionHandBusy){this.combatAbort?.abort();this.crystals.trapAbort?.abort();return null;}
+  this.combatAbort?.abort();this.crystals.trapAbort?.abort();
+  if(this.bot.actionHandBusy){if(kind==='体力回復')this.pendingFood=true;return null;}
   const controller=this.consumeAbort=new AbortController();this.consumeTask=(async()=>{
    try{await (kind==='体力回復'?this.bot.eat(controller.signal):this.bot.drink(item,controller.signal));if(kind==='体力回復'){this.lastHeal=Date.now();this.healLatch={at:this.lastHeal,health:this.bot.health};}else this.lastStrength=Date.now();delete this.featureErrors?.[kind];this.dirty=true;this.noticeOnce(kind+'をサーバー更新で確認しました');}
    catch(e){if(!controller.signal.aborted){this.featureErrors??={};this.featureErrors[kind]={message:e.message,at:Date.now(),retryAt:Date.now()+700};this.noticeOnce(kind+': '+e.message,false);}}
@@ -47,13 +50,21 @@ class Runtime{
   // Rearm after fresh damage, or after the server's regeneration expires.
   const regeneration=b.effects?.get(10);return b.health<=last.health-2||b.health<=Math.max(4,this.config.healHearts*2-6)||(!regeneration||regeneration.expires<=Date.now())&&elapsed>=5000;
  }
- meleeTick(enemy){
-  const b=this.bot;this.meleeState='待機';if(!this.config.killaura||b.dead||this.paused)return;if(b.handUse||b.actionHandBusy||this.consumeTask||this.needsFood()){this.meleeState='手の操作・食事を優先';return;}
-  if(b.entity.position.distanceTo(enemy.position)>this.config.range){this.meleeState='射程外';return;}if(!this.canSeeEnemy(enemy)){this.meleeState='壁で遮られています';return;}if(Date.now()-this.lastAttack<(this.config.attackDelay||100))return;
-  const sword=this.combatSword();if(!sword||sword.slot>=9||require('./inventory').touches(b,sword.slot)||require('./inventory').touches(b,b.quickBarSlot)){this.meleeState='剣の装填・サーバー確認待ち';return;}
-  b.select(sword.slot);b.lookAt(this.aimAtEnemy(enemy),false);if(b.attack(enemy)!==false){this.lastAttack=Date.now();this.attacks++;}
-  this.meleeState='攻撃要求を送信';
+ meleeTick(enemy){if(this.meleeTask)return this.meleeTask;const task=this.performMelee(enemy).finally(()=>{if(this.meleeTask===task)this.meleeTask=null;});this.meleeTask=task;task.catch(e=>{if(e.code!=='HAND_BUSY')this.meleeState='剣の確認待ち: '+e.message;});return task;}
+ async performMelee(enemy,signal){
+  const b=this.bot;this.meleeState='待機';if(!this.config.killaura||b.dead||this.paused||this.paOwnsHand(enemy))return false;if(b.handUse||b.actionHandBusy||this.consumeTask||this.needsFood()){this.meleeState='手の操作・食事を優先';return false;}
+  if(b.entity.position.distanceTo(enemy.position)>this.config.range){this.meleeState='射程外';return false;}if(!this.canSeeEnemy(enemy)){this.meleeState='壁で遮られています';return false;}if(Date.now()-this.lastAttack<(this.config.attackDelay||100))return false;
+  const sword=this.combatSword();if(!sword||require('./inventory').touches(b,sword.slot)||require('./inventory').touches(b,b.quickBarSlot)||sword.slot>=9&&b.pendingStackRequest){this.meleeState='剣の装填・サーバー確認待ち';return false;}
+  const hand=require('./hand'),lease=hand.claim(b);
+  try{await b.equip(sword.slot,signal);const aim=this.aimAtEnemy(enemy);if(aim)b.lookAt(aim,false);await hand.settled(b,signal);
+   const current=b.actors.get(String(enemy.id));if(!current||signal?.aborted||this.paused||this.paOwnsHand(current)||!this.config.killaura||b.handUse||this.needsFood()||!require('./tactics').eligible(this,current)||b.entity.position.distanceTo(current.position)>this.config.range||!this.canSeeEnemy(current)||!b.name(b.items[b.quickBarSlot]).endsWith('_sword'))return false;
+   b.lookAt(this.aimAtEnemy(current),false);if(b.attack(current)===false)return false;this.lastAttack=Date.now();this.attacks++;this.meleeState='剣の選択後に攻撃要求を送信';
+   // Do not let the crystal loop replace the sword in the same packet batch.
+   await require('node:timers/promises').setTimeout(25,undefined,{signal});return true;
+  }finally{hand.release(b,lease);}
  }
+ paOwnsHand(enemy=this.target){return !!(this.pistonExclusive||this.crystals.piston&&this.crystals.active(enemy));}
+ protectAnti(){return !!(this.config.anticrystal&&!this.paused&&!this.travel.route&&!this.pendingMove&&this.canFight()&&(this.target&&require('./tactics').eligible(this,this.target)||Date.now()-(this.engagedAt||0)<3000));}
  aimAtEnemy(enemy){return [1,1.6,.5].map(y=>enemy.position.offset(0,y,0)).find(point=>lineOfSight(this.bot,point))||null;}
  canSeeEnemy(enemy){return !!this.aimAtEnemy(enemy);}
  combatSword(){return this.bot.list().filter(i=>i.slot<9&&i.name.endsWith('_sword')).sort((a,b)=>equipment.rank(this.bot,b)-equipment.rank(this.bot,a))[0]||equipment.best(this.bot,'_sword');}
@@ -72,7 +83,8 @@ class Runtime{
    if(this.retreatGoal)this.travel.follow(this.retreatGoal,this.config.eatSpeed??.12,'retreat',.5);else this.travel.stopFollowing();
    this.combatWaiting='Antiを維持・食事を優先して敵から後退';return;
   }
-  if(enemy){this.target=enemy;this.engagedAt=Date.now();this.meleeTick(enemy);this.travel.follow(enemy.position,Date.now()<(this.speedBlockedUntil||0)?0:this.config.chaseSpeed,'chase',this.canSeeEnemy(enemy)?this.config.range*.8:.6);}
+  if(this.paOwnsHand(enemy)){this.travel.stopFollowing();this.combatWaiting='PAを専用実行中・KAとCAを待機';return;}
+  if(enemy){this.target=enemy;this.engagedAt=Date.now();if(!this.combatBusy)this.meleeTick(enemy);this.travel.follow(enemy.position,Date.now()<(this.speedBlockedUntil||0)?0:this.config.chaseSpeed,'chase',this.canSeeEnemy(enemy)?this.config.range*.8:.6);}
   else if(this.travel.route&&['walk','dig'].includes(this.travel.route.mode)&&this.travel.route.dimension===b.dimensionId)this.travel.follow(this.travel.route.destination,undefined,'route',.65);
   else if(this.travel.following)this.travel.stopFollowing();
  }
@@ -110,7 +122,7 @@ class Runtime{
     ['gear','防具装着',()=>equipment.wear(b,{armor:this.config.gear,totem:false,elytra:!!(this.travel.flight||this.travel.route?.mode==='fly')},signal)],
     ['autoslot','AutoSlot',async()=>{if(this.config.autoslot&&Date.now()>(this.manualSlotsUntil||0)&&(this.dirty||Date.now()-(this.lastSort||0)>5000)&&b.list().some(i=>equipment.wanted(i.name))){const complete=await equipment.autoSlots(b,signal,{pistoncrystal:this.config.pistoncrystal});this.dirty=!complete;if(complete)this.lastSort=Date.now();}}]
    ].sort((a,c)=>(this.featureOrder?.[c[0]]||0)-(this.featureOrder?.[a[0]]||0));
-   for(const [,label,run]of tasks)if(!b.manualInventoryBusy)await this.maintenance(label,run,signal);
+   for(const [,label,run]of tasks)if(!b.manualInventoryBusy&&!(this.paOwnsHand()&&label!=='オフハンド装着'))await this.maintenance(label,run,signal);
    if(!this.paused&&!this.receiving&&w.state.autoSupply&&Date.now()-(this.lastSupplyScan||0)>3000){this.lastSupplyScan=Date.now();this.restock.scan();}
    if(this.paused)return;
    if(this.config.anticrystal&&!b.handUse&&!this.travel.route&&!this.travel.flight&&!this.travel.embed&&Date.now()>(this.burrowBlockedUntil||0))this.travel.bury(this.config.burrowDepth);
@@ -140,25 +152,20 @@ class Runtime{
   if(potion&&(!effect||effect.expires<=Date.now())&&Date.now()-this.lastStrength>10000)this.startUse('力のポーション',potion);
   if(signal?.aborted||!b.actors.has(String(enemy.id))||!require('./tactics').eligible(this,enemy))return;
   if(this.consumeTask||b.handUse){this.combatWaiting='飲食しながら追尾中';return;}
-  if(this.config.jetpack&&b.entity.position.distanceTo(enemy.position)>8){await this.maintenance('Jetpack',()=>this.crystals.jetpackTick(enemy,signal),signal);if(this.travel.flight?.jetpack)return;}
+  if(this.crystals.piston||this.crystals.canPiston(enemy)){
+   this.pistonExclusive=true;this.crystals.trapAbort?.abort();this.travel.stopFollowing();this.combatWaiting='PAを専用実行中・KAとCAを待機';
+   try{if(this.meleeTask)await this.meleeTask;if(!signal?.aborted)await this.maintenance('Crystal/PA',()=>this.crystals.tick(enemy,signal),signal);}finally{this.pistonExclusive=false;}return;
+  }
+  if(this.config.jetpack&&!this.protectAnti()&&b.entity.position.distanceTo(enemy.position)>8){await this.maintenance('Jetpack',()=>this.crystals.jetpackTick(enemy,signal),signal);if(this.travel.flight?.jetpack)return;}
   const doCrystals=async()=>{if(this.config.crystalaura||this.config.pistoncrystal||this.crystals.piston)await this.maintenance('Crystal/PA',()=>this.crystals.tick(enemy,signal),signal);};
   const distance=b.entity.position.distanceTo(enemy.position);
   if(this.config.killaura&&distance<=this.config.range&&this.canSeeEnemy(enemy)){
-   const sword=this.combatSword();
-   if(sword&&!b.actionHandBusy&&!require('./inventory').touches(b,b.quickBarSlot)&&!require('./inventory').touches(b,sword.slot)&&!(sword.slot>=9&&b.pendingStackRequest)){
-    if(Date.now()-this.lastAttack>=(this.config.attackDelay||100)){
-     const hand=require('./hand'),lease=hand.claim(b);try{await b.equip(sword.slot,signal);}finally{hand.release(b,lease);}
-     const current=b.actors.get(String(enemy.id));
-     if(signal?.aborted||!current||b.dead||this.paused||!this.config.killaura||b.handUse)return;if(!b.name(b.items[b.quickBarSlot]).endsWith('_sword')){this.dirty=true;this.combatWaiting='剣の持ち替えをサーバーで再確認';return;}
-     const aim=this.aimAtEnemy(current);if(!aim)return;b.lookAt(aim,false);
-     if(b.attack(current)!==false){this.attacks++;this.lastAttack=Date.now();this.meleeState='攻撃要求を送信';}
-    }
-   }else this.combatWaiting='戦闘用の剣がありません';
+   if(this.meleeTask)await this.meleeTask;else await this.performMelee(enemy,signal);
   }else if(this.config.killaura||this.config.crystalaura||this.config.pistoncrystal){
    this.travel.follow(enemy.position,Date.now()<(this.speedBlockedUntil||0)?0:this.config.chaseSpeed,'chase',this.canSeeEnemy(enemy)?this.config.range*.8:.6);
    if(distance<=this.config.range&&!this.canSeeEnemy(enemy))this.combatWaiting='壁を避けて敵に接近中';
   }
-  await doCrystals();
+  if(signal?.aborted||this.consumeTask||b.handUse)return;await doCrystals();
   if(this.config.feettrap&&!b.handUse&&!this.consumeTask)await this.maintenance('FeetTrap',()=>this.crystals.feetTrap(enemy,signal),signal);
 
  }
@@ -185,6 +192,6 @@ class Runtime{
   }else this.notice('中身入りシュルカーを保持しました。エンダーチェストとシルクタッチがあれば収納できます');
   this.processedBoxes.add(item.name+':'+item.raw.stack_id);w.state.autoBox=null;this.manager.store.save();this.dirty=true;this.receivedAt=Date.now();this.notice('シュルカーから装備を取り出しました');return true;
  }
- destroy(){if(this.destroyed)return;this.destroyed=true;clearTimeout(this.combatWakeTimer);this.combatAbort?.abort();clearInterval(this.combatTimer);this.consumeAbort?.abort();clearInterval(this.motionTimer);this.travel.stopFollowing();this.debug.destroy();this.crystals.destroy();this.safety.cancel();clearInterval(this.timer);this.abort?.abort();this.travel.route=null;this.travel.flight=null;this.travel.embed=null;}
+ destroy(){if(this.destroyed)return;this.destroyed=true;this.bot.removeListener('handAvailable',this.onHandAvailable);clearTimeout(this.combatWakeTimer);this.combatAbort?.abort();clearInterval(this.combatTimer);this.consumeAbort?.abort();clearInterval(this.motionTimer);this.travel.stopFollowing();this.debug.destroy();this.crystals.destroy();this.safety.cancel();clearInterval(this.timer);this.abort?.abort();this.travel.route=null;this.travel.flight=null;this.travel.embed=null;}
 }
 module.exports={Runtime,defaults};

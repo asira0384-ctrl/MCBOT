@@ -2,7 +2,7 @@
 const {air,solid,norm}=require('./util');const {lineOfSight}=require('./actors');const {useItem}=require('./protocol');const {blastScore,eligible,friend}=require('./tactics');const {rayClear,facePoint,placementSupport}=require('./geometry');
 function contains(block,point){if(!block?.solid||block.name==='unknown')return false;const p=block.position||point.floored(),shapes=Array.isArray(block.shapes)?block.shapes:[[0,0,0,1,1,1]],v=[point.x-p.x,point.y-p.y,point.z-p.z];return shapes.some(s=>v.every((n,i)=>n>=s[i]-1e-7&&n<s[i+3]-1e-7));}
 function fullWall(bot,p){const b=bot.blockAt(p);return [.1,.9].every(x=>[.1,.9].every(y=>[.1,.9].every(z=>contains(b,p.offset(x,y,z)))));}
-function inHole(bot,enemy){const p=enemy.position.floored();return solid(bot.blockAt(p.offset(0,-1,0)))&&[[1,0],[-1,0],[0,1],[0,-1]].every(([x,z])=>fullWall(bot,p.offset(x,0,z)));}
+function inHole(bot,enemy){const p=enemy.position.floored();return air(bot.blockAt(p))&&air(bot.blockAt(p.offset(0,1,0)))&&solid(bot.blockAt(p.offset(0,-1,0)))&&[[1,0],[-1,0],[0,1],[0,-1]].every(([x,z])=>fullWall(bot,p.offset(x,0,z)));}
 function buried(bot,enemy){const p=enemy.position.offset(0,.5,0);return contains(bot.blockAt(p),p);}
 function ownClear(runtime,point){const b=runtime.bot;if(b.health===null||b.health<16||point.distanceTo(b.entity.position)<3)return false;const realm=b.config;for(const w of runtime.manager.workers?.values()||[]){const other=w.bot;if(other===b||!other.connected||other.dimensionId!==b.dimensionId||other.config?.host!==realm?.host||other.config?.port!==realm?.port)continue;const distance=other.entity?.position.distanceTo(point);if(distance<3.5||distance<8&&other.health!==undefined&&other.health<12)return false;}return true;}
 function crystalBase(bot,enemy,runtime){
@@ -37,8 +37,9 @@ class CrystalCombat{
  }
  record(action,details={}){const event={at:Date.now(),action,...details};this.history.push(event);this.history=this.history.slice(-60);if(action.startsWith('pa_')){this.pistonHistory??=[];this.pistonHistory.push(event);this.pistonHistory=this.pistonHistory.slice(-30);}if(action.endsWith('_unconfirmed'))this.lastFailure=event;}
  bestBase(enemy){const b=this.bot,now=Date.now(),signature=[String(enemy.id),...['x','y','z'].map(k=>Math.round(enemy.position[k]*2)),...['x','y','z'].map(k=>Math.round(b.entity.position[k]*2)),b.worldMirror?.revision||0].join(':');if(this.baseCache?.signature===signature&&now-this.baseCache.at<150)return this.baseCache.base;const base=crystalBase(b,enemy,this.runtime);this.baseCache={signature,at:now,base};return base;}
- async tick(enemy,signal){const r=this.runtime,b=this.bot;if(!enemy||buried(b,enemy)){if(this.piston)await this.cleanup(signal);this.state='敵が埋まっています';return false;}
-  if(r.config.pistoncrystal&&!enemy.sneaking&&inHole(b,enemy)){const result=await this.pistonTick(enemy,signal);if(result||this.piston||!r.config.crystalaura)return result;return this.crystalTick(enemy,signal);}
+ canPiston(enemy){const b=this.bot;if(!enemy||!this.runtime.config.pistoncrystal||enemy.sneaking||!inHole(b,enemy)||!(b.find('piston')||b.find('sticky_piston'))||!b.find('redstone_block')||!b.find('end_crystal'))return false;const plan=this.plan(enemy);return !!(plan&&ownClear(this.runtime,plan.base.position.offset(.5,1,.5)));}
+ async tick(enemy,signal){const r=this.runtime,b=this.bot;if(!enemy){if(this.piston)await this.cleanup(signal);this.state='攻撃対象がいません';return false;}
+  if(r.config.pistoncrystal&&!enemy.sneaking&&inHole(b,enemy)){const previous=this.piston,serial=this.pistonSerial;const result=await this.pistonTick(enemy,signal);if(previous||result||this.piston||serial!==this.pistonSerial||!r.config.crystalaura)return result;return this.crystalTick(enemy,signal);}
   if(this.piston){await this.cleanup(signal);return true;}
   if(!r.config.crystalaura){this.state='CA: OFF';return false;}
   return this.crystalTick(enemy,signal);
@@ -73,11 +74,11 @@ class CrystalCombat{
   if(!live||!['obsidian','bedrock'].includes(live.name)||!air(b.blockAt(support.position.offset(0,1,0)))||!air(b.blockAt(support.position.offset(0,2,0)))||!ownClear(r,point)||!blast||[...b.actors.values()].some(a=>(a.player||/end(?:er)?_crystal/.test(a.name))&&Math.abs(a.position.x-point.x)<.8&&Math.abs(a.position.z-point.z)<.8&&a.position.y<point.y+2&&a.position.y+1.8>point.y)){this.baseCache=null;this.state='CA: 現在の位置・味方・設置面を再確認';return false;}
   support=live;b.lookAt(support.position.offset(.5,1,.5),false);this.pendingCrystal={at:Date.now(),position:support.position.offset(.5,1,.5)};
   b.client.queue('inventory_transaction',useItem(b,'click_block',support.position,1,support.stateId));
-  this.lastPlace=Date.now();this.lastAction='place';this.placementScore={...blastScore(r,support.position.offset(.5,1,.5),enemy),position:support.position};this.record('ca_place',this.placementScore);this.baseCache=null;this.state='Crystal設置要求';this.predict(this.pendingCrystal.position);return true;}finally{hand.release(b,lease);}
+  this.lastPlace=Date.now();this.lastAction='place';this.placementScore={...blastScore(r,support.position.offset(.5,1,.5),enemy),position:support.position,targetFeet:enemy.position.clone(),targetRaw:enemy.rawPosition?{...enemy.rawPosition}:null,targetFrame:enemy.positionFrame||null,targetBuried:buried(b,enemy)};this.record('ca_place',this.placementScore);this.baseCache=null;this.state='Crystal設置要求';this.predict(this.pendingCrystal.position);return true;}finally{hand.release(b,lease);}
  }
  predict(point){
   const count=Math.min(10,Math.max(0,this.runtime.config.crystalPredict||0)),b=this.bot;
-  if(!count||!ownClear(this.runtime,point))return;
+  if(!count||b.inventoryOpen||b.inventoryOpening||b.window||!ownClear(this.runtime,point))return;
   // Bounded prediction is tied to our own reachable placement, never a global ID scan.
   const known=[...(b.actors?.values()||[])].map(a=>BigInt(a.id)).filter(id=>id>0n&&id<9223372036854775807n);
   if(!known.length)return;const max=known.reduce((a,c)=>a>c?a:c),ownIds=new Set([String(b._runtimeEntityId),...[...(this.runtime.manager.workers?.values()||[])].map(w=>String(w.bot._runtimeEntityId))]);
@@ -125,45 +126,53 @@ class CrystalCombat{
    const base=b.blockAt(p.offset(x,0,z)),pistonPos=p.offset(x*2,1,z*2),support=b.blockAt(pistonPos.offset(0,-1,0)),pedestal=air(support)&&!!b.find('obsidian')&&solid(b.blockAt(pistonPos.offset(0,-2,0)));
    if(!base||!['obsidian','bedrock'].includes(base.name)||!air(b.blockAt(base.position.offset(0,1,0)))||!air(b.blockAt(base.position.offset(0,2,0)))||!(solid(support)||pedestal)||!(air(b.blockAt(pistonPos))||['piston','sticky_piston'].includes(b.blockAt(pistonPos)?.name))||!b.reach(support)||!b.reach(base)||!b.reach({position:pistonPos}))continue;
    if(pedestal&&!placementSupport(b,pistonPos.offset(0,-1,0)))continue;
+   const existing=b.blockAt(pistonPos),facing=x===1?4:x===-1?5:z===1?2:3;
+   if(['piston','sticky_piston'].includes(existing?.name)&&Number(existing.properties?.facing_direction)!==facing)continue;
    if(air(b.blockAt(pistonPos))&&!placementSupport(b,pistonPos,pedestal?[pistonPos.offset(0,-1,0)]:[]))continue;
    // A piston between us and the base makes the next crystal click impossible.
    // Validate sight lines with the future piston in place, before spending one.
    if(!rayClear(b,eye,facePoint(base,1),{ignore:[base.position],blocks:[pistonPos]}))continue;
    for(const side of [1,-1]){const powerPos=pistonPos.offset(z*side,0,-x*side);
     if(!air(b.blockAt(powerPos))||!b.reach({position:powerPos})||!placementSupport(b,powerPos,[pistonPos])||!rayClear(b,eye,p.offset(.5,1.5,.5),{blocks:[pistonPos,powerPos]}))continue;
-    return {base,pistonPos,powerPos,pedestal,facing:x===1?4:x===-1?5:z===1?2:3,enemyId:String(enemy.id)};
+    return {base,pistonPos,powerPos,pedestal,facing,enemyId:String(enemy.id)};
    }
   }return null;
  }
- async pistonTick(enemy,signal){
+ async pistonTick(enemy,signal){try{return await this.runPiston(enemy,signal);}catch(e){const p=this.piston;if(p){p.error=e.message;this.record(signal?.aborted?'pa_cancelled':'pa_'+(p.stage||'operation')+'_unconfirmed',{position:p.stage==='pedestal'?p.pistonPos.offset(0,-1,0):p.stage==='power'?p.powerPos:p.pistonPos,error:e.message});this.state='PA: '+p.stage+' のサーバー確認待ち';}throw e;}}
+ async runPiston(enemy,signal){
   const b=this.bot;let p=this.piston;
   if(p&&p.enemyId!==String(enemy.id)){await this.cleanup(signal);return true;}
   if(!this.active(enemy,signal)){await this.cleanup(signal);return false;}
+  if(p?.base&&(!b.reach(p.base)||!b.reach({position:p.pistonPos})||!b.reach({position:p.powerPos}))){this.record('pa_out_of_reach',{piston:p.pistonPos});await this.cleanup(signal);this.state='PA: 位置補正後に設置面が射程外・追尾へ戻ります';return false;}
+  if(p?.base&&!b.find('end_crystal')&&!this.placedCrystal(p)&&!this.pushedCrystal(p)&&!(p.crystalId&&b.actors.has(p.crystalId))){await this.cleanup(signal);this.state='PA: Crystal不足・KAへ戻ります';return false;}
+  if(p?.base&&!p.power&&b.blockAt(p.powerPos)?.name!=='redstone_block'&&!b.find('redstone_block')){await this.cleanup(signal);this.state='PA: 電源不足・KAへ戻ります';return false;}
   if(!p){
    const plan=this.plan(enemy);
    if((!b.find('piston')&&!b.find('sticky_piston'))||!b.find('redstone_block')||!b.find('end_crystal')){this.state='PA: ピストン・レッドストーンブロック・Crystalが必要';return false;}
    if(!plan){this.state='PA: 到達可能な設置配置がありません';return false;}
    if(!ownClear(this.runtime,plan.base.position.offset(.5,1,.5))){this.state='PA: 自分・他Botへの爆発を回避';return false;}
-   this.piston=p={...plan,hole:enemy.position.floored(),placed:false,power:false,createdAt:Date.now(),stage:'pedestal',ownedPiston:air(b.blockAt(plan.pistonPos))};this.record('pa_plan',{piston:plan.pistonPos,base:plan.base.position,power:plan.powerPos});
+   this.piston=p={...plan,hole:enemy.position.floored(),placed:false,power:false,createdAt:Date.now(),stage:'pedestal',ownedPiston:air(b.blockAt(plan.pistonPos))};this.pistonSerial=(this.pistonSerial||0)+1;this.record('pa_plan',{piston:plan.pistonPos,base:plan.base.position,power:plan.powerPos});
    const support=plan.pistonPos.offset(0,-1,0);
    // Use the existing floor as-is. Build an obsidian pedestal only in known air.
    if(!solid(b.blockAt(support))){
     if(!air(b.blockAt(support))){this.state='PA: 足場位置が変化しました';return false;}
     const obsidian=b.find('obsidian');if(!obsidian){this.state='PA: 足場用の黒曜石が必要';return false;}
-    this.state='PA: 黒曜石の足場を設置';await b.place(support,obsidian,signal);
+    this.state='PA: 黒曜石の足場を設置';this.record('pa_pedestal_requested',{position:support});await b.place(support,obsidian,signal,{timeout:1500});this.record('pa_pedestal_confirmed',{position:support});
    }
    if(!this.active(enemy,signal))return false;
-   p.stage='piston';if(p.ownedPiston)await b.place(plan.pistonPos,b.find('piston')||b.find('sticky_piston'),signal,{facing:plan.facing,timeout:1500});
+   p.stage='piston';if(p.ownedPiston){this.record('pa_piston_requested',{position:plan.pistonPos,facing:plan.facing});await b.place(plan.pistonPos,b.find('piston')||b.find('sticky_piston'),signal,{facing:plan.facing,timeout:1500});}
    p.placed=true;this.record('pa_piston_confirmed',{position:plan.pistonPos});this.state='PA: ピストン方向を確認';
   }
   if(p.placed===false){
    const support=p.pistonPos.offset(0,-1,0);
-   if(!solid(b.blockAt(support))&&air(b.blockAt(support))){const obsidian=b.find('obsidian');if(!obsidian){this.state='PA: 足場用の黒曜石不足';return false;}await b.place(support,obsidian,signal,{timeout:1500});}
-   if(air(b.blockAt(p.pistonPos))){const piston=b.find('piston')||b.find('sticky_piston');if(!piston){this.state='PA: ピストン不足';return false;}await b.place(p.pistonPos,piston,signal,{facing:p.facing,timeout:1500});}
+   if(!solid(b.blockAt(support))&&air(b.blockAt(support))){const obsidian=b.find('obsidian');if(!obsidian){this.state='PA: 足場用の黒曜石不足';return false;}p.stage='pedestal';this.record('pa_pedestal_requested',{position:support});await b.place(support,obsidian,signal,{timeout:1500});this.record('pa_pedestal_confirmed',{position:support});}
+   if(air(b.blockAt(p.pistonPos))){const piston=b.find('piston')||b.find('sticky_piston');if(!piston){this.state='PA: ピストン不足';return false;}p.stage='piston';this.record('pa_piston_requested',{position:p.pistonPos,facing:p.facing});await b.place(p.pistonPos,piston,signal,{facing:p.facing,timeout:1500});}
    p.placed=['piston','sticky_piston'].includes(b.blockAt(p.pistonPos)?.name);
   }
   const block=b.blockAt(p.pistonPos),facing=Number(block?.properties?.facing_direction);
-  if(!['piston','sticky_piston'].includes(block?.name)||facing!==p.facing){p.error='ピストンが敵を向いていません';if(p.ownedPiston&&Date.now()-(p.createdAt||0)>2000&&b.tool()&&!p.power){await b.dig(block,signal,undefined,{timeout:2500});this.piston=null;this.state='PA: 自分の逆向きピストンを回収して配置を再試行';return false;}this.state='PA: ピストンが敵を向いていません。手動で回収するか敵の別面を確認してください';return false;}
+  if(!['piston','sticky_piston'].includes(block?.name)||facing!==p.facing){p.error='ピストンが敵を向いていません';const opposite={2:3,3:2,4:5,5:4};
+   if(p.ownedPiston&&!p.learnedFacing&&facing===opposite[p.facing]){p.learnedFacing=true;b.pistonFacingMode=b.pistonFacingMode==='look'?'opposite':'look';const w=this.runtime.worker;if(w){w.state.pistonFacingMode=b.pistonFacingMode;this.runtime.manager.store?.save();}this.record('pa_orientation_learned',{wanted:p.facing,received:facing,mode:b.pistonFacingMode});}
+   if(p.ownedPiston&&b.tool()&&!p.power&&['piston','sticky_piston'].includes(block?.name)){await b.dig(block,signal,undefined,{timeout:2500});this.piston=null;this.state='PA: 自分の逆向きピストンを回収して配置を再試行';return false;}if(p.ownedPiston&&!b.tool()){this.record('pa_stopped',{stage:p.stage,reason:'回収用ピッケル不足'});this.piston=null;}this.state='PA: ピストンが敵を向いていません。回収用ピッケルが必要です';return false;}
   delete p.error;const actualPower=b.blockAt(p.powerPos);
   if(p.powerRequestedAt&&actualPower?.name==='redstone_block'&&!p.power){p.power=true;this.record('pa_power_late_confirmation',{position:p.powerPos});}
   else if(p.power&&actualPower?.isAir){p.power=false;this.record('pa_power_removed',{position:p.powerPos});}
@@ -223,7 +232,7 @@ class CrystalCombat{
    this.trapTask=b.place(q,item,this.trapAbort.signal,{timeout:1000}).then(()=>this.record('feettrap_confirmed',{position:q})).catch(e=>{if(!this.trapAbort?.signal.aborted)this.record('feettrap_unconfirmed',{position:q,error:e.message});}).finally(()=>{this.trapTask=null;this.trapAbort=null;});return true;
   }return true;
  }
- async cleanup(signal){const p=this.piston;if(!p)return;this.state='PA: ホール・しゃがみ条件が変わったため停止';if(p.power){const block=this.bot.blockAt(p.powerPos);if(block?.name==='redstone_block'&&this.bot.tool())await this.bot.dig(block,signal,undefined,{timeout:2500});}this.piston=null;}
+ async cleanup(signal){const p=this.piston;if(!p)return;this.state='PA: ホール・しゃがみ条件が変わったため停止';this.record('pa_stopped',{stage:p.stage||null,enemy:p.enemyId});if(p.power){const block=this.bot.blockAt(p.powerPos);if(block?.name==='redstone_block'&&this.bot.tool()&&this.bot.reach(block))await this.bot.dig(block,signal,undefined,{timeout:2500});}this.piston=null;}
  destroy(){this.trapAbort?.abort();this.bot.client?.removeListener?.('set_entity_motion',this.onMotion);}
  snapshot(){return {placement:this.placementScore||null,pistonStage:this.piston?.stage||null,pistonError:this.piston?.error||null,piston:this.piston?{base:this.piston.base?.position,piston:this.piston.pistonPos,power:this.piston.powerPos,crystalId:this.piston.crystalId||null}:null,state:this.state,pistonActive:!!this.piston,lastPlace:this.lastPlace,lastBreak:this.lastBreak,pendingCrystal:this.pendingCrystal,lastAction:this.lastAction,predictedPackets:this.predictedPackets,boost:this.boost,lastFailure:this.lastFailure||null,pistonHistory:this.pistonHistory||[],history:this.history};}
 }

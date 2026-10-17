@@ -1,4 +1,4 @@
-# v0.3.10 Web操作
+# v0.3.11 Web操作
 
 Discordの /web で開きます。本人専用リンクは一度限り・2分有効。Webセッションは通常30日間で、DATA_DIRに保存します。手動ログアウトで解除できます。
 
@@ -47,7 +47,7 @@ AutoEatの体力は「装備」で設定します。Antiを維持して通れる
 
 ## 更新が表示されないとき
 
-GitHubにはZIP自体ではなく解凍したフォルダの中身を上書きします。Railwayの最新デプロイ成功後、WebをCtrl+F5で再読み込みし、右上がv0.3.10か確認します。
+GitHubにはZIP自体ではなく解凍したフォルダの中身を上書きします。Railwayの最新デプロイ成功後、WebをCtrl+F5で再読み込みし、右上がv0.3.11か確認します。
 
 ## 確認できる情報
 
@@ -55,6 +55,6 @@ GitHubにはZIP自体ではなく解凍したフォルダの中身を上書き�
 
 操作が反映しないときは、実行直後の「状態レポート」で停止理由・持ち替え待ち・インベントリ確認時間・PA段階・Jetpack・屋根探索を確認できます。本番サーバーでの受け入れとブラウザの実表示・音声は、この配布環境では未確認です。
 
-## v0.3.10の状態レポート
+## v0.3.11の状態レポート
 
-動かない操作をした直後に保存します。KAの待機理由は debug.current.meleeState、処理の遅延は loopTiming、PAの配置・各段階は runtime.crystalCombat.pistonHistory、最近の確認失敗は lastFailure に記録します。更新内容は UPDATE-v0.3.10-JA.md を参照してください。
+動かない操作をした直後に保存します。KAの待機理由は debug.current.meleeState、処理の遅延は loopTiming、PAの配置・各段階は runtime.crystalCombat.pistonHistory、最近の確認失敗は lastFailure に記録します。更新内容は UPDATE-v0.3.11-JA.md を参照してください。

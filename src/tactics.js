@@ -12,7 +12,7 @@ function eligible(runtime,actor){
 }
 function target(runtime,range){
  const b=runtime.bot;
- for(const a of b.actors?.values()||[])if(a.player&&a.rawPosition&&eligible(runtime,a)&&(a.normalizedRaw!==a.rawPosition||a.normalizedRevision!==b.worldMirror?.revision)){a.position=require('./positions').serverPosition({blockAt:b.blockAt},a.rawPosition,'actor');a.normalizedRaw=a.rawPosition;a.normalizedRevision=b.worldMirror?.revision;}
+ for(const a of b.actors?.values()||[])require('./actors').refreshPlayer(b,a);
  return [...(b.actors?.values()||[])].filter(a=>eligible(runtime,a)&&a.position.distanceTo(b.entity.position)<=range).sort((a,c)=>a.position.distanceTo(b.entity.position)-c.position.distanceTo(b.entity.position))[0]||null;
 }
 function ray(bot,from,to){return require('./geometry').rayClear(bot,from,to);}

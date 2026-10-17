@@ -18,17 +18,18 @@ class Travel{
  }
  command(mode,dim,x,y,z){const goal=validateGoal(mode,dim,x,y,z);this.cancel(false);this.route={...goal,portal:null,enteredAt:0};this.waiting='移動準備';}
  glide(on){if(this.bot.gliding===on)return;this.bot.gliding=on;this.bot.pendingGlide=on?'start':'stop';this.bot.client.queue('player_action',{runtime_entity_id:BigInt(this.bot._runtimeEntityId),action:on?'start_glide':'stop_glide',position:{x:0,y:0,z:0},result_position:{x:0,y:0,z:0},face:0});}
- cancel(land=true){this.floorEscape=null;this.bot.straightTimerActive=false;this.stopFollowing();this.bot.clearControlStates?.();this.bot.controlState.forward=false;this.route=null;this.unbury();this.waiting='';if(this.flight&&land){const floor=landingFloor(this.bot,this.bot.entity.position,16);if(floor){this.flight={goal:floor,landing:true};this.waiting='着地中';return;}this.flight={goal:this.bot.entity.position.clone(),paused:true};this.waiting='着地点が未受信・飛行待機';return;}this.flight=null;if(this.bot.gliding)this.glide(false);}
+ cancel(land=true,{preserveAnti=false}={}){this.floorEscape=null;this.bot.straightTimerActive=false;this.stopFollowing();this.bot.clearControlStates?.();this.bot.controlState.forward=false;this.route=null;if(!preserveAnti)this.unbury();this.waiting='';if(this.flight&&land){const floor=landingFloor(this.bot,this.bot.entity.position,16);if(floor){this.flight={goal:floor,landing:true};this.waiting='着地中';return;}this.flight={goal:this.bot.entity.position.clone(),paused:true};this.waiting='着地点が未受信・飛行待機';return;}this.flight=null;if(this.bot.gliding)this.glide(false);}
  rollback(){
   this.floorEscape=null;this.bot.straightTimerActive=false;const now=Date.now();this.recentCorrections=(this.recentCorrections||[]).filter(t=>now-t<6000);this.recentCorrections.push(now);this.corrections=(this.corrections||0)+1;this.flightSlowUntil=now+5000;
-  const duration=this.recentCorrections.length>=3?5000:1500;this.runtime.speedBlockedUntil=now+duration;this.runtime.burrowBlockedUntil=now+duration+300;
+  const protectedAnti=this.runtime.protectAnti?.(),duration=protectedAnti?300:this.recentCorrections.length>=3?5000:1500;this.runtime.speedBlockedUntil=now+duration;if(!protectedAnti)this.runtime.burrowBlockedUntil=now+duration+300;
   if(this.embed)this.rememberAnti();
   if(this.antiAnchor&&now-this.antiAnchor.at<30000)this.antiRecovery={...this.antiAnchor,at:now};
-  this.embed=null;this.bot.desiredMoveSpeed=undefined;this.bot.clearControlStates?.();if(this.following){this.following.path=null;this.following.plannedAt=0;}
+  this.embed=null;if(protectedAnti){this.antiRecovery=null;this.runtime.burrowBlockedUntil=0;this.adoptCombatAnti();}this.bot.desiredMoveSpeed=undefined;this.bot.clearControlStates?.();if(this.following){this.following.path=null;this.following.plannedAt=0;}
   if(this.flight?.jetpack||this.flight?.gap){this.flight=null;this.bot.controlState.forward=false;this.glide(false);this.waiting='位置補正を受けて追尾飛行を終了';return;}
   if(this.flight){this.flight.path=null;this.flight.paused='replan';this.flight.retryAt=Date.now()+Math.min(4000,500+this.corrections*100);this.waiting='位置補正後に減速して迂回経路を再探索';}
  }
  gapGoal(destination){
+  if(this.runtime.protectAnti?.())return null;
   const b=this.bot,p=this.embed?new Vec3(b.entity.position.x,this.embed.original,b.entity.position.z):b.entity.position,delta=destination.minus(p),length=Math.hypot(delta.x,delta.z);if(length<2||b.name?.(b.armor?.[1])!=='elytra'||Math.abs(delta.y)>1.5)return null;
   let gap=false;for(let d=.5;d<=Math.min(5,length);d+=.5){const q=p.offset(delta.x/length*d,0,delta.z/length*d),floor=b.blockAt(q.offset(0,-.1,0));
    if(!bodyClear(b,q,.3)||!floor||floor.name==='unknown'||floor.isLiquid)return null;
@@ -49,7 +50,7 @@ class Travel{
   const gap=kind==='chase'?this.gapGoal(destination):null;if(gap&&(!f.path?.length||f.path.length>pose.distanceTo(gap)*1.8)){this.flight={goal:gap,gap:true,combat:true,landing:true,expires:Date.now()+4000};this.waiting='約4ブロック以内の隙間を低速GLIDEで追尾';return true;}
   const next=f.path?.[0];if(!next||next.action==='scaffold'){b.clearControlStates();b.desiredMoveSpeed=undefined;b.desiredMoveWorld=null;this.waiting='移動経路を再確認中';return false;}
   // Turning or changing hands does not cancel a world-space walking direction.
-  const point=next.position.offset(.5,0,.5),direction=point.minus(pose),length=Math.hypot(direction.x,direction.z)||1;b.desiredMoveWorld={x:direction.x/length,z:direction.z/length};b.lookAt(point.offset(0,1.62,0),false);b.setControlState('forward',true);b.setControlState('jump',next.action==='shore'||require('./navigation').water(b.blockAt(pose.offset(0,1.62,0)))||point.y>pose.y+.6);b.setControlState('sprint',false);b.desiredMoveSpeed=speed>0?Math.min(speed,Math.hypot(point.x-pose.x,point.z-pose.z)):undefined;
+  const point=next.position.offset(.5,0,.5),direction=point.minus(pose),length=Math.hypot(direction.x,direction.z)||1;b.desiredMoveWorld={x:direction.x/length,z:direction.z/length};if(!b.actionHandBusy&&!this.runtime.paOwnsHand?.())b.lookAt(point.offset(0,1.62,0),false);b.setControlState('forward',true);b.setControlState('jump',next.action==='shore'||require('./navigation').water(b.blockAt(pose.offset(0,1.62,0)))||point.y>pose.y+.6);b.setControlState('sprint',false);b.desiredMoveSpeed=speed>0?Math.min(speed,Math.hypot(point.x-pose.x,point.z-pose.z)):undefined;
   this.waiting=kind==='chase'?`敵を追尾中${speed?' / 速度'+speed:''}`:'徒歩移動中';return true;
  }
  stopFollowing(){if(this.following){this.following=null;this.bot.desiredMoveSpeed=undefined;this.bot.desiredMoveWorld=null;this.bot.clearControlStates();}}
@@ -59,8 +60,9 @@ class Travel{
    b.entity.position=new Vec3(result.position.x,result.position.y,result.position.z);b.entity.velocity=new Vec3(0,result.velocity.y,0);b.entity.onGround=false;b.setControlState('jump',true);escape.velocity=(escape.velocity-.08)*.98;
    if(b.entity.position.y>=escape.floor&&!require('./positions').inspect(b,b.entity.position).overlaps.length){this.floorEscape=null;b.setControlState('jump',false);b.collisionState={held:false,jumpedFromFloor:true};this.waiting='受信済みの床からジャンプして復帰';}return true;
   }
+  const protectedAnti=this.runtime.protectAnti?.();if(this.flight&&protectedAnti){this.flight=null;if(b.gliding)this.glide(false);}
   if(this.flight&&this.embed)this.unbury();
-  if(this.embed&&(!this.runtime.config.anticrystal||Date.now()<(this.runtime.burrowBlockedUntil||0)))this.unbury();
+  if(this.embed&&(!this.runtime.config.anticrystal||!protectedAnti&&Date.now()<(this.runtime.burrowBlockedUntil||0)))this.unbury();
   if(this.embed){
    if(this.following&&b.controlState.forward){const {moveEntity}=require('../vendor/bedrockflayer/lib/physics/collision'),logical=new Vec3(b.entity.position.x,this.embed.original,b.entity.position.z),yaw=b.entity.yaw||0,speed=b.handUse&&this.runtime.config.noSlow!==false?(this.runtime.config.eatSpeed??.12):(b.desiredMoveSpeed||.21);
     const vertical=b.controlState.jump&&b.entity.onGround? .42:(b.entity.velocity.y||0)-.08;
@@ -142,6 +144,7 @@ class Travel{
  }
  rememberAnti(){const p=this.bot.entity.position;if(this.embed)this.antiAnchor={original:this.embed.original,depth:this.embed.original-this.embed.y,x:p.x,z:p.z,dimension:this.bot.dimensionId,at:Date.now()};}
  prepareFloorEscape(){
+  if(this.runtime.protectAnti?.())return false;
   const b=this.bot,p=b.entity?.position,normalized=b.lastPositionNormalization?.position;if(!p||this.embed||this.floorEscape||Date.now()<(this.floorEscapeRetryAt||0)||!normalized||p.distanceTo(new Vec3(normalized.x,normalized.y,normalized.z))>.04)return false;
   const check=require('./positions').inspect(b,p);if(!check.known||!check.overlaps.length)return false;const top=Math.max(...check.overlaps.map(box=>box.maxY)),depth=top-p.y;
   if(depth<=.125||depth>.8||Math.abs(depth-(this.runtime.config.burrowDepth??.55))>.075)return false;
@@ -152,6 +155,7 @@ class Travel{
   this.floorEscape={at:Date.now(),floor:top,velocity:.42};this.floorEscapeRetryAt=Date.now()+10000;this.waiting='受信済みの浅い床の重なりからジャンプで復帰中';return true;
  }
  recoverAnti(allowJump=true){
+  if(this.runtime.protectAnti?.()){this.antiRecovery=null;return this.adoptCombatAnti();}
   const recovery=this.antiRecovery||this.antiAnchor,b=this.bot;if(!recovery||Date.now()-recovery.at>30000||!b.entity||recovery.dimension!==b.dimensionId){this.antiRecovery=null;return allowJump?this.prepareFloorEscape():false;}
   if(Date.now()-recovery.at<200)return false;
   const p=b.entity.position,check=require('./positions').inspect(b,p);
@@ -161,6 +165,16 @@ class Travel{
   if(Math.hypot(p.x-recovery.x,p.z-recovery.z)>8||Math.abs(p.y-(recovery.original-recovery.depth))>.15)return false;
   const candidate=new Vec3(p.x,recovery.original,p.z),verified=require('./positions').inspect(b,candidate);
   if(verified.known&&!verified.overlaps.length&&verified.support){b.entity.position=candidate;b.entity.velocity=new Vec3(0,0,0);b.entity.onGround=true;b.collisionState={held:false,recoveredAnti:true};this.antiRecovery=null;this.waiting='Antiの直前に確認した足場へ復帰';return true;}return false;
+ }
+ adoptCombatAnti(){
+  const b=this.bot,p=b.entity?.position;if(!p||this.embed)return false;
+  const check=require('./positions').inspect(b,p);if(!check.known||!check.overlaps.length)return false;
+  const top=Math.max(...check.overlaps.map(box=>box.maxY)),depth=top-p.y;
+  if(depth<=.125||depth>Math.min(.9,(this.runtime.config.burrowDepth??.55)+.15))return false;
+  const logical=new Vec3(p.x,top,p.z),clear=require('./positions').inspect(b,logical);
+  if(!clear.known||clear.overlaps.length||!clear.support)return false;
+  // Rebase on the accepted server pose without lifting out of Anti.
+  this.embed={y:p.y,original:top};this.floorEscape=null;this.rememberAnti();b.entity.onGround=true;b.collisionState={held:false,combatAnti:true};this.waiting='サーバー位置を基準にAntiを維持';return true;
  }
  bury(depth){const b=this.bot,p=b.entity.position,floor=b.blockAt(p.offset(0,-.1,0));if(!b.entity.onGround||!solid(floor)||!bodyClear(b,p))return false;this.antiRecovery=null;this.embed={y:p.y-depth,original:p.y};this.rememberAnti();return true;}
  unbury(){if(this.embed){this.rememberAnti();this.bot.entity.position.y=this.embed.original;this.bot.entity.velocity=new Vec3(0,0,0);this.bot.entity.onGround=true;this.embed=null;}else this.recoverAnti(false);}

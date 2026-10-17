@@ -7,7 +7,7 @@ function wanted(name){return /_sword$|_pickaxe$|_helmet$|_chestplate$|_leggings$
 function slotChoices(bot,{pistoncrystal=false}={}){return [[0,best(bot,'_sword')],[1,bot.tool()],[2,bot.find('enchanted_golden_apple')],[3,strengthPotion(bot)],[4,bot.find('totem')||bot.find('totem_of_undying')],[5,bot.find('shield')],...(pistoncrystal?[[6,bot.find('end_crystal')],[7,bot.find('piston')||bot.find('sticky_piston')],[8,bot.find('redstone_block')]]:[[6,bot.find('end_crystal')||bot.find('firework_rocket')],[7,bot.find('obsidian')],...(bot.find('end_crystal')?[[8,bot.find('firework_rocket')]]:[])])].filter(([,item])=>item);}
 async function autoSlots(bot,signal,options){
  const needs=()=>slotChoices(bot,options).some(([dest,item])=>item.slot!==dest);if(!needs())return true;
- await bot.openInventory(signal);try{for(let dest=0;dest<9;dest++){if(signal?.aborted)throw Error('停止しました');const choice=slotChoices(bot,options).find(([d])=>d===dest)?.[1];if(choice&&choice.slot!==dest&&!require('./item-use').protects(bot,'inventory',dest)&&!require('./item-use').protects(bot,'inventory',choice.slot))await bot.swap(choice.slot,dest,signal);}}finally{bot.closeContainer();}
+ await bot.openInventory(signal);try{for(let dest=0;dest<9;dest++){if(signal?.aborted)throw Error('停止しました');const choice=slotChoices(bot,options).find(([d])=>d===dest)?.[1];if(choice&&choice.slot!==dest&&![dest,choice.slot].some(slot=>require('./item-use').protects(bot,'inventory',slot)||require('./hand').protects(bot,'inventory',slot)))await bot.swap(choice.slot,dest,signal);}}finally{bot.closeContainer();}
  if(!bot.handUse&&!bot.actionHandBusy&&bot.name(bot.items[0]).endsWith('_sword'))bot.select(0);else if(!bot.handUse&&!bot.actionHandBusy&&bot.tool()?.slot<9)bot.select(bot.tool().slot);
  if(slotChoices(bot,options).some(([dest,item])=>item.slot!==dest))return false;return true;
 }
@@ -16,7 +16,7 @@ async function wear(bot,{armor=true,totem=true,elytra=false},signal){
  const held=totem?(bot.find('totem')||bot.find('totem_of_undying')||(!/totem/.test(bot.name(bot.offhand[0]))?bot.find('shield'):null)):null;
  const replaceHand=held&&bot.name(bot.offhand[0])!==held.name;if(!upgrades.length&&!replaceHand)return false;
  await bot.openInventory(signal);try{for(const [item,index]of upgrades)await bot.swapContainer('hotbar_and_inventory',item.slot,'armor',index,signal);
-  if(held&&bot.name(bot.offhand[0])!==held.name)await bot.swapContainer('hotbar_and_inventory',held.slot,'offhand',0,signal);
+  if(held&&bot.name(bot.offhand[0])!==held.name&&!require('./hand').protects(bot,'inventory',held.slot)&&!require('./item-use').protects(bot,'inventory',held.slot))await bot.swapContainer('hotbar_and_inventory',held.slot,'offhand',0,signal);
  }finally{bot.closeContainer();}return true;
 }
 module.exports={best,rank,wanted,slotChoices,autoSlots,wear,strengthPotion};
