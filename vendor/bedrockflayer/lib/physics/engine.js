@@ -113,7 +113,7 @@ function _simulateTick(bot) {
     if (!bot.entity) return
     const escapingWater = bot.safety?.update();
     if (!escapingWater && bot.motion?.step()) {
-        markPhysics(bot, 'motion_override', bot.motion.embed ? 'AntiCrystalの位置制御' : '飛行・着地の位置制御')
+        markPhysics(bot, 'motion_override', bot.motion.embed ? 'AntiCrystalの位置制御' : bot.motion.floorEscape || bot.collisionState?.jumpedFromFloor ? '受信済みの床の重なりからジャンプ復帰' : '飛行・着地の位置制御')
         bot.position = bot.entity.position.clone()
         _sendPositionPacket(bot, 0, (bot.motion?.following || bot.motion?.flight) && bot.controlState.forward ? -1 : 0); bot.tick++; bot.emit('physicsTick'); return
     }

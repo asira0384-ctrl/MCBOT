@@ -1,11 +1,11 @@
-# v0.3.9 最初に読む
+# v0.3.10 最初に読む
 
 ## 既存のRailwayを更新する
 
 1. ZIPを解凍します。
 2. AsiraClearBotフォルダの**中身**を既存GitHubリポジトリへ上書きします。src・web・vendor・scripts・package.json・package-lock.json・Dockerfileを含めます。
 3. Railwayの新しいデプロイが成功するまで待ちます。Variablesとdataは引き継ぎます。
-4. 起動ログとWeb右上がv0.3.9か確認します。WebはCtrl+F5で更新してください。
+4. 起動ログとWeb右上がv0.3.10か確認します。WebはCtrl+F5で更新してください。
 
 認証を残すため、MCBOTにVolumeを接続し、Mount Path=/data・DATA_DIR=/dataとします。DATA_DIRだけの設定ではVolumeは作成されません。
 
@@ -29,4 +29,4 @@ Node.js 24を入れ、.env.exampleを.envにコピーしてDISCORD_TOKEN等を�
 
 使えない操作があれば、実行直後に「状態レポート」を保存してください。操作待ち・サーバー確認・地形・飲食・PA・Jetpackのどこで止まっているかを記録します。
 
-詳しくはUPDATE-v0.3.9-JA.mdとWEB-GUIDE-JA.mdを参照してください。
+詳しくはUPDATE-v0.3.10-JA.mdとWEB-GUIDE-JA.mdを参照してください。

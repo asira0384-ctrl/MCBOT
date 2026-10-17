@@ -1,4 +1,4 @@
-# v0.3.9 のコマンド
+# v0.3.10 のコマンド
 
 WebはDiscordの `/web`、Discordのボタンは `/panel` です。下記は `/bot target:1 command:内容` の「内容」に入れます。
 

@@ -121,7 +121,8 @@ function getSurroundingBBs(bot, region) {
     const bbs = []
     const minX = Math.floor(region.minX)
     const maxX = Math.floor(region.maxX)
-    const minY = Math.floor(region.minY)
+    // Fences and walls in the block below can extend 0.5m into this region.
+    const minY = Math.floor(region.minY) - 1
     const maxY = Math.floor(region.maxY)
     const minZ = Math.floor(region.minZ)
     const maxZ = Math.floor(region.maxZ)
