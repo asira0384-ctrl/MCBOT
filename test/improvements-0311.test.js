@@ -48,7 +48,7 @@ function pistonServer(t,{mode='look',learn=false,nukkit=false,push=true}={}){
  b.items[0]=item('netherite_sword');b.items[1]=item('netherite_pickaxe');b.items[5]=item('obsidian');b.items[6]=item('end_crystal');b.items[7]=item('piston');b.items[8]=item('redstone_block');if(!learn)b.pistonFacingMode=mode;b.serverBreak=false;
  const walls=p=>Math.floor(p.y)===63||Math.floor(p.y)===64&&[[1,0],[-1,0],[0,1],[0,-1]].some(([x,z])=>Math.floor(p.x)===hole.x+x&&Math.floor(p.z)===hole.z+z);
  b.blockAt=p=>b.worldMirror.overrides.has(`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`)?b.worldMirror.get(p):walls(p)?block(p):air(p);
- if(nukkit){b.serverAuthoritativeInventory=false;b.pistonFacingMode='opposite';}const trace=[],yawPackets=[],queue=c.queue;let serverYaw=0;
+ if(nukkit){b.serverAuthoritativeInventory=false;b.pistonFacingMode='opposite';b.pistonWireOpposite=true;}const trace=[],yawPackets=[],queue=c.queue;let serverYaw=0;
  const update=(p,name,facing)=>{const entry=b.registry.blocksByName[name];let state=entry.defaultState;if(name==='piston')for(let n=entry.minStateId;n<=entry.maxStateId;n++)if(Number(Block.fromStateId(n).getProperties().facing_direction)===facing){state=n;break;}c.emit('update_block',{position:p,block_runtime_id:b.worldMirror.wireIds.get(state)??state,layer:0});};
  c.queue=(name,p)=>{queue(name,p);if(name==='player_auth_input'){serverYaw=packets.at(-1).params.yaw;yawPackets.push(serverYaw);}if(name!=='inventory_transaction')return;const tx=p.transaction,d=tx.transaction_data;
   if(tx.transaction_type==='item_use_on_entity'){trace.push('attack:'+String(d.entity_runtime_id));return;}
@@ -124,3 +124,5 @@ test('an exhausted PA cycle releases combat ownership instead of permanently sup
 });
 
 test('Nukkit inverse piston metadata proceeds through Crystal and power, then breaks the received Crystal if entity pushing is absent',async t=>{const {r,trace}=pistonServer(t,{mode:'look',nukkit:true,push:false});await r.combatPulse();assert.deepEqual(trace,['obsidian','piston','end_crystal','redstone_block','attack:100']);assert(r.crystals.pistonHistory.some(v=>v.action==='pa_push_unconfirmed'));assert.equal(r.attacks,0);assert.equal(r.crystals.piston.stage,'break');});
+
+test('legacy inventory does not invert already canonical piston runtime properties',async t=>{const {b,r,trace}=pistonServer(t,{mode:'opposite',nukkit:true});b.pistonWireOpposite=false;await r.combatPulse();assert.deepEqual(trace,['obsidian','piston','end_crystal','redstone_block','attack:100']);});

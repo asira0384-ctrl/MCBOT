@@ -73,8 +73,8 @@ test('shulker restock merges partial stacks and takes several needed stacks whil
 test('legacy armor uses a server native equip and receives worn + held updates without reconnecting',async t=>{
  const {b,c,item}=adapter(t),equipment=require('../src/equipment');b.serverAuthoritativeInventory=false;b.inventoryMode='stack';b.items[0]=item('netherite_sword');b.items[5]=item('netherite_helmet');const queue=c.queue;let clicks=0;c.queue=(name,p)=>{queue(name,p);if(name==='inventory_transaction'&&p.transaction.transaction_data?.action_type==='click_air'&&b.name(p.transaction.transaction_data.held_item)==='netherite_helmet'){clicks++;queueMicrotask(()=>{c.emit('inventory_content',{window_id:'armor',input:[b.items[b.quickBarSlot],{network_id:0},{network_id:0},{network_id:0}]});c.emit('inventory_slot',{window_id:'inventory',slot:b.quickBarSlot,item:{network_id:0}});});}};await equipment.wear(b,{armor:true,totem:false});assert.equal(clicks,1);assert.equal(b.name(b.armor[0]),'netherite_helmet');assert.equal(b.name(b.items[0]),'netherite_sword');
 });
-test('Nukkit piston metadata maps its opposite wire facing to the actual push direction',()=>{
- const {pistonDirection}=require('../src/combat');assert.equal(pistonDirection({serverAuthoritativeInventory:false},{properties:{facing_direction:5}}),4);assert.equal(pistonDirection({serverAuthoritativeInventory:true},{properties:{facing_direction:5}}),5);
+test('only explicit opposite-wire mode inverts piston facing; inventory mode alone does not',()=>{
+ const {pistonDirection}=require('../src/combat');assert.equal(pistonDirection({serverAuthoritativeInventory:false,pistonWireOpposite:true},{properties:{facing_direction:5}}),4);assert.equal(pistonDirection({serverAuthoritativeInventory:true},{properties:{facing_direction:5}}),5);assert.equal(pistonDirection({serverAuthoritativeInventory:false},{properties:{facing_direction:5}}),5);
 });
 
 test('wrong-account quarantine cannot re-import stale legacy credentials on the next process start',t=>{

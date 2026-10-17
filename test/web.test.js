@@ -37,10 +37,10 @@ test('persistent owner session survives Web controller restart and Minecraft dis
 });
 test('manual swap/drop API rejects stale inventory and confirms actual adapter transfers',async t=>{
  const f=await fixture(t);await f.login();const {b,item}=require('./helpers/adapter').adapter(t);b.items[5]={...item('end_crystal'),count:10};b.items[10]=item('diamond_sword',2);const w=f.manager.workers.get(1);w.bot=b;w.runtime={};const token=require('../src/web').itemToken;
- let data={target:'1',action:'swap',from:5,to:10,fromToken:token(b.items[5]),toToken:token(b.items[10])};let response=await f.request('/api/inventory',{data});assert.equal(response.status,200,await response.text());assert.equal(b.name(b.items[10]),'end_crystal');assert.equal(b.name(b.items[5]),'diamond_sword');assert(w.runtime.manualSlotsUntil>Date.now());
+ let data={target:'1',action:'swap',from:5,to:10,fromToken:token(b.items[5]),toToken:token(b.items[10])};let response=await f.request('/api/inventory',{data});const swapped=await response.json();assert.equal(response.status,200,JSON.stringify(swapped));assert.equal(swapped.bot.inventory[10].name,'end_crystal');assert.equal(swapped.bot.inventorySync.manual,null);assert.equal(b.name(b.items[10]),'end_crystal');assert.equal(b.name(b.items[5]),'diamond_sword');assert(w.runtime.manualSlotsUntil>Date.now());
  response=await f.request('/api/inventory',{data});assert.equal(response.status,409);assert.equal(b.name(b.items[10]),'end_crystal');
- response=await f.request('/api/inventory',{data:{target:'1',action:'drop',from:10,fromToken:token(b.items[10]),count:3}});assert.equal(response.status,200,await response.text());assert.equal(b.items[10].count,7);
- b.handUse={phase:'using',slot:10};response=await f.request('/api/inventory',{data:{target:'1',action:'drop',from:10,fromToken:token(b.items[10]),count:2}});assert.equal(response.status,409);assert.equal(b.items[10].count,7);b.handUse=null;
+ response=await f.request('/api/inventory',{data:{target:'1',action:'drop',from:10,fromToken:token(b.items[10]),count:3}});const dropped=await response.json();assert.equal(response.status,200,JSON.stringify(dropped));assert.equal(dropped.bot.inventory[10].count,7);assert.equal(dropped.bot.inventorySync.manual,null);assert.equal(b.items[10].count,7);
+ b.handUse={phase:'using',slot:10};response=await f.request('/api/inventory',{data:{target:'1',action:'drop',from:10,fromToken:token(b.items[10]),count:2}});assert.equal(response.status,409);assert.equal(b.items[10].count,7);b.handUse=null;response=await f.request('/api/inventory',{data:{target:'1',action:'drop',from:10,fromToken:token(b.items[10]),count:7}});const emptied=await response.json();assert.equal(response.status,200);assert.equal(emptied.bot.inventory[10].name,'');assert.equal(emptied.bot.inventory[10].count,0);assert.equal(b.items[10],null);
 });
 test('restock approvals require owner session, CSRF and the current request ID; account switching uses the real manager command',async t=>{
  const f=await fixture(t);await f.login();const calls=[];f.manager.workers.get(1).runtime={restock:{decide:(id,on)=>{if(id!=='job-current')throw Error('stale');calls.push({id,on});return 'ok';}}};
@@ -66,4 +66,8 @@ test('Web login and connect buttons both request the same managed auth-to-game f
  const f=await fixture(t);await f.login();const requested=[];f.manager.requestConnection=id=>{requested.push(id);return {state:'waiting',autoConnect:true,connection:{state:'offline'}};};
  let response=await f.request('/api/auth',{data:{target:'2'}});assert.equal(response.status,200);assert.equal((await response.json()).authentication.autoConnect,true);assert.deepEqual(requested,[2]);
  response=await f.request('/api/command',{data:{target:'2',command:'connect'}});assert.equal(response.status,200);assert.deepEqual(requested,[2,2]);assert.equal(f.calls.length,0);
+});
+
+test('Web groups follow the saved server realm, show gold hearts and return fresh confirmed inventory immediately',async t=>{
+ const f=await fixture(t);await f.login();f.manager.store.bot(1).serverRealm='ign';f.manager.workers.get(1).bot.absorption=16;const state=await(await f.request('/api/state')).json();assert.equal(state.bots[0].server,'ign');assert.equal(state.bots[0].absorption,16);assert.equal(state.bots[0].config.anticrystal,false);await f.request('/api/command',{data:{target:'ign',command:'stop'}});assert.deepEqual(f.calls.map(v=>v.id),['1','11']);
 });
