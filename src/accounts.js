@@ -10,7 +10,7 @@ function migrate(store,name){const directory=authDirectory(store,0,name);fs.mkdi
  for(const [type,{data,time}]of newest){const destination=path.join(directory,hash+'_'+type+'-cache.json');if(!fs.existsSync(destination)||fs.statSync(destination).mtimeMs<time){fs.writeFileSync(destination,JSON.stringify(data),{mode:0o600});fs.utimesSync(destination,time/1000,time/1000);}}fs.writeFileSync(marker,JSON.stringify({version:1,at:Date.now()}),{mode:0o600});return directory;
 }
 function refreshSaved(directory){
- try{return fs.readdirSync(directory).filter(n=>/_(?:live|sisu)-cache\.json$/.test(n)).some(n=>{try{const v=JSON.parse(fs.readFileSync(path.join(directory,n),'utf8'));return typeof v.token?.refresh_token==='string'&&v.token.refresh_token.length>0;}catch{return false;}});}catch{return false;}
+ try{return [...new Set(fs.readdirSync(directory).map(n=>n.replace(/\.bak$/,'')))].filter(n=>/_(?:live|sisu)-cache\.json$/.test(n)).some(n=>{try{const v=new(require('./auth-cache').AtomicCache)(path.join(directory,n)).load();return typeof v.token?.refresh_token==='string'&&v.token.refresh_token.length>0;}catch{return false;}});}catch{return false;}
 }
 function storageInfo(dir,env=process.env){
  const actual=path.resolve(dir),mount=env.RAILWAY_VOLUME_MOUNT_PATH&&path.resolve(env.RAILWAY_VOLUME_MOUNT_PATH),railway=!!(env.RAILWAY_PROJECT_ID||env.RAILWAY_ENVIRONMENT_ID||env.RAILWAY_SERVICE_ID);
@@ -32,7 +32,7 @@ class Accounts{
   const controller=new AbortController(),job={name:norm(name),state:'checking',controller};this.jobs.set(id,job);
   const current=()=>this.jobs.get(id)===job&&!controller.signal.aborted;
   const {Authflow,Titles}=require('prismarine-auth'),Flow=this.Flow||Authflow;
-  let flow;try{flow=new Flow(authUsername(name),directory,{flow:'live',authTitle:Titles.MinecraftNintendoSwitch,deviceType:'Nintendo',deviceOS:12},code=>{if(!current())return;job.code={...code,expires:Date.now()+(code.expires_in||900)*1000};job.state='waiting';this.onChange(id,'Microsoft認証待ち。Webの認証ボタンまたは /auth でコードを確認してください');});}catch(error){job.state='failed';job.error=error.message;controller.abort();return this.snapshot(id,name);}
+  let flow;try{flow=new Flow(authUsername(name),this.Flow?directory:require('./auth-cache').factory(directory),require('./auth-cache').options(),code=>{if(!current())return;job.code={...code,expires:Date.now()+(code.expires_in||900)*1000};job.state='waiting';this.onChange(id,'Microsoft認証待ち。Webの認証ボタンまたは /auth でコードを確認してください');});}catch(error){job.state='failed';job.error=error.message;controller.abort();return this.snapshot(id,name);}
   this.flows.set(id,{name:norm(name),flow});job.flow=flow;
   const timer=setTimeout(()=>{if(current()){controller.abort();if(flow.msa)flow.msa.polling=false;job.state='failed';job.error='認証が15分で完了しませんでした。認証ボタンから再開してください';job.code=null;}},900000);timer.unref?.();
   job.promise=this.run({signal:controller.signal,closed:()=>!current(),notify:text=>this.onChange(id,text)},async()=>{

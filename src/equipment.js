@@ -8,9 +8,13 @@ function equipSlot(bot,name){const pa=!!bot.motion?.runtime?.config.pistoncrysta
  for(const slot of [preferred,...[5,8,7,6,4,3].filter(n=>n!==preferred)]){if(require('./inventory').touches(bot,slot)||require('./item-use').protects(bot,'inventory',slot)&&!(bot.handUse.phase==='selecting'&&bot.handUse.name===name))continue;const existing=bot.name(bot.items[slot]);const category=n=>n.endsWith('_sword')?'sword':n.endsWith('_pickaxe')?'pickaxe':/apple/.test(n)?'food':null;const protectedItem=category(existing);if(!existing||!protectedItem||protectedItem===category(name))return slot;}return -1;
 }
 function slotChoices(bot,{pistoncrystal=false}={}){return [[0,best(bot,'_sword')],[1,bot.tool()],[2,bot.find('enchanted_golden_apple')],[3,strengthPotion(bot)],[4,bot.find('totem')||bot.find('totem_of_undying')],[5,pistoncrystal?bot.find('obsidian'):bot.find('shield')],...(pistoncrystal?[[6,bot.find('end_crystal')],[7,bot.find('piston')||bot.find('sticky_piston')],[8,bot.find('redstone_block')]]:[[6,bot.find('end_crystal')||bot.find('firework_rocket')],[7,bot.find('obsidian')],...(bot.find('end_crystal')?[[8,bot.find('firework_rocket')]]:[])])].filter(([,item])=>item);}
+async function urgentOffhand(bot,signal){
+ if(!bot.motion?.runtime?.config.autototem||bot.manualInventoryBusy||/totem/.test(bot.name(bot.offhand[0])))return false;const held=bot.find('totem_of_undying')||bot.find('totem');if(!held||require('./hand').protects(bot,'inventory',held.slot)||require('./item-use').protects(bot,'inventory',held.slot))return false;
+ await bot.openInventory(signal);await bot.swapContainer('hotbar_and_inventory',held.slot,'offhand',0,signal);return true;
+}
 async function autoSlotsNow(bot,signal,options){
  const needs=()=>slotChoices(bot,options).some(([dest,item])=>item.slot!==dest);if(!needs())return true;
- await bot.openInventory(signal);try{for(let dest=0;dest<9;dest++){if(signal?.aborted)throw Error('停止しました');const choice=slotChoices(bot,options).find(([d])=>d===dest)?.[1];if(choice&&choice.slot!==dest&&![dest,choice.slot].some(slot=>require('./item-use').protects(bot,'inventory',slot)||require('./hand').protects(bot,'inventory',slot)))await bot.swap(choice.slot,dest,signal);}}finally{bot.closeContainer();}
+ await bot.openInventory(signal);try{for(let dest=0;dest<9;dest++){if(bot.manualInventoryBusy)return false;await urgentOffhand(bot,signal);if(signal?.aborted)throw Error('停止しました');const choice=slotChoices(bot,options).find(([d])=>d===dest)?.[1];if(choice&&choice.slot!==dest&&![dest,choice.slot].some(slot=>require('./item-use').protects(bot,'inventory',slot)||require('./hand').protects(bot,'inventory',slot)))await bot.swap(choice.slot,dest,signal);}}finally{bot.closeContainer();}
  if(!bot.handUse&&!bot.actionHandBusy&&bot.name(bot.items[0]).endsWith('_sword'))bot.select(0);else if(!bot.handUse&&!bot.actionHandBusy&&bot.tool()?.slot<9)bot.select(bot.tool().slot);
  if(slotChoices(bot,options).some(([dest,item])=>item.slot!==dest))return false;return true;
 }
@@ -18,7 +22,7 @@ function serialEquipment(bot,run){const previous=bot.equipmentTail||Promise.reso
 function autoSlots(bot,signal,options){return serialEquipment(bot,()=>autoSlotsNow(bot,signal,options));}
 function wear(bot,options,signal){return serialEquipment(bot,()=>wearNow(bot,options,signal));}
 async function nativeArmor(bot,item,index,signal){
- if(bot.serverAuthoritativeInventory!==false&&bot.inventoryMode!=='legacy'||bot.handUse||bot.actionHandBusy)return false;
+ if(bot.serverAuthoritativeInventory!==false&&bot.inventoryMode!=='legacy'||bot.handUse||bot.actionHandBusy||Date.now()<(bot.lowPriorityHandBlockedUntil||0))return false;
  const hand=require('./hand'),lease=hand.claim(bot),selected=bot.quickBarSlot;
  try{await bot.equip(item.slot,signal);await hand.settled(bot,signal);bot.closeContainer();if(signal?.aborted||bot.dead||bot.name(bot.items[bot.quickBarSlot])!==item.name)throw Error('防具の使用を停止しました');
   const held=bot.items[bot.quickBarSlot],slot=bot.quickBarSlot,before=bot.inventoryRevision||0;
@@ -31,11 +35,11 @@ async function wearNow(bot,{armor=true,totem=true,elytra=false},signal){
  const held=replaceOffhand();if(held&&!require('./hand').protects(bot,'inventory',held.slot)&&!require('./item-use').protects(bot,'inventory',held.slot)){await bot.openInventory(signal);try{const fresh=replaceOffhand();if(fresh){await bot.swapContainer('hotbar_and_inventory',fresh.slot,'offhand',0,signal);changed=true;}}finally{bot.closeContainer();}}
  if(!armor||bot.handUse||bot.actionHandBusy)return changed;
  for(const [index,suffix]of ['_helmet','_chestplate','_leggings','_boots'].entries()){
-  if(totem)changed=await wearNow(bot,{armor:false,totem:true},signal)||changed;
+  if(totem||bot.motion?.runtime?.config.autototem)changed=await wearNow(bot,{armor:false,totem:true},signal)||changed;
   if(signal?.aborted)throw Error('停止しました');const candidate=()=>index===1&&elytra?bot.find('elytra'):best(bot,suffix);let item=candidate(),current=bot.armor[index];
   if(!item||current&&!(index===1&&elytra&&bot.name(current)!=='elytra')&&(index===1&&elytra||rank(bot,item)<=rank(bot,{raw:current})))continue;
   if(await nativeArmor(bot,item,index,signal)){changed=true;continue;}
   item=candidate();if(!item)continue;await bot.openInventory(signal);try{await bot.swapContainer('hotbar_and_inventory',item.slot,'armor',index,signal);changed=true;}finally{bot.closeContainer();}
  }return changed;
 }
-module.exports={best,rank,wanted,slotChoices,autoSlots,wear,strengthPotion,equipSlot};
+module.exports={best,rank,wanted,slotChoices,autoSlots,wear,strengthPotion,equipSlot,urgentOffhand};

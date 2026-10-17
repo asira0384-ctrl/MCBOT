@@ -38,7 +38,7 @@ class WebControl{
    ['/favicon.svg',{type:'image/svg+xml',buffer:fs.readFileSync(path.join(directory,'favicon.svg'))}]
   ]);
   for(const v of manager.store.data.webSessions||[])if(v.owner===this.owner&&this.isAllowed(v.discordId||v.owner)&&/^[a-f0-9]{64}$/.test(v.key)&&v.expires>this.now()&&typeof v.csrf==='string')this.sessions.set(v.key,{csrf:v.csrf,expires:v.expires,label:String(v.label||'Asira').slice(0,80),owner:this.owner,discordId:v.discordId||v.owner,profile:v.profile||null});
-  this.timer=setInterval(()=>this.pump(),1000);this.timer.unref?.();
+  this.manager.stateSubscribers??=new Set();this.onStateChange=()=>this.requestPump();this.manager.stateSubscribers.add(this.onStateChange);this.timer=setInterval(()=>this.pump(),1000);this.timer.unref?.();
  }
  isAllowed(id){return require('./discord-login').permitted(this.manager.store,String(id),this.owner);}
  publicProfile(session){return session.profile||{id:session.discordId||this.owner,name:session.label,username:session.label,avatar:null};}
@@ -57,20 +57,20 @@ class WebControl{
  }
  loginMessage(actor,label){if(this.discordLogin.ready()&&this.isAllowed(String(actor)))return {content:`[DiscordでWeb管理へログイン](${this.base}/)`,allowedMentions:{parse:[]}};if(String(actor)!==this.owner)throw Error('Discordログインの設定がまだ完了していません');const login=this.issueLogin(actor,label);return {content:`[Web管理画面を開く](${login.url})\n本人専用・一度限り・2分間有効です。\n手入力する場合のコード: **${login.code}**`,allowedMentions:{parse:[]}};}
  targets(value){
-  const target=String(value||'');if(target==='2b2e')return [...this.manager.names.keys()].filter(n=>n!==11);if(target==='ign')return this.manager.names.has(11)?[11]:[];
+  const target=String(value||'');if(target==='2b2e'||target==='ign')return [...this.manager.names.keys()].filter(n=>require('./realms').selected(this.manager.store,n)===target);
   if(target!=='all'&&!/^(?:[1-9]|10|11)$/.test(target))throw fail(400,'Bot番号またはグループを選んでください');
   return this.manager.targets(target);
  }
  snapshot(){
   const names=this.manager.names,bots=[...names].map(([id,name])=>{
-   const w=this.manager.workers.get(id),b=w?.bot,state=this.manager.store.bot(id),r=w?.runtime?.snapshot?.(),p=b?.entity?.position;
-   const item=(raw,slot)=>({slot,name:raw?(b?.name?.(raw)||raw.name||'unknown'):'',count:raw?.count||0,damage:raw?(b?.damage?.(raw)||0):0,token:itemToken(raw),selected:slot===b?.quickBarSlot});
-   return {id,name,server:id===11?'ign':'2b2e',connected:!!b?.connected,dead:!!b?.dead,phase:b?.connectionPhase||'未接続',mode:w?.mode||'offline',health:b?.health??null,
-    endpoint:{host:b?.config?.host||(id===11?this.env.IGN_HOST:this.env.MC_HOST)|| (id===11?'IGN未設定':'2b2e.org'),port:b?.config?.port||Number((id===11?this.env.IGN_PORT:this.env.MC_PORT)||19132)},
-    position:p?{x:p.x,y:p.y,z:p.z}:null,dimension:b?.dimensionId??0,config:{...defaults,...state.runtime},
+   const w=this.manager.workers.get(id),b=w?.bot,state=this.manager.store.bot(id),r=w?.runtime?.snapshot?.(),p=b?.entity?.position,realm=b?.config?.realm||require('./realms').selected(this.manager.store,id),ign=realm==='ign';
+   const item=(raw,slot)=>{if(!raw?.count)raw=null;return {slot,name:raw?(b?.name?.(raw)||raw.name||'unknown'):'',count:raw?.count||0,damage:raw?(b?.damage?.(raw)||0):0,token:itemToken(raw),selected:slot===b?.quickBarSlot};};
+   return {id,name,server:realm,connected:!!b?.connected,dead:!!b?.dead,phase:b?.connectionPhase||'未接続',mode:w?.mode||'offline',health:b?.health??null,absorption:Math.max(0,Number(b?.absorption)||0),chatDelivery:b?require('./chat-delivery').snapshot(b):null,
+    endpoint:{host:b?.config?.host||(ign?this.env.IGN_HOST:this.env.MC_HOST)|| (ign?'IGN未設定':'2b2e.org'),port:b?.config?.port||Number((ign?this.env.IGN_PORT:this.env.MC_PORT)||19132)},
+    position:p?{x:p.x,y:p.y,z:p.z}:null,dimension:b?.dimensionId??0,config:{...defaults,...state.runtime,...(ign?{anticrystal:false}:{})},
     options:{respawn:state.respawn,autoSupply:state.autoSupply,chat:state.chat,floor:state.floor,ceiling:state.ceiling,area:state.area,scaffold:state.scaffold},
-    inventory:Array.from({length:36},(_,n)=>item(b?.items?.[n],n)),armor:Array.from({length:4},(_,n)=>item(b?.armor?.[n],n)),offhand:item(b?.offhand?.[0],-1),
-    bps:r?.telemetry?.bps||0,verticalBps:r?.telemetry?.verticalBps||0,restock:r?.restock||null,nearby:w?.runtime?.telemetry?require('./tactics').nearby(w.runtime):[],accounts:state.accountHistory||[name],authentication:this.manager.authentication?.(id)||null,authCacheSaved:this.manager.accounts?.snapshot(id,name).saved||false,ignActions:r?.ignActions||state.ignActions||null,followingPlayer:r?.followingPlayer||{...state.follow,points:0},runtime:r?{autoLog:r.autoLog,rollbackRecovery:r.rollbackRecovery,paused:r.paused,operation:r.operation,movement:r.movement,target:r.target,combatWaiting:r.combatWaiting,attacksSent:r.attacksSent,totemsUsed:r.totemsUsed,consumption:r.consumption,lastItemUse:r.lastItemUse,crystalCombat:r.crystalCombat,featureErrors:r.featureErrors,lastError:r.lastError}:null,
+    inventorySync:{revision:b?.inventoryRevision||0,at:b?.lastInventoryAt||null,pending:b?.pendingStackRequest?{action:b.pendingStackRequest.action,at:b.pendingStackRequest.at}:null,manual:b?.manualInventoryOperation||null,last:b?.lastStackResponse||null},inventory:Array.from({length:36},(_,n)=>item(b?.items?.[n],n)),armor:Array.from({length:4},(_,n)=>item(b?.armor?.[n],n)),offhand:item(b?.offhand?.[0],-1),
+    bps:r?.telemetry?.bps||0,verticalBps:r?.telemetry?.verticalBps||0,restock:r?.restock||null,nearby:w?.runtime?.telemetry?require('./tactics').nearby(w.runtime):[],accounts:state.accountHistory||[name],authentication:this.manager.authentication?.(id)||null,authCacheSaved:this.manager.accounts?.snapshot(id,name).saved||false,ignActions:r?.ignActions||state.ignActions||null,followingPlayer:r?.followingPlayer||{...state.follow,points:0},runtime:r?{selfDefense:r.selfDefense,autoLog:r.autoLog,rollbackRecovery:r.rollbackRecovery,paused:r.paused,operation:r.operation,movement:r.movement,target:r.target,combatWaiting:r.combatWaiting,attacksSent:r.attacksSent,totemsUsed:r.totemsUsed,consumption:r.consumption,lastItemUse:r.lastItemUse,crystalCombat:r.crystalCombat,featureErrors:r.featureErrors,lastError:r.lastError}:null,
     packetsReceived:Object.values(b?.packetCounts||{}).reduce((a,n)=>a+Number(n||0),0),corrections:b?.positionCorrections||0,logs:(this.manager.logs.get(id)||[]).slice(-30).map(redact)};
   });
   return {version:require('../package.json').version,at:this.now(),bots,friends:(this.manager.store.data.friends||[]).map(e=>e.name),enemies:(this.manager.store.data.enemies||[]).map(e=>e.name),audit:this.audit.slice(-30)};
@@ -184,15 +184,16 @@ class WebControl{
   const ids=this.targets(data.target),from=Number(data.from),to=Number(data.to);if(ids.length!==1||!Number.isInteger(from)||from<0||from>35||!['swap','drop'].includes(data.action))throw fail(400,'Botとスロットを指定してください');
   if(data.action==='swap'&&(!Number.isInteger(to)||to<0||to>35||to===from))throw fail(400,'移動先のスロットを指定してください');
   const w=this.manager.worker(ids[0]),b=w.bot;if(b.handUse||b.manualInventoryBusy||b.window||w.runtime?.restock?.running)throw fail(409,'飲食・箱の操作が終わってから実行してください');
-  if(w.runtime)w.runtime.manualSlotsUntil=Date.now()+30000;b.manualInventoryBusy=true;b.actionHandBusy=true;
+  if(w.runtime){w.runtime.manualSlotsUntil=Date.now()+30000;w.runtime.combatAbort?.abort();}b.manualInventoryBusy=true;b.manualInventoryOperation={action:data.action,from,to,at:Date.now()};this.requestPump();let lease;
   try{
-   await b.inventoryTail;await b.openInventory();
+   if(w.runtime?.meleeTask)await w.runtime.meleeTask.catch(()=>{});await b.equipmentTail;await b.inventoryTail;if(b.actionHandBusy&&b.waitUntil)await b.waitUntil(()=>!b.actionHandBusy,1200);lease={slot:b.quickBarSlot,manual:true};b.actionHandBusy=lease;await b.openInventory();
    if(!b.items[from]||!sameToken(data.fromToken,itemToken(b.items[from]))||data.action==='swap'&&!sameToken(data.toToken,itemToken(b.items[to])))throw fail(409,'所持品が更新されました。アイテムを選び直してください');
    if(data.action==='drop'){const count=Number(data.count);if(!Number.isInteger(count)||count<1||count>b.items[from].count)throw fail(400,'捨てる個数を指定してください');await b.drop(from,count);}
    else await b.swap(from,to);
-   this.record(ids,data.action==='swap'?'アイテム枠を交換':'アイテムを捨てる');return {ok:true,result:data.action==='swap'?'アイテム枠の交換をサーバーで確認しました。AutoSlotは30秒待ちます':'アイテムの破棄をサーバーで確認しました'};
-  }finally{b.closeContainer();b.manualInventoryBusy=false;b.actionHandBusy=false;}
+   this.record(ids,data.action==='swap'?'アイテム枠を交換':'アイテムを捨てる');this.requestPump();const updated=this.snapshot().bots.find(v=>v.id===ids[0]);updated.inventorySync.manual=null;return {ok:true,bot:updated,result:data.action==='swap'?'アイテム枠の交換をサーバーで確認しました。AutoSlotは30秒待ちます':'アイテムの破棄をサーバーで確認しました'};
+  }finally{b.closeContainer();b.manualInventoryBusy=false;b.manualInventoryOperation=null;if(b.actionHandBusy===lease)b.actionHandBusy=false;this.requestPump();}
  }
+ requestPump(){if(this.closed||this.pumpSoon)return;this.pumpSoon=setTimeout(()=>{this.pumpSoon=null;this.pump();},40);this.pumpSoon.unref?.();}
  pump(){
   const now=this.now();for(const [key,value]of this.codes)if(value.expires<=now)this.codes.delete(key);
   for(const [key,value]of this.attempts)if(value.until<=now)this.attempts.delete(key);
@@ -204,6 +205,6 @@ class WebControl{
    packet??='event: state\ndata: '+JSON.stringify(this.snapshot())+'\n\n';res.write(packet);
   }
  }
- close(){this.closed=true;clearInterval(this.timer);this.codes.clear();this.sessions.clear();this.requests.clear();for(const {res}of this.events)res.end();this.events.clear();}
+ close(){this.closed=true;clearTimeout(this.pumpSoon);this.manager.stateSubscribers?.delete(this.onStateChange);clearInterval(this.timer);this.codes.clear();this.sessions.clear();this.requests.clear();for(const {res}of this.events)res.end();this.events.clear();}
 }
 module.exports={WebControl,itemToken,baseURL,cleanCode,redact};

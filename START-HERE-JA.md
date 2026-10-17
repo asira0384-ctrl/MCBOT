@@ -1,19 +1,19 @@
-v0.3.12：最初に UPDATE-v0.3.12-JA.md を開いてください。Discordログインと権限、Microsoft認証、保存、IGNと追従、画面の設定が変わっています。
+v0.3.13：最初に UPDATE-v0.3.13-JA.md を開いてください。Discordログインと権限、Microsoft認証、保存、IGNと追従、画面の設定が変わっています。
 
-# v0.3.11 最初に読む
+# v0.3.13 最初に読む
 
 ## 既存のRailwayを更新する
 
 1. ZIPを解凍します。
 2. AsiraClearBotフォルダの**中身**を既存GitHubリポジトリへ上書きします。src・web・vendor・scripts・package.json・package-lock.json・Dockerfileを含めます。
 3. Railwayの新しいデプロイが成功するまで待ちます。Variablesとdataは引き継ぎます。
-4. 起動ログとWeb右上がv0.3.11か確認します。WebはCtrl+F5で更新してください。
+4. 起動ログとWeb右上がv0.3.13か確認します。WebはCtrl+F5で更新してください。
 
 認証を残すため、MCBOTにVolumeを接続し、Mount Path=/data・DATA_DIR=/dataとします。DATA_DIRだけの設定ではVolumeは作成されません。
 
 ## WebからBot1を認証して接続する
 
-1. Discordで /web を実行し、本人専用リンクを開きます。
+1. Discordで /web を実行し、Webの「Discordでログイン」から入ります。許可設定はUPDATE-v0.3.12-JA.mdを参照してください。
 2. Bot1を選択。必要なら「Minecraftアカウント」で正確なゲーマータグを保存します。
 3. ログイン・接続を押し、コードが出たら https://www.microsoft.com/link で入力します。
 4. Bot用アカウントでサインインすると、Minecraftへの接続を自動で開始します。

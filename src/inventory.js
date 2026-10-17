@@ -15,8 +15,8 @@ function serial(bot,fn,signal){const result=(bot.inventoryTail||Promise.resolve(
 async function openInventory(bot,signal){signal??=bot.operationSignal;
  if(signal?.aborted||!bot.connected)throw Error('停止・切断しました');if(bot.inventoryOpening)return bot.inventoryOpening;if(bot.inventoryOpen)return;
  bot.closeContainer();bot.inventoryOpen=true;bot.inventoryOpenRequests++;bot.inventoryOpenState={phase:'opening',requestedAt:Date.now(),acknowledged:false};
- bot.inventoryOpening=new Promise((resolve,reject)=>{let timer,syncTimer;
-  const clean=()=>{clearTimeout(timer);clearTimeout(syncTimer);bot.removeListener('inventoryOpenAcknowledged',ack);bot.removeListener('inventoryContents',contents);bot.removeListener('inventoryClosed',closed);bot.removeListener('end',ended);signal?.removeEventListener('abort',aborted);};
+ bot.inventoryOpening=new Promise((resolve,reject)=>{let timer,syncTimer,retryTimer;
+  const clean=()=>{clearTimeout(timer);clearTimeout(syncTimer);clearTimeout(retryTimer);bot.removeListener('inventoryOpenAcknowledged',ack);bot.removeListener('inventoryContents',contents);bot.removeListener('inventoryClosed',closed);bot.removeListener('end',ended);signal?.removeEventListener('abort',aborted);};
   const fail=e=>{clean();if(bot.connected)try{bot.closeContainer();}catch{}bot.inventoryOpen=false;bot.inventoryOpenState.phase='unconfirmed';reject(e);};
   const finish=()=>{clean();bot.inventoryOpenState.phase='opened';resolve();},ack=()=>{bot.inventoryOpenState.acknowledged=true;bot.inventoryOpenState.confirmedBy='container_open';finish();},contents=wid=>{if(bot.serverAuthoritativeInventory===false&&(wid===0||wid==='inventory')){bot.inventoryOpenState.acknowledged=true;bot.inventoryOpenState.confirmedBy='inventory_content';finish();}},closed=()=>fail(Error('サーバーがインベントリを閉じました')),ended=()=>fail(Error('切断')),aborted=()=>fail(Error('停止しました'));
   bot.on('inventoryOpenAcknowledged',ack);bot.on('inventoryClosed',closed);bot.on('end',ended);signal?.addEventListener('abort',aborted,{once:true});
@@ -24,10 +24,16 @@ async function openInventory(bot,signal){signal??=bot.operationSignal;
   // Request the screen, then ask legacy peers for actual contents if no open echo arrives.
   timer=setTimeout(()=>fail(Error('インベントリを開くサーバー応答がありません')),bot.inventoryTimeoutMs||5000);
   if(bot.serverAuthoritativeInventory===false||bot.inventoryMode==='legacy')syncTimer=setTimeout(()=>{try{requestSync(bot);}catch(e){fail(e);}},0);
-  try{bot.client.queue('interact',{action_id:'open_inventory',target_entity_id:0n,has_position:false});}catch(e){fail(e);}
+  try{const send=()=>bot.client.queue('interact',{action_id:'open_inventory',target_entity_id:0n,has_position:false});send();retryTimer=setTimeout(()=>{if(bot.inventoryOpenState.phase==='opening'&&!signal?.aborted&&bot.connected){try{send();requestSync(bot);}catch(e){fail(e);}}},Math.max(200,Math.min(600,(bot.rttMs||100)*2)));}catch(e){fail(e);}
  });
  try{await bot.inventoryOpening;}finally{bot.inventoryOpening=null;}
 }
+function applyResponse(bot,list,response){
+   for(const c of list){const array=bot.array(c.type);if(!array)throw Error('コンテナが閉じました');array[c.slot]=clone(c.item);}
+   for(const container of response.containers||[]){const t=canonical(typeof container.slot_type==='string'?container.slot_type:container.slot_type?.container_id),array=bot.array(t);if(!array)continue;
+    for(const slot of container.slots||[]){if(slot.count===0)array[slot.slot]=null;else if(array[slot.slot]){array[slot.slot].count=slot.count;if(slot.item_stack_id!==undefined)array[slot.slot].stack_id=slot.item_stack_id;if(slot.durability_correction>0)array[slot.slot].metadata=slot.durability_correction;}}
+   }
+  }
 async function transact(bot,action,changes,signal){signal??=bot.operationSignal;
  if(signal?.aborted||!bot.connected)throw Error('停止・切断しました');if(bot.inventoryOpening)await bot.inventoryOpening;else if(!bot.inventoryOpen&&!bot.window)await bot.openInventory(signal);
  const id=bot.requestId--,epoch=bot.abortVersion,list=changesWithTypes(bot,changes),legacy=bot.inventoryMode==='legacy'||bot.inventoryMode!=='stack'&&bot.serverAuthoritativeInventory===false;
@@ -42,7 +48,7 @@ async function transact(bot,action,changes,signal){signal??=bot.operationSignal;
     if(r.status!=='ok'&&r.status!==0){fail(Error('サーバーがアイテム操作を拒否しました'));return;}
     const proof=new Map();for(const container of r.containers||[]){const t=canonical(typeof container.slot_type==='string'?container.slot_type:container.slot_type?.container_id);for(const slot of container.slots||[])proof.set(`${t}:${slot.slot}`,slot);}
     if(!matches(bot,list)&&!list.every(c=>proof.get(`${c.type}:${c.slot}`)?.count===(c.item?.count||0))){fail(Error('変更したスロットのサーバー確認がありません'));return;}
-    done(r);
+    applyResponse(bot,list,r);done(r);
    };
    timer=setTimeout(()=>fail(Error('アイテム移動のサーバー確認がありません')),bot.inventoryTimeoutMs||7000);
    bot.client.on('item_stack_response',onResponse);bot.on('inventorySnapshot',onSnapshot);bot.on('end',ended);signal?.addEventListener('abort',aborted,{once:true});
@@ -59,16 +65,10 @@ async function transact(bot,action,changes,signal){signal??=bot.operationSignal;
     }else bot.client.queue('item_stack_request',request(id,[action]));
    }catch(e){fail(e);}
   });
-  if(!response.verifiedSnapshot){
-   for(const c of list){const array=bot.array(c.type);if(!array)throw Error('コンテナが閉じました');array[c.slot]=clone(c.item);}
-   for(const container of response.containers||[]){const t=canonical(typeof container.slot_type==='string'?container.slot_type:container.slot_type?.container_id),array=bot.array(t);if(!array)continue;
-    for(const slot of container.slots||[]){if(slot.count===0)array[slot.slot]=null;else if(array[slot.slot]){array[slot.slot].count=slot.count;if(slot.item_stack_id!==undefined)array[slot.slot].stack_id=slot.item_stack_id;if(slot.durability_correction>0)array[slot.slot].metadata=slot.durability_correction;}}
-   }
-  }
-  bot.lastStackResponse={id,status:'ok',mode:type,at:Date.now(),durationMs:Date.now()-(bot.pendingStackRequest?.at||Date.now()),confirmedBy:response.verifiedSnapshot?'inventory_snapshot':'item_stack_response'};
+  bot.lastInventoryAt=Date.now();bot.lastStackResponse={id,status:'ok',mode:type,at:Date.now(),durationMs:Date.now()-(bot.pendingStackRequest?.at||Date.now()),confirmedBy:response.verifiedSnapshot?'inventory_snapshot':'item_stack_response'};
   if(signal?.aborted||epoch!==bot.abortVersion)throw Error('停止しました');return response;
  }catch(e){bot.lastStackResponse={id,status:'failed',mode:type,at:Date.now(),reason:e.message};throw e;}
- finally{if(bot.pendingStackRequest?.id===id)bot.pendingStackRequest=null;}
+ finally{if(bot.pendingStackRequest?.id===id)bot.pendingStackRequest=null;bot.inventoryRevision=(bot.inventoryRevision||0)+1;bot.emit('inventorySnapshot');}
 }
 function touches(bot,slot){const request=bot.pendingStackRequest;if(!request)return false;return [request.source,request.destination].some(ref=>ref&&['hotbar','inventory','hotbar_and_inventory'].includes(typeof ref.slot_type==='string'?ref.slot_type:ref.slot_type?.container_id)&&ref.slot===slot);}
 module.exports={touches,openInventory,transact,same,canonical,requestSync,serial};

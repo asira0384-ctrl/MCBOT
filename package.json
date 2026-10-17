@@ -1,6 +1,6 @@
 {
   "name": "asira-clear-bot",
-  "version": "0.3.12",
+  "version": "0.3.13",
   "private": true,
   "description": "Bedrock terraforming bots with owner-only Discord control",
   "main": "src/index.js",

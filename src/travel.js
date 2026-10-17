@@ -177,7 +177,7 @@ class Travel{
   // Rebase on the accepted server pose without lifting out of Anti.
   this.embed={y:p.y,original:top};this.floorEscape=null;this.rememberAnti();b.entity.onGround=true;b.collisionState={held:false,combatAnti:true};this.waiting='サーバー位置を基準にAntiを維持';return true;
  }
- bury(depth){const b=this.bot,p=b.entity.position,floor=b.blockAt(p.offset(0,-.1,0));if(!b.entity.onGround||!solid(floor)||!bodyClear(b,p))return false;this.antiRecovery=null;this.embed={y:p.y-depth,original:p.y};this.rememberAnti();return true;}
+ bury(depth){if(require('./realms').isIgn(this.runtime))return false;const b=this.bot,p=b.entity.position,floor=b.blockAt(p.offset(0,-.1,0));if(!b.entity.onGround||!solid(floor)||!bodyClear(b,p))return false;this.antiRecovery=null;this.embed={y:p.y-depth,original:p.y};this.rememberAnti();return true;}
  unbury(){if(this.embed){this.rememberAnti();this.bot.entity.position.y=this.embed.original;this.bot.entity.velocity=new Vec3(0,0,0);this.bot.entity.onGround=true;this.embed=null;}else this.recoverAnti(false);}
 }
 module.exports={Travel,bodyClear,sweptClear,landingFloor,nearestPortal,dimension,validateGoal,wallDistance};

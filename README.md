@@ -1,13 +1,21 @@
-# Asira Clear Bot v0.3.12
-
-**新しい設定手順は [UPDATE-v0.3.12-JA.md](UPDATE-v0.3.12-JA.md) を先に開いてください。** Discordで許可したユーザーだけのWebログイン、認証コードコピー・認証成功時の自動閉じ、壁紙・音の変更、暗号化バックアップ、IGN専用操作・追従・AutoLog条件を追加しました。
-
+# Asira Clear Bot v0.3.13
 
 Minecraft統合版のBotをDiscordとWebから操作する、既存MCBOTサービス用の更新版です。
 
-**更新手順は [UPDATE-v0.3.12-JA.md](UPDATE-v0.3.12-JA.md) を開いてください。** ZIPを解凍し、AsiraClearBotフォルダの中身をGitHubの既存ファイルへ上書きします。Railwayのデプロイ成功後、WebをCtrl+F5で再読み込みします。Variablesと保存済みdataは引き継いでください。
+**更新手順は [UPDATE-v0.3.13-JA.md](UPDATE-v0.3.13-JA.md) を開いてください。** ZIPを解凍し、AsiraClearBotフォルダの中身をGitHubの既存ファイルへ上書きします。Railwayのデプロイ成功後、WebをCtrl+F5で再読み込みします。Variablesと保存済みdataは引き継いでください。
 
-## この版の変更
+## v0.3.13の変更
+
+- 所持品の更新順序・個数0の処理、即時のWeb反映と確認中の表示。
+- Totem発動時の操作キャンセルと補充優先度、KA・CAの送信待機、PAの方向と停止からの復帰、Jetpackの継続条件を修正。
+- FeetTrapは自分のホールを作成・探索。IGNではPvP中に自己ホールを自動化し、AntiCrystalを無効化。
+- Bot番号を変えず接続先を変更でき、IGNに移したBotでもWorld・Kit・TPA・Backを使用。
+- 金ハート表示、AutoLogのショートカットと金ハートの判定設定、5つのテーマ。
+- チャットとtellの認証情報・送信状態・受信拒否の表示、原子的な認証キャッシュの保存と復旧。
+
+324件成功。詳細は [検証記録](VALIDATION-v0.3.13.md)。
+
+## v0.3.12までの変更
 
 - 許可されたDiscordアカウントでWebへログイン。実際のアイコン・名前・IDを表示し、許可の取り消しも即座に反映。
 - Microsoftのコードコピー、認証成功時の画面の自動閉じ、アカウントに固定した認証キャッシュと旧形式の移行。
@@ -17,7 +25,7 @@ Minecraft統合版のBotをDiscordとWebから操作する、既存MCBOTサー�
 - 剣と設置物の枠競合、防具のサーバー更新、複数スタックの補充、無差別攻撃の表示を修正。
 - Legacy/NukkitのPA方向と押し込み未対応時の処理、Anti設定中のJetpackの発動判定を修正。
 
-検証は304件成功。[検証範囲](VALIDATION-v0.3.12.md)を参照してください。
+v0.3.12時点の検証は304件成功。[検証範囲](VALIDATION-v0.3.12.md)を参照してください。
 
 ## v0.3.11までの修正
 
