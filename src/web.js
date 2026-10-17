@@ -19,9 +19,9 @@ function baseURL(value){
 }
 function sameToken(a,b){const x=Buffer.from(String(a||'')),y=Buffer.from(String(b||''));return x.length===y.length&&x.length>0&&crypto.timingSafeEqual(x,y);}
 function redact(text){return /(?:access_token|refresh_token|user_code|DISCORD_TOKEN|Bearer\s)/iu.test(String(text))?'認証情報を含む行を省略しました':String(text).slice(0,700);}
-async function body(req){
+async function body(req,limit=8192){
  if(!/^application\/json(?:;|$)/i.test(req.headers['content-type']||''))throw fail(415,'JSON形式で送信してください');
- let size=0;const chunks=[];for await(const chunk of req){size+=chunk.length;if(size>8192)throw fail(413,'送信内容が長すぎます');chunks.push(chunk);}
+ let size=0;const chunks=[];for await(const chunk of req){size+=chunk.length;if(size>limit)throw fail(413,'送信内容が長すぎます');chunks.push(chunk);}
  try{const value=JSON.parse(Buffer.concat(chunks).toString());if(!value||typeof value!=='object'||Array.isArray(value))throw Error();return value;}catch{throw fail(400,'JSONの内容が不正です');}
 }
 class WebControl{
@@ -29,7 +29,7 @@ class WebControl{
   this.manager=manager;this.owner=String(options.owner||OWNER);this.env=options.env||process.env;this.now=options.now||Date.now;this.enabled=this.env.WEB_ENABLED!=='false';this.ready=options.ready||(()=>true);
   this.loginTTL=options.loginTTL||120000;this.sessionTTL=options.sessionTTL||30*24*3600000;
   this.base=baseURL(options.baseURL||this.env.WEB_BASE_URL||manager.store.data.webBaseURL||(this.env.RAILWAY_PUBLIC_DOMAIN?'https://'+this.env.RAILWAY_PUBLIC_DOMAIN:''));
-  this.codes=new Map();this.sessions=new Map();this.attempts=new Map();this.events=new Set();this.closed=false;this.audit=[];this.requests=new Map();this.viewAt=new Map();
+  this.discordLogin=new(require('./discord-login').DiscordLogin)(this,options.fetch);this.codes=new Map();this.sessions=new Map();this.attempts=new Map();this.events=new Set();this.closed=false;this.audit=[];this.requests=new Map();this.viewAt=new Map();
   const directory=path.join(__dirname,'..','web');this.assets=new Map([
    ['/',{type:'text/html; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'index.html'))}],
    ['/assets/app.css',{type:'text/css; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'app.css'))}],
@@ -37,21 +37,25 @@ class WebControl{
    ['/assets/app.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'app.js'))}],
    ['/favicon.svg',{type:'image/svg+xml',buffer:fs.readFileSync(path.join(directory,'favicon.svg'))}]
   ]);
-  for(const v of manager.store.data.webSessions||[])if(v.owner===this.owner&&/^[a-f0-9]{64}$/.test(v.key)&&v.expires>this.now()&&typeof v.csrf==='string')this.sessions.set(v.key,{csrf:v.csrf,expires:v.expires,label:String(v.label||'Asira').slice(0,80),owner:this.owner});
+  for(const v of manager.store.data.webSessions||[])if(v.owner===this.owner&&this.isAllowed(v.discordId||v.owner)&&/^[a-f0-9]{64}$/.test(v.key)&&v.expires>this.now()&&typeof v.csrf==='string')this.sessions.set(v.key,{csrf:v.csrf,expires:v.expires,label:String(v.label||'Asira').slice(0,80),owner:this.owner,discordId:v.discordId||v.owner,profile:v.profile||null});
   this.timer=setInterval(()=>this.pump(),1000);this.timer.unref?.();
  }
- persistSessions(){this.manager.store.data.webSessions=[...this.sessions].slice(-5).map(([key,s])=>({key,csrf:s.csrf,expires:s.expires,label:s.label,owner:this.owner}));this.manager.store.save();}
+ isAllowed(id){return require('./discord-login').permitted(this.manager.store,String(id),this.owner);}
+ publicProfile(session){return session.profile||{id:session.discordId||this.owner,name:session.label,username:session.label,avatar:null};}
+ createSession(req,res,user){for(const [key,s]of this.sessions)if(s.discordId===user.id||s.expires<=this.now())this.sessions.delete(key);if(this.sessions.size>=30)this.sessions.delete(this.sessions.keys().next().value);const token=random(),session={csrf:random(),expires:this.now()+this.sessionTTL,label:user.name,owner:this.owner,discordId:user.id,profile:user};this.sessions.set(digest(token),session);this.persistSessions();const old=res.getHeader('Set-Cookie');res.setHeader('Set-Cookie',[...(old?[].concat(old):[]),this.cookie(req,token,this.sessionTTL/1000)]);return session;}
+ requireOwner(session){if((session.discordId||session.owner)!==this.owner)throw fail(403,'この操作はAsira本人専用です');}
+ persistSessions(){this.manager.store.data.webSessions=[...this.sessions].slice(-30).map(([key,s])=>({key,csrf:s.csrf,expires:s.expires,label:s.label,owner:this.owner,discordId:s.discordId||this.owner,profile:s.profile||null}));this.manager.store.save();}
  configureURL(actor,value){if(String(actor)!==this.owner)throw fail(403,'本人のみ設定できます');this.base=baseURL(value);this.manager.store.data.webBaseURL=this.base;this.manager.store.save();return this.base;}
  issueLogin(actor,label='Asira'){
   if(this.closed)throw Error('再起動中です。少し待ってください');
   if(!this.enabled)throw Error('Web管理はOFFです。WEB_ENABLED=falseを解除してください');
-  if(String(actor)!==this.owner)throw fail(403,'本人のみログインできます');
+  if(String(actor)!==this.owner)throw fail(403,'コードログインは本人専用です。Discordでログインしてください');
   if(!this.base)throw Error('RailwayでGenerate Domainを実行してから /web url:https://取得したドメイン を実行してください');
   const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',code=[...crypto.randomBytes(12)].map(n=>alphabet[n&31]).join('');
   this.codes.clear();this.codes.set(digest(code),{expires:this.now()+this.loginTTL,label:String(label).slice(0,80)});
   return {url:this.base+'/#login='+code,code:code.slice(0,6)+'-'+code.slice(6),expiresInSeconds:this.loginTTL/1000};
  }
- loginMessage(actor,label){const login=this.issueLogin(actor,label);return {content:`[Web管理画面を開く](${login.url})\n本人専用・一度限り・2分間有効です。\n手入力する場合のコード: **${login.code}**`,allowedMentions:{parse:[]}};}
+ loginMessage(actor,label){if(this.discordLogin.ready()&&this.isAllowed(String(actor)))return {content:`[DiscordでWeb管理へログイン](${this.base}/)`,allowedMentions:{parse:[]}};if(String(actor)!==this.owner)throw Error('Discordログインの設定がまだ完了していません');const login=this.issueLogin(actor,label);return {content:`[Web管理画面を開く](${login.url})\n本人専用・一度限り・2分間有効です。\n手入力する場合のコード: **${login.code}**`,allowedMentions:{parse:[]}};}
  targets(value){
   const target=String(value||'');if(target==='2b2e')return [...this.manager.names.keys()].filter(n=>n!==11);if(target==='ign')return this.manager.names.has(11)?[11]:[];
   if(target!=='all'&&!/^(?:[1-9]|10|11)$/.test(target))throw fail(400,'Bot番号またはグループを選んでください');
@@ -66,21 +70,21 @@ class WebControl{
     position:p?{x:p.x,y:p.y,z:p.z}:null,dimension:b?.dimensionId??0,config:{...defaults,...state.runtime},
     options:{respawn:state.respawn,autoSupply:state.autoSupply,chat:state.chat,floor:state.floor,ceiling:state.ceiling,area:state.area,scaffold:state.scaffold},
     inventory:Array.from({length:36},(_,n)=>item(b?.items?.[n],n)),armor:Array.from({length:4},(_,n)=>item(b?.armor?.[n],n)),offhand:item(b?.offhand?.[0],-1),
-    bps:r?.telemetry?.bps||0,verticalBps:r?.telemetry?.verticalBps||0,restock:r?.restock||null,nearby:w?.runtime?.telemetry?require('./tactics').nearby(w.runtime):[],accounts:state.accountHistory||[name],authentication:this.manager.authentication?.(id)||null,authCacheSaved:this.manager.accounts?.snapshot(id,name).saved||false,runtime:r?{rollbackRecovery:r.rollbackRecovery,paused:r.paused,operation:r.operation,movement:r.movement,target:r.target,combatWaiting:r.combatWaiting,attacksSent:r.attacksSent,totemsUsed:r.totemsUsed,consumption:r.consumption,lastItemUse:r.lastItemUse,crystalCombat:r.crystalCombat,featureErrors:r.featureErrors,lastError:r.lastError}:null,
+    bps:r?.telemetry?.bps||0,verticalBps:r?.telemetry?.verticalBps||0,restock:r?.restock||null,nearby:w?.runtime?.telemetry?require('./tactics').nearby(w.runtime):[],accounts:state.accountHistory||[name],authentication:this.manager.authentication?.(id)||null,authCacheSaved:this.manager.accounts?.snapshot(id,name).saved||false,ignActions:r?.ignActions||state.ignActions||null,followingPlayer:r?.followingPlayer||{...state.follow,points:0},runtime:r?{autoLog:r.autoLog,rollbackRecovery:r.rollbackRecovery,paused:r.paused,operation:r.operation,movement:r.movement,target:r.target,combatWaiting:r.combatWaiting,attacksSent:r.attacksSent,totemsUsed:r.totemsUsed,consumption:r.consumption,lastItemUse:r.lastItemUse,crystalCombat:r.crystalCombat,featureErrors:r.featureErrors,lastError:r.lastError}:null,
     packetsReceived:Object.values(b?.packetCounts||{}).reduce((a,n)=>a+Number(n||0),0),corrections:b?.positionCorrections||0,logs:(this.manager.logs.get(id)||[]).slice(-30).map(redact)};
   });
   return {version:require('../package.json').version,at:this.now(),bots,friends:(this.manager.store.data.friends||[]).map(e=>e.name),enemies:(this.manager.store.data.enemies||[]).map(e=>e.name),audit:this.audit.slice(-30)};
  }
  session(req){
   const cookie=String(req.headers.cookie||'').split(';').map(p=>p.trim()).find(p=>p.startsWith(COOKIE+'='));if(!cookie)return null;
-  const key=digest(cookie.slice(COOKIE.length+1)),session=this.sessions.get(key);if(!session||session.expires<=this.now()){this.sessions.delete(key);return null;}return {...session,key};
+  const key=digest(cookie.slice(COOKIE.length+1)),session=this.sessions.get(key);if(!session||session.expires<=this.now()||!this.isAllowed(session.discordId||session.owner)){this.sessions.delete(key);return null;}return {...session,key};
  }
  ip(req){return req.socket.remoteAddress||'local';}
  origin(req){return this.base||((req.socket.encrypted?'https':'http')+'://'+req.headers.host);}
  checkOrigin(req){if(req.headers.origin&&req.headers.origin!==this.origin(req))throw fail(403,'別のサイトからの操作は受け付けません');}
  headers(res){
   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Frame-Options','DENY');
-  res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'");
+  res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://cdn.discordapp.com; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'");
  }
  cookie(req,value,seconds){const secure=this.origin(req).startsWith('https:');return `${COOKIE}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${seconds}${secure?'; Secure':''}`;}
  json(res,status,value){if(res.writableEnded)return;res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value,(_,v)=>typeof v==='bigint'?String(v):v));}
@@ -123,11 +127,15 @@ class WebControl{
    if(!this.enabled)throw fail(404,'Web管理はOFFです');
    if(req.method==='GET'&&['/assets/items.png','/assets/items.json'].includes(pathname)){const file=path.join(__dirname,'..','web',pathname.endsWith('.png')?'items.png':'items.json');if(!fs.existsSync(file))throw fail(404,'アイテム画像が未配置です');res.writeHead(200,{'Content-Type':pathname.endsWith('.png')?'image/png':'application/json; charset=utf-8'});res.end(fs.readFileSync(file));return;}
    if(req.method==='GET'&&this.assets.has(pathname)){const asset=this.assets.get(pathname);res.writeHead(200,{'Content-Type':asset.type});res.end(asset.buffer);return;}
+   if(pathname==='/api/login-info'&&req.method==='GET'){this.json(res,200,{discordReady:this.discordLogin.ready(),callbackURL:this.base?this.discordLogin.redirect():null});return;}
+   if(pathname==='/api/oauth/start'&&req.method==='GET'){this.discordLogin.start(req,res);return;}
+   if(pathname==='/oauth/discord/callback'&&req.method==='GET'){await this.discordLogin.callback(req,res,url);return;}
    if(pathname==='/api/login'&&req.method==='POST'){await this.login(req,res);return;}
    if(!pathname.startsWith('/api/'))throw fail(404,'ページがありません');
    const session=this.authenticate(req);
    if(req.method==='GET'){
-    if(pathname==='/api/state'){this.json(res,200,{...this.snapshot(),csrf:session.csrf,owner:session.label});return;}
+    if(pathname==='/api/state'){this.json(res,200,{...this.snapshot(),csrf:session.csrf,owner:session.label,profile:this.publicProfile(session),isOwner:(session.discordId||session.owner)===this.owner,appearance:require('./appearance').preferences(this.manager.store,session.discordId||session.owner),storage:{directory:this.manager.store.dir,persistent:!!this.env.RAILWAY_VOLUME_MOUNT_PATH&&require('node:path').relative(this.env.RAILWAY_VOLUME_MOUNT_PATH,this.manager.store.dir).split(require('node:path').sep)[0]!=='..',backupOwnerOnly:true}});return;}
+    if(/^\/api\/media\/(wallpaper|click|notify)$/.test(pathname)){const asset=require('./appearance').media(this.manager.store,session.discordId||session.owner,pathname.split('/').pop());if(!asset)throw fail(404,'ファイルがありません');res.writeHead(200,{'Content-Type':asset.type});res.end(asset.data);return;}
     if(pathname==='/api/events'){
      if(this.events.size>=12)throw fail(429,'開いている画面を減らしてください');
      res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Connection':'keep-alive','X-Accel-Buffering':'no'});
@@ -148,6 +156,8 @@ class WebControl{
    }
    if(req.method!=='POST')throw fail(404,'操作がありません');this.mutate(req,session);
    if(pathname==='/api/logout'){this.sessions.delete(session.key);this.persistSessions();res.setHeader('Set-Cookie',this.cookie(req,'',0));this.json(res,200,{ok:true});this.pump();return;}
+   if(pathname==='/api/appearance'){const data=await body(req,12*1024*1024),appearance=await this.once(req,session,()=>require('./appearance').update(this.manager.store,session.discordId||session.owner,data));this.json(res,200,{ok:true,appearance});return;}
+   if(pathname==='/api/backup'){this.requireOwner(session);const data=await body(req,36*1024*1024),result=await this.once(req,session,()=>{const backup=require('./backup');if(data.action==='export')return {ok:true,backup:backup.exported(this.manager,data.password)};if(data.action==='restore'){backup.restored(this.manager,data.password,data.backup);this.record([],'暗号化バックアップを復元');return {ok:true,result:'アカウント・設定・壁紙・音声を復元しました'};}throw fail(400,'バックアップ操作を選んでください');});this.json(res,200,result);return;}
    if(pathname==='/api/command'){const data=await body(req);const result=await this.once(req,session,()=>this.command(data));this.json(res,200,result);return;}
    if(pathname==='/api/chat'){
     const data=await body(req),result=await this.once(req,session,async()=>{const ids=this.targets(data.target);if(!['public','whisper'].includes(data.type))throw fail(400,'送信先を選んでください');const results=[];for(const id of ids){try{results.push({id,ok:true,result:data.type==='public'?this.manager.say(String(id),data.message):this.manager.whisper(String(id),data.recipient,data.message)});}catch(e){results.push({id,ok:false,result:e.message});}}this.record(ids,data.type==='public'?'公開チャット':'tell');return {ok:results.every(r=>r.ok),result:results.map(r=>`Bot${r.id}: ${r.result}`).join('\n')};});this.json(res,200,result);return;
@@ -189,7 +199,7 @@ class WebControl{
   for(const [key,value]of this.requests)if(now-value.at>600000)this.requests.delete(key);
   for(const [key,value]of this.sessions)if(value.expires<=now)this.sessions.delete(key);
   if(!this.events.size)return;
-  let packet;for(const connection of this.events){const {res,key}=connection;if(!this.sessions.has(key)){res.write('event: expired\ndata: {}\n\n');res.end();this.events.delete(connection);continue;}
+  let packet;for(const connection of this.events){const {res,key}=connection;if(!this.sessions.has(key)||!this.isAllowed(this.sessions.get(key)?.discordId||this.sessions.get(key)?.owner)){res.write('event: expired\ndata: {}\n\n');res.end();this.events.delete(connection);continue;}
    if(res.writableLength>262144){res.end();this.events.delete(connection);continue;}
    packet??='event: state\ndata: '+JSON.stringify(this.snapshot())+'\n\n';res.write(packet);
   }

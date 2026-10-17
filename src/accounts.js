@@ -2,7 +2,13 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const {norm}=require('./util');
 const accountKey=name=>crypto.createHash('sha256').update(norm(name)).digest('hex').slice(0,16);
-function authDirectory(store,id,name){return path.join(store.dir,'auth',String(id),accountKey(name));}
+function authDirectory(store,id,name){return path.join(store.dir,'auth','accounts',accountKey(name));}
+const authUsername=name=>'asira-account-'+accountKey(name);
+function migrate(store,name){const directory=authDirectory(store,0,name);fs.mkdirSync(directory,{recursive:true,mode:0o700});const root=path.join(store.dir,'auth'),hash=crypto.createHash('sha1').update(authUsername(name),'binary').digest('hex').slice(0,6);
+ const marker=path.join(root,'accounts',accountKey(name)+'.migration.json');const sources=[directory,...(fs.existsSync(marker)?[]:fs.readdirSync(root).filter(n=>/^\d+$/.test(n)).map(n=>path.join(root,n,accountKey(name))))];const newest=new Map();
+ for(const folder of sources){if(!fs.existsSync(folder))continue;for(const file of fs.readdirSync(folder)){const type=file.match(/_([a-z0-9]+)-cache\.json$/)?.[1];if(!type)continue;const source=path.join(folder,file);try{const data=JSON.parse(fs.readFileSync(source,'utf8')),time=fs.statSync(source).mtimeMs;if(Object.keys(data).length&&(!newest.has(type)||newest.get(type).time<time))newest.set(type,{data,time});}catch{}}}
+ for(const [type,{data,time}]of newest){const destination=path.join(directory,hash+'_'+type+'-cache.json');if(!fs.existsSync(destination)||fs.statSync(destination).mtimeMs<time){fs.writeFileSync(destination,JSON.stringify(data),{mode:0o600});fs.utimesSync(destination,time/1000,time/1000);}}fs.writeFileSync(marker,JSON.stringify({version:1,at:Date.now()}),{mode:0o600});return directory;
+}
 function refreshSaved(directory){
  try{return fs.readdirSync(directory).filter(n=>/_(?:live|sisu)-cache\.json$/.test(n)).some(n=>{try{const v=JSON.parse(fs.readFileSync(path.join(directory,n),'utf8'));return typeof v.token?.refresh_token==='string'&&v.token.refresh_token.length>0;}catch{return false;}});}catch{return false;}
 }
@@ -12,8 +18,9 @@ function storageInfo(dir,env=process.env){
  return {path:actual,persistent:railway?!!mounted:null,message:railway?(mounted?'再起動後も使う認証はVolume内へ保存します':`再起動後の認証保存は未確認です。今の接続とは別の注意です。Railway VolumeのMount Pathを ${actual} にしてください。`):'このPCのDATA_DIRに認証を保存'};
 }
 class Accounts{
- constructor(store,options={}){this.store=store;this.jobs=new Map();this.flows=new Map();this.Flow=options.Flow;this.onChange=options.onChange||(()=>{});this.run=options.run||require('./auth-network').run;}
- directory(id,name){return authDirectory(this.store,id,name);}
+ constructor(store,options={}){this.store=store;this.jobs=new Map();this.flows=new Map();this.migrated=new Set();this.Flow=options.Flow;this.onChange=options.onChange||(()=>{});this.run=options.run||require('./auth-network').run;}
+ username(name){return authUsername(name);}
+ directory(id,name){const key=accountKey(name);if(!this.migrated.has(key)){migrate(this.store,name);this.migrated.add(key);}return authDirectory(this.store,id,name);}
  record(id,name,profile){if(!profile?.name||norm(profile.name)!==norm(name)){const dir=this.directory(id,name);if(profile?.name&&fs.existsSync(dir)){fs.renameSync(dir,dir+'.wrong-'+Date.now());this.flows.delete(id);}throw Error(`認証したアカウントが違います: ${profile?.name||'不明'} / 設定: ${name}`);}const s=this.store.bot(id);s.authAccounts??={};s.authAccounts[accountKey(name)]={name:profile.name,verifiedAt:Date.now()};this.store.save();}
  snapshot(id,name){const job=this.jobs.get(id),same=job?.name===norm(name),record=this.store.bot(id).authAccounts?.[accountKey(name)],saved=refreshSaved(this.directory(id,name));
   return {state:same?(job.state==='waiting'&&job.code?.expires<=Date.now()?'expired':job.state):saved?'saved':'required',saved,profile:record?.name||null,verifiedAt:record?.verifiedAt||null,code:same&&job.code&&job.code.expires>Date.now()?{value:job.code.user_code,url:'https://www.microsoft.com/link',expires:job.code.expires}:null,error:same?job.error||null:null,storage:storageInfo(this.store.dir)};
@@ -25,7 +32,7 @@ class Accounts{
   const controller=new AbortController(),job={name:norm(name),state:'checking',controller};this.jobs.set(id,job);
   const current=()=>this.jobs.get(id)===job&&!controller.signal.aborted;
   const {Authflow,Titles}=require('prismarine-auth'),Flow=this.Flow||Authflow;
-  let flow;try{flow=new Flow(`asira-bot-${id}`,directory,{flow:'live',authTitle:Titles.MinecraftNintendoSwitch,deviceType:'Nintendo',deviceOS:12},code=>{if(!current())return;job.code={...code,expires:Date.now()+(code.expires_in||900)*1000};job.state='waiting';this.onChange(id,'Microsoft認証待ち。Webの認証ボタンまたは /auth でコードを確認してください');});}catch(error){job.state='failed';job.error=error.message;controller.abort();return this.snapshot(id,name);}
+  let flow;try{flow=new Flow(authUsername(name),directory,{flow:'live',authTitle:Titles.MinecraftNintendoSwitch,deviceType:'Nintendo',deviceOS:12},code=>{if(!current())return;job.code={...code,expires:Date.now()+(code.expires_in||900)*1000};job.state='waiting';this.onChange(id,'Microsoft認証待ち。Webの認証ボタンまたは /auth でコードを確認してください');});}catch(error){job.state='failed';job.error=error.message;controller.abort();return this.snapshot(id,name);}
   this.flows.set(id,{name:norm(name),flow});job.flow=flow;
   const timer=setTimeout(()=>{if(current()){controller.abort();if(flow.msa)flow.msa.polling=false;job.state='failed';job.error='認証が15分で完了しませんでした。認証ボタンから再開してください';job.code=null;}},900000);timer.unref?.();
   job.promise=this.run({signal:controller.signal,closed:()=>!current(),notify:text=>this.onChange(id,text)},async()=>{
@@ -42,4 +49,4 @@ class Accounts{
  cancel(id){const job=this.jobs.get(id);if(job){job.controller.abort();if(job.flow?.msa)job.flow.msa.polling=false;}this.jobs.delete(id);this.flows.delete(id);}
  destroy(){for(const id of this.jobs.keys())this.cancel(id);}
 }
-module.exports={Accounts,authDirectory,refreshSaved,storageInfo};
+module.exports={accountKey,Accounts,authDirectory,authUsername,refreshSaved,storageInfo,migrate};

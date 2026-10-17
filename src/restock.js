@@ -35,16 +35,16 @@ class Restock{
   catch(e){j.status='failed';j.error=e.message;this.runtime.notice('補充を中断: '+e.message+'。箱の進行情報を保持しました。Webで確認して再試行できます',false);}
   finally{this.bot.closeContainer();this.running=false;this.save();}return true;
  }
- async take(window,signal){const b=this.bot;for(let slot=0;slot<window.items.length;slot++){if(signal?.aborted)throw Error('補充を停止しました');const raw=window.items[slot];if(!raw)continue;const n=desired(b,b.name(raw),raw,this.runtime.config),free=b.items.findIndex(i=>!i);if(!n||free<0||b.items.filter(i=>!i).length<3)continue;await b.transfer(true,slot,false,free,Math.min(n,raw.count));}}
+ async take(window,signal){return require('./supply-needs').takeNeeded(this.bot,window,this.runtime.config,signal,2);}
  async kit(j,signal){
   const b=this.bot,w=this.worker;
   // A manually handed shulker is also one permitted kit; never take a second.
-  if(!j.chest&&!j.box){const carried=b.list().find(i=>/shulker_box$/.test(i.name));if(carried){j.box={name:carried.name,stackId:carried.raw.stack_id,phase:'carried'};j.kitTaken=true;this.save();}}
+  if(!j.chest&&!j.box){const carried=b.list().find(i=>/shulker_box$/.test(i.name)&&(!boxes(b,i.raw)||boxes(b,i.raw).length>0));if(carried){j.box={name:carried.name,stackId:carried.raw.stack_id,phase:'carried'};j.kitTaken=true;this.save();}}
   if(!j.chest&&!j.box){let p=nearbyChest(b),owned=false;if(!p){if(!b.find('ender_chest'))throw Error('エンダーチェストがありません。近くに設置するか手渡してください');if(!b.tool(true))throw Error('設置したエンダーチェストを回収するシルクタッチのツルハシが必要です');p=w.supplySpot();owned=true;j.chest={position:p,owned,phase:'placing'};this.save();await w.placeOwned(p,b.find('ender_chest'),'ender_chest',signal);}j.chest={position:p,owned,phase:'placed'};this.save();}
   if(j.chest&&!j.box&&!j.kitTaken){
    const p=vec(j.chest.position);j.phase='チェストへ移動';if(!await this.approach(p,signal))return false;
    if(b.blockAt(p)?.name!=='ender_chest')throw Error('記録したエンダーチェストを確認できません');const window=await b.openContainer(p,signal);await this.take(window,signal);
-   const candidates=window.items.map((raw,slot)=>({raw,slot})).filter(i=>i.raw&&/shulker_box$/.test(b.name(i.raw))).sort((a,c)=>{const score=raw=>(boxes(b,raw)||[]).reduce((sum,v)=>sum+(/crystal|totem|potion|apple|sword|pickaxe/.test(v.Name||v.name||'')?1:0),0);return score(c.raw)-score(a.raw);});
+   const candidates=window.items.map((raw,slot)=>({raw,slot})).filter(i=>i.raw&&/shulker_box$/.test(b.name(i.raw))&&(!boxes(b,i.raw)||boxes(b,i.raw).length>0)).sort((a,c)=>{const score=raw=>(boxes(b,raw)||[]).reduce((sum,v)=>sum+(desired(b,String(v.Name||v.name||'').replace('minecraft:',''),{metadata:v.Damage||0},this.runtime.config)>0?1:0),0);return score(c.raw)-score(a.raw);});
    if(candidates.length){const {raw,slot}=candidates[0],free=b.items.findIndex(i=>!i);if(free<0||b.items.filter(i=>!i).length<3)throw Error('kitの設置・回収用に空き3枠が必要です');const before=new Set(b.list().filter(i=>/shulker_box$/.test(i.name)).map(i=>i.raw.stack_id));await b.transfer(true,slot,false,free,1);const item=b.list().find(i=>/shulker_box$/.test(i.name)&&!before.has(i.raw.stack_id))||b.list().find(i=>i.slot===free);j.box={name:b.name(raw),stackId:item?.raw.stack_id,phase:'carried',sourceSlot:slot};j.kitTaken=true;this.save();}
    b.closeContainer();if(!j.box)j.phase='loose-items-only';
   }

@@ -20,6 +20,8 @@ function crystalBase(bot,enemy,runtime){
  }
  return options.sort((a,b)=>a.score-b.score)[0]?.base;
 }
+const oppositeFacing={2:3,3:2,4:5,5:4};
+function pistonDirection(bot,block){const wire=Number(block?.properties?.facing_direction);return bot.serverAuthoritativeInventory===false?(oppositeFacing[wire]??wire):wire;}
 class CrystalCombat{
  active(enemy,signal){
   if(!enemy||signal?.aborted||!this.runtime.config.pistoncrystal||enemy.sneaking||!inHole(this.bot,enemy))return false;
@@ -33,7 +35,7 @@ class CrystalCombat{
   return a&&/end(?:er)?_crystal/.test(a.name)&&Math.hypot(a.position.x-center.x,a.position.z-center.z)<.85&&Math.abs(a.position.y-(p.base.position.y+1))<1?a:null;
  }
  constructor(runtime){this.runtime=runtime;this.bot=runtime.bot;this.lastPlace=0;this.lastBreak=0;this.state='OFF';this.piston=null;this.pendingCrystal=null;this.lastAction=null;this.predictedPackets=0;this.boost=null;this.failedBases=new Map();this.history=[];
-  this.onMotion=p=>{if(this.boost?.attackedAt&&String(p.runtime_entity_id)===String(this.bot._runtimeEntityId)&&p.velocity&&Date.now()-this.boost.attackedAt<1000&&Math.hypot(p.velocity.x,p.velocity.y,p.velocity.z)>.1){this.boost.knockbackAt=Date.now();this.runtime.wakeCombat?.();}};this.bot.client?.on?.('set_entity_motion',this.onMotion);
+  this.onMotion=p=>{if(this.boost?.attackedAt&&String(p.runtime_entity_id)===String(this.bot._runtimeEntityId)&&p.velocity&&Date.now()-this.boost.attackedAt<1000&&Math.hypot(p.velocity.x,p.velocity.y,p.velocity.z)>.1){this.boost.knockbackAt=Date.now();this.boost.knockback={...p.velocity};this.runtime.wakeCombat?.();}};this.bot.client?.on?.('set_entity_motion',this.onMotion);
  }
  record(action,details={}){const event={at:Date.now(),action,...details};this.history.push(event);this.history=this.history.slice(-60);if(action.startsWith('pa_')){this.pistonHistory??=[];this.pistonHistory.push(event);this.pistonHistory=this.pistonHistory.slice(-30);}if(action.endsWith('_unconfirmed'))this.lastFailure=event;}
  bestBase(enemy){const b=this.bot,now=Date.now(),signature=[String(enemy.id),...['x','y','z'].map(k=>Math.round(enemy.position[k]*2)),...['x','y','z'].map(k=>Math.round(b.entity.position[k]*2)),b.worldMirror?.revision||0].join(':');if(this.baseCache?.signature===signature&&now-this.baseCache.at<150)return this.baseCache.base;const base=crystalBase(b,enemy,this.runtime);this.baseCache={signature,at:now,base};return base;}
@@ -89,8 +91,8 @@ class CrystalCombat{
   if(boost){
    const ownCrystal=boost.crystalId?b.actors.get(boost.crystalId):[...b.actors.values()].find(a=>/end(?:er)?_crystal/.test(a.name)&&a.position.distanceTo(boost.position)<.85);
    if(ownCrystal?.position&&now-(boost.lastAttack||0)>100&&!b.handUse&&!b.actionHandBusy){boost.crystalId=String(ownCrystal.id);boost.attackedAt??=now;boost.lastAttack=now;b.lookAt(ownCrystal.position.offset(0,.5,0),false);b.attack(ownCrystal);this.state='Jetpack: 自分のCrystalを再起爆';}
-   if(boost.knockbackAt&&!b.actors.has(boost.crystalId)&&now-boost.knockbackAt<1000){
-    if(!r.travel.flight||r.travel.flight.gap)r.travel.flight={goal:enemy.position.clone(),jetpack:true,combat:!!enemy.player,expires:boost.knockbackAt+1000,speed:1.4};
+   if(boost.knockbackAt&&!b.actors.has(boost.crystalId)&&now-boost.knockbackAt<1000&&(!r.travel.embed||boost.knockback?.y>0)){
+    if(!r.travel.flight||r.travel.flight.gap){r.travel.flight={goal:enemy.position.clone(),jetpack:true,combat:!!enemy.player,expires:boost.knockbackAt+1000,knockbackAt:boost.knockbackAt,speed:1.4};if(r.travel.embed&&boost.knockback?.y>0){const original=r.travel.embed.original;r.travel.embed=null;r.travel.antiRecovery=null;r.travel.antiAnchor=null;r.travel.floorEscape={at:Date.now(),velocity:Math.min(1.5,boost.knockback.y),floor:original,expires:boost.knockbackAt+1000};}}
     this.state='Jetpack: 爆風確認・最長1秒';return true;
    }
    if(now-boost.at<1800){this.state='Jetpack: 起爆・ノックバック確認待ち';return false;}
@@ -127,7 +129,7 @@ class CrystalCombat{
    if(!base||!['obsidian','bedrock'].includes(base.name)||!air(b.blockAt(base.position.offset(0,1,0)))||!air(b.blockAt(base.position.offset(0,2,0)))||!(solid(support)||pedestal)||!(air(b.blockAt(pistonPos))||['piston','sticky_piston'].includes(b.blockAt(pistonPos)?.name))||!b.reach(support)||!b.reach(base)||!b.reach({position:pistonPos}))continue;
    if(pedestal&&!placementSupport(b,pistonPos.offset(0,-1,0)))continue;
    const existing=b.blockAt(pistonPos),facing=x===1?4:x===-1?5:z===1?2:3;
-   if(['piston','sticky_piston'].includes(existing?.name)&&Number(existing.properties?.facing_direction)!==facing)continue;
+   if(['piston','sticky_piston'].includes(existing?.name)&&pistonDirection(b,existing)!==facing)continue;
    if(air(b.blockAt(pistonPos))&&!placementSupport(b,pistonPos,pedestal?[pistonPos.offset(0,-1,0)]:[]))continue;
    // A piston between us and the base makes the next crystal click impossible.
    // Validate sight lines with the future piston in place, before spending one.
@@ -169,7 +171,7 @@ class CrystalCombat{
    if(air(b.blockAt(p.pistonPos))){const piston=b.find('piston')||b.find('sticky_piston');if(!piston){this.state='PA: ピストン不足';return false;}p.stage='piston';this.record('pa_piston_requested',{position:p.pistonPos,facing:p.facing});await b.place(p.pistonPos,piston,signal,{facing:p.facing,timeout:1500});}
    p.placed=['piston','sticky_piston'].includes(b.blockAt(p.pistonPos)?.name);
   }
-  const block=b.blockAt(p.pistonPos),facing=Number(block?.properties?.facing_direction);
+  const block=b.blockAt(p.pistonPos),facing=pistonDirection(b,block);
   if(!['piston','sticky_piston'].includes(block?.name)||facing!==p.facing){p.error='ピストンが敵を向いていません';const opposite={2:3,3:2,4:5,5:4};
    if(p.ownedPiston&&!p.learnedFacing&&facing===opposite[p.facing]){p.learnedFacing=true;b.pistonFacingMode=b.pistonFacingMode==='look'?'opposite':'look';const w=this.runtime.worker;if(w){w.state.pistonFacingMode=b.pistonFacingMode;this.runtime.manager.store?.save();}this.record('pa_orientation_learned',{wanted:p.facing,received:facing,mode:b.pistonFacingMode});}
    if(p.ownedPiston&&b.tool()&&!p.power&&['piston','sticky_piston'].includes(block?.name)){await b.dig(block,signal,undefined,{timeout:2500});this.piston=null;this.state='PA: 自分の逆向きピストンを回収して配置を再試行';return false;}if(p.ownedPiston&&!b.tool()){this.record('pa_stopped',{stage:p.stage,reason:'回収用ピッケル不足'});this.piston=null;}this.state='PA: ピストンが敵を向いていません。回収用ピッケルが必要です';return false;}
@@ -206,15 +208,15 @@ class CrystalCombat{
    const item=b.find('redstone_block');if(!item){this.state='PA: レッドストーンブロック不足';return false;}
    p.stage='power';p.powerRequestedAt=Date.now();this.record('pa_crystal_confirmed',{id:p.crystalId});
    try{await b.place(p.powerPos,item,signal,{timeout:1500});}catch(e){p.error=e.message;this.record('pa_power_unconfirmed',{position:p.powerPos,error:e.message});throw e;}
-   p.power=true;delete p.error;this.record('pa_power_confirmed',{position:p.powerPos});this.state='PA: ピストン起動・押し込み待ち';
+   p.power=true;p.powerAt=Date.now();delete p.error;this.record('pa_power_confirmed',{position:p.powerPos});this.state='PA: ピストン起動・押し込み待ち';
   }
   if(p.power&&!this.pushedCrystal(p)){
-   try{await b.waitUntil(()=>!!this.pushedCrystal(p)||!this.active(enemy,signal),1000,signal);}
-   catch(e){if(signal?.aborted||b.ended)throw e;this.state='PA: 押し込みが未確認';return true;}
+   try{await b.waitUntil(()=>!!this.pushedCrystal(p)||!this.active(enemy,signal),350,signal);}
+   catch(e){if(signal?.aborted||b.ended)throw e;this.state='PA: 押し込みが未確認';if(b.serverAuthoritativeInventory!==false)return true;this.record('pa_push_unconfirmed',{crystalId:p.crystalId});}
   }
   if(!this.active(enemy,signal)){await this.cleanup(signal);return false;}
-  const pushed=this.pushedCrystal(p);
-  if(pushed&&ownClear(this.runtime,pushed.position)&&pushed.position.distanceTo(b.entity.position)<=(this.runtime.config.blockReach||5)&&lineOfSight(b,pushed.position.offset(0,.5,0))&&Date.now()-this.lastBreak>=(this.runtime.config.crystalBreakDelay??50)){b.lookAt(pushed.position.offset(0,.5,0),false);if(b.attack(pushed)!==false){p.stage='break';this.record('pa_break',{id:String(pushed.id)});this.lastBreak=Date.now();this.state='PA: 押し込みを確認して起爆要求';}}
+  const pushed=this.pushedCrystal(p)||(b.serverAuthoritativeInventory===false&&p.power?this.placedCrystal(p):null);
+  if(pushed&&ownClear(this.runtime,pushed.position)&&pushed.position.distanceTo(b.entity.position)<=(this.runtime.config.blockReach||5)&&lineOfSight(b,pushed.position.offset(0,.5,0))&&Date.now()-this.lastBreak>=(this.runtime.config.crystalBreakDelay??50)){b.lookAt(pushed.position.offset(0,.5,0),false);if(b.attack(pushed)!==false){p.stage='break';this.record('pa_break',{id:String(pushed.id)});this.lastBreak=Date.now();this.state=this.pushedCrystal(p)?'PA: 押し込みを確認して起爆要求':'PA: エンティティ押し込み未対応・受信済みCrystalを起爆';}}
   return true;
  }
  async prepareCrystal(item,signal){const b=this.bot;if(signal?.aborted)throw Error('停止しました');this.crystalLease=require('./hand').claim(b);try{await b.equip(item.slot,signal);if(signal?.aborted||b.dead||b.handUse)throw Error('Crystal設置を停止');if(b.name(b.items[b.quickBarSlot])!=='end_crystal')throw Error('手に持ったCrystalを確認できません');}catch(e){this.releaseCrystalHand();throw e;}}
@@ -236,4 +238,4 @@ class CrystalCombat{
  destroy(){this.trapAbort?.abort();this.bot.client?.removeListener?.('set_entity_motion',this.onMotion);}
  snapshot(){return {placement:this.placementScore||null,pistonStage:this.piston?.stage||null,pistonError:this.piston?.error||null,piston:this.piston?{base:this.piston.base?.position,piston:this.piston.pistonPos,power:this.piston.powerPos,crystalId:this.piston.crystalId||null}:null,state:this.state,pistonActive:!!this.piston,lastPlace:this.lastPlace,lastBreak:this.lastBreak,pendingCrystal:this.pendingCrystal,lastAction:this.lastAction,predictedPackets:this.predictedPackets,boost:this.boost,lastFailure:this.lastFailure||null,pistonHistory:this.pistonHistory||[],history:this.history};}
 }
-module.exports={CrystalCombat,inHole,buried,crystalBase,ownClear};
+module.exports={pistonDirection,CrystalCombat,inHole,buried,crystalBase,ownClear};

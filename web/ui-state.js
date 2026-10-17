@@ -4,6 +4,7 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.AsiraUI=api;})(globalThis,()=>({
  drag(bot,slot){const item=bot?.inventory?.[slot];return bot?.connected&&item?.name?{bot:String(bot.id),slot,token:item.token,count:item.count}:null;},
  validateDrag(drag,bot){return !!drag&&String(bot?.id)===drag.bot&&bot?.connected&&bot.inventory?.[drag.slot]?.token===drag.token;},
+ authComplete(auth={}){return !!auth.saved&&!auth.code&&!auth.error&&!auth.connection?.error&&!['failed','cancelled'].includes(auth.connection?.state)&&['ready','saved','connected'].includes(auth.state);},
  loginView(auth={}){
   const c=auth.connection||{},waiting=['checking','waiting','connecting'].includes(auth.state);
   let title='Minecraftは未接続';

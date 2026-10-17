@@ -8,8 +8,8 @@ function automatic(text,recipient){const prefix=recipient?`@${name(recipient)} |
 // New Text packets dispatch their body by category. Missing category encodes
 // message_only (0), making a native peer read source_name as the message.
 function publicPacket(bot,text){return {type:'chat',category:'authored',needs_translation:false,source_name:bot.username,message:String(text).slice(0,220),xuid:'',platform_chat_id:'',has_filtered_message:false,filtered_message:''};}
-function whisperPacket(bot,recipient,text){const id=name(recipient),msg=message(text),protocol=bot.registry.protocol.types,versionType=protocol.packet_command_request[1].find(f=>f.name==='version')?.type;
- return {command:`/tell "${id}" ${msg}`,origin:{type:'player',uuid:randomUUID(),request_id:randomUUID(),player_entity_id:BigInt(bot.client.startGameData?.entity_id||0)},internal:false,version:versionType==='string'?bot.client.options.version:0};
+function commandPacket(bot,command){const protocol=bot.registry.protocol.types,versionType=protocol.packet_command_request[1].find(f=>f.name==='version')?.type;return {command,origin:{type:'player',uuid:randomUUID(),request_id:randomUUID(),player_entity_id:BigInt(bot.client.startGameData?.entity_id||0)},internal:false,version:versionType==='string'?bot.client.options.version:0};}
+function whisperPacket(bot,recipient,text){const id=name(recipient),msg=message(text);return commandPacket(bot,`/tell "${id}" ${msg}`);
 }
 function parseTell(text){const m=String(text).match(/^\s*(?:w|tell)\s+(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s]+))\s+(.+)$/u);if(!m)throw Error('w "空白入りゲーマータグ" メッセージ');return {recipient:name(m[1]||m[2]||m[3]),text:message(m[4])};}
-module.exports={randomTag,name,message,automatic,publicPacket,whisperPacket,parseTell};
+module.exports={randomTag,name,message,automatic,publicPacket,whisperPacket,commandPacket,parseTell};

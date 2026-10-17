@@ -7,6 +7,6 @@ RUN git config --global url."https://github.com/".insteadOf "ssh://git@github.co
 COPY src ./src
 COPY web ./web
 COPY vendor ./vendor
-ENV NODE_ENV=production DATA_DIR=/data
+ENV NODE_ENV=production
 EXPOSE 3000
 CMD ["npm", "start"]
