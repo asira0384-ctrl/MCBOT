@@ -5,7 +5,7 @@ function useItem(bot,action,position,face=1,blockRuntime=0) {
  return {transaction:{legacy:{legacy_request_id:0},transaction_type:'item_use',actions:[],transaction_data:{
   action_type:action,hand:'main_hand',client_cooldown_state:'off',trigger_type:'player_input',block_position:position,face:face<0&&bot.registry?.protocol.types.TransactionUseItem?.[1]?.find(f=>f.name==='face')?.type==='u8'?255:face,hotbar_slot:bot.quickBarSlot,
   held_item:bot.items[bot.quickBarSlot]||emptyItem(),player_pos:{x:bot.entity.position.x,y:bot.entity.position.y+1.62,z:bot.entity.position.z},
-  click_pos:{x:0.5,y:0.5,z:0.5},block_runtime_id:blockRuntime,client_prediction:'success'}}};
+  click_pos:action==='click_block'?{x:face===4?0:face===5?1:.5,y:face===0?0:face===1?1:.5,z:face===2?0:face===3?1:.5}:{x:.5,y:.5,z:.5},block_runtime_id:blockRuntime,client_prediction:'success'}}};
 }
 function slotRef(type,slot,item) {return {slot_type:{container_id:type==='level_entity'?'container':type,dynamic_container_id:undefined},slot,stack_id:item?.stack_id||0};}
 function request(id,actions){return {requests:[{request_id:id,actions:actions.map(a=>({...a,legacy_type_id:{take:0,place:1,swap:2,drop:3}[a.type_id]??0})),custom_names:[],cause:-1}]};}

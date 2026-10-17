@@ -12,10 +12,10 @@ function eligible(runtime,actor){
 }
 function target(runtime,range){
  const b=runtime.bot;
- for(const a of b.actors?.values()||[])if(a.player&&a.rawPosition)a.position=require('./positions').serverPosition({blockAt:b.blockAt},a.rawPosition,'actor');
+ for(const a of b.actors?.values()||[])if(a.player&&a.rawPosition&&eligible(runtime,a)&&(a.normalizedRaw!==a.rawPosition||a.normalizedRevision!==b.worldMirror?.revision)){a.position=require('./positions').serverPosition({blockAt:b.blockAt},a.rawPosition,'actor');a.normalizedRaw=a.rawPosition;a.normalizedRevision=b.worldMirror?.revision;}
  return [...(b.actors?.values()||[])].filter(a=>eligible(runtime,a)&&a.position.distanceTo(b.entity.position)<=range).sort((a,c)=>a.position.distanceTo(b.entity.position)-c.position.distanceTo(b.entity.position))[0]||null;
 }
-function ray(bot,from,to){const d=to.minus(from),steps=Math.max(1,Math.ceil(d.norm()*4));for(let i=1;i<steps;i++){const p=from.plus(d.scaled(i/steps)),block=bot.blockAt(p);if(!block||block.name==='unknown'||block.solid)return false;}return true;}
+function ray(bot,from,to){return require('./geometry').rayClear(bot,from,to);}
 // Geometry estimate, not a promise of damage: server plugins, armor and effects
 // may change damage. Unknown terrain is occluded, never assumed to be air.
 function explosionDamage(bot,point,position){
@@ -27,14 +27,14 @@ function blastScore(runtime,point,enemy){
  const b=runtime.bot,damage=explosionDamage(b,point,enemy.position),self=explosionDamage(b,point,b.entity.position);
  if(!damage)return null;
  for(const a of b.actors?.values()||[])if(a.player&&friend(runtime,a.name)&&explosionDamage(b,point,a.position)>4)return null;
- return {damage,self,score:damage-self*.12};
+ return {damage,self,score:damage-self*.5};
 }
 function retreat(runtime,enemy){
  const b=runtime.bot,p=runtime.travel.embed?new Vec3(b.entity.position.x,runtime.travel.embed.original,b.entity.position.z):b.entity.position;
  if(!enemy)return null;const away=p.minus(enemy.position),length=Math.hypot(away.x,away.z)||1,options=[];
  for(const angle of [0,Math.PI/4,-Math.PI/4,Math.PI/2,-Math.PI/2]){
   const dx=(away.x*Math.cos(angle)-away.z*Math.sin(angle))/length,dz=(away.x*Math.sin(angle)+away.z*Math.cos(angle))/length;
-  const goal=p.offset(dx*5,0,dz*5),path=require('./navigation').groundPath(b,p,goal);
+  const goal=p.offset(dx*5,0,dz*5),path=require('./navigation').groundPath(b,p,goal,{limit:160,radius:7});
   if(!path.length||path[0].action==='scaffold')continue;
   const last=path.at(-1).position;options.push({goal,score:last.distanceTo(enemy.position)-path.length*.1});
  }

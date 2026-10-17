@@ -34,8 +34,8 @@ async function transact(bot,action,changes,signal){signal??=bot.operationSignal;
  bot.pendingStackRequest={id,action:action.type_id,mode:legacy?'legacy':'stack',at:Date.now(),source:action.source,destination:action.destination};
  const before=list.map(c=>clone(current(bot,c))),type=legacy?'legacy':'stack';
  try{
-  const response=await new Promise((resolve,reject)=>{let timer,refreshTimer;
-   const clean=()=>{clearTimeout(timer);clearTimeout(refreshTimer);bot.client.removeListener('item_stack_response',onResponse);bot.removeListener('inventorySnapshot',onSnapshot);bot.removeListener('end',ended);signal?.removeEventListener('abort',aborted);};
+  const response=await new Promise((resolve,reject)=>{let timer,refreshTimer,finished=false;
+   const clean=()=>{finished=true;clearTimeout(timer);clearTimeout(refreshTimer);bot.client.removeListener('item_stack_response',onResponse);bot.removeListener('inventorySnapshot',onSnapshot);bot.removeListener('end',ended);signal?.removeEventListener('abort',aborted);};
    const fail=e=>{clean();reject(e);},done=r=>{clean();resolve(r);},ended=()=>fail(Error('切断')),aborted=()=>fail(Error('停止しました'));
    const onSnapshot=()=>{if(matches(bot,list))done({status:'ok',request_id:id,containers:[],verifiedSnapshot:true});};
    const onResponse=p=>{const r=p.responses?.find(r=>r.request_id===id);if(!r)return;
@@ -48,10 +48,10 @@ async function transact(bot,action,changes,signal){signal??=bot.operationSignal;
    bot.client.on('item_stack_response',onResponse);bot.on('inventorySnapshot',onSnapshot);bot.on('end',ended);signal?.addEventListener('abort',aborted,{once:true});
    // Legacy success may deliberately exclude the source from slot echoes.
    // Ask for a full authoritative snapshot without closing/reopening or resending the swap.
-   if(legacy)refreshTimer=setTimeout(()=>{
-    if(signal?.aborted||!bot.connected)return;
-    try{requestSync(bot);}catch(e){fail(e);}
-   },0);
+   if(legacy){let refreshes=0;const refresh=()=>{
+    if(finished||signal?.aborted||!bot.connected)return;
+    try{requestSync(bot);if(!finished&&++refreshes<5)refreshTimer=setTimeout(refresh,Math.min(1500,250*refreshes));}catch(e){fail(e);}
+   };refreshTimer=setTimeout(refresh,0);}
    try{
     if(legacy){const actions=list.map((c,i)=>{const wid=windowId(bot,c.type);if(wid===undefined)throw Error('コンテナの番号を確認できません');return {source_type:'container',window_id:wid,flags:undefined,slot:c.slot,old_item:before[i]||emptyItem(),new_item:c.item||emptyItem()};});
      if(action.type_id==='drop')actions.push({source_type:'world_interaction',window_id:undefined,flags:0,slot:0,old_item:emptyItem(),new_item:{...before[0],count:action.count}});

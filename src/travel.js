@@ -14,14 +14,17 @@ function nearestPortal(bot,toDimension){if(bot.dimensionId===2||toDimension===2)
 }
 class Travel{
  constructor(runtime){this.runtime=runtime;this.bot=runtime.bot;this.route=null;this.flight=null;this.embed=null;this.waiting='';
-  this.bot.motion=this;this.bot.on('dimensionChanged',()=>{this.bot.straightTimerActive=false;this.flight=null;this.embed=null;if(this.route){this.route.portal=null;this.route.enteredAt=0;this.waiting='新しい地形の受信待ち';}});
+  this.bot.motion=this;const clearAnchor=()=>{this.antiRecovery=null;this.antiAnchor=null;this.floorEscape=null;this.embed=null;};this.bot.on('death',clearAnchor);this.bot.on('dimensionChanged',()=>{clearAnchor();this.bot.straightTimerActive=false;this.flight=null;if(this.route){this.route.portal=null;this.route.enteredAt=0;this.waiting='新しい地形の受信待ち';}});
  }
  command(mode,dim,x,y,z){const goal=validateGoal(mode,dim,x,y,z);this.cancel(false);this.route={...goal,portal:null,enteredAt:0};this.waiting='移動準備';}
  glide(on){if(this.bot.gliding===on)return;this.bot.gliding=on;this.bot.pendingGlide=on?'start':'stop';this.bot.client.queue('player_action',{runtime_entity_id:BigInt(this.bot._runtimeEntityId),action:on?'start_glide':'stop_glide',position:{x:0,y:0,z:0},result_position:{x:0,y:0,z:0},face:0});}
- cancel(land=true){this.bot.straightTimerActive=false;this.stopFollowing();this.bot.clearControlStates?.();this.bot.controlState.forward=false;this.route=null;this.unbury();this.waiting='';if(this.flight&&land){const floor=landingFloor(this.bot,this.bot.entity.position,16);if(floor){this.flight={goal:floor,landing:true};this.waiting='着地中';return;}this.flight={goal:this.bot.entity.position.clone(),paused:true};this.waiting='着地点が未受信・飛行待機';return;}this.flight=null;if(this.bot.gliding)this.glide(false);}
+ cancel(land=true){this.floorEscape=null;this.bot.straightTimerActive=false;this.stopFollowing();this.bot.clearControlStates?.();this.bot.controlState.forward=false;this.route=null;this.unbury();this.waiting='';if(this.flight&&land){const floor=landingFloor(this.bot,this.bot.entity.position,16);if(floor){this.flight={goal:floor,landing:true};this.waiting='着地中';return;}this.flight={goal:this.bot.entity.position.clone(),paused:true};this.waiting='着地点が未受信・飛行待機';return;}this.flight=null;if(this.bot.gliding)this.glide(false);}
  rollback(){
-  this.bot.straightTimerActive=false;const now=Date.now();this.recentCorrections=(this.recentCorrections||[]).filter(t=>now-t<6000);this.recentCorrections.push(now);this.corrections=(this.corrections||0)+1;this.flightSlowUntil=now+5000;
-  const duration=this.recentCorrections.length>=3?5000:1500;this.runtime.speedBlockedUntil=now+duration;this.runtime.burrowBlockedUntil=now+duration+300;if(this.embed)this.antiRecovery={original:this.embed.original,at:now};this.embed=null;this.bot.desiredMoveSpeed=undefined;this.bot.clearControlStates?.();if(this.following){this.following.path=null;this.following.plannedAt=0;}
+  this.floorEscape=null;this.bot.straightTimerActive=false;const now=Date.now();this.recentCorrections=(this.recentCorrections||[]).filter(t=>now-t<6000);this.recentCorrections.push(now);this.corrections=(this.corrections||0)+1;this.flightSlowUntil=now+5000;
+  const duration=this.recentCorrections.length>=3?5000:1500;this.runtime.speedBlockedUntil=now+duration;this.runtime.burrowBlockedUntil=now+duration+300;
+  if(this.embed)this.rememberAnti();
+  if(this.antiAnchor&&now-this.antiAnchor.at<30000)this.antiRecovery={...this.antiAnchor,at:now};
+  this.embed=null;this.bot.desiredMoveSpeed=undefined;this.bot.clearControlStates?.();if(this.following){this.following.path=null;this.following.plannedAt=0;}
   if(this.flight?.jetpack||this.flight?.gap){this.flight=null;this.bot.controlState.forward=false;this.glide(false);this.waiting='位置補正を受けて追尾飛行を終了';return;}
   if(this.flight){this.flight.path=null;this.flight.paused='replan';this.flight.retryAt=Date.now()+Math.min(4000,500+this.corrections*100);this.waiting='位置補正後に減速して迂回経路を再探索';}
  }
@@ -41,16 +44,21 @@ class Travel{
   if(Date.now()<(this.runtime.speedBlockedUntil||0))speed=0;
   const old=this.following;this.following={kind,destination:destination.clone(),stopRadius,speed,plannedAt:old?.plannedAt||0,path:old?.kind===kind?old.path:null};
   if(!old||old.destination.distanceTo(destination)>1)this.following.plannedAt=0;
-  const f=this.following;if(Date.now()-f.plannedAt>250||!f.path?.length){f.path=require('./navigation').groundPath(b,pose,destination);f.plannedAt=Date.now();}
+  const f=this.following;if(!f.plannedAt||Date.now()-f.plannedAt>350){f.path=require('./navigation').groundPath(b,pose,destination,{stopRadius:Math.max(.7,stopRadius-.6)});f.plannedAt=Date.now();}
   while(f.path?.length&&(f.path[0].action==='swim'?Math.hypot(pose.x-f.path[0].position.x-.5,pose.z-f.path[0].position.z-.5)<.35:pose.distanceTo(f.path[0].position.offset(.5,0,.5))<.3))f.path.shift();
   const gap=kind==='chase'?this.gapGoal(destination):null;if(gap&&(!f.path?.length||f.path.length>pose.distanceTo(gap)*1.8)){this.flight={goal:gap,gap:true,combat:true,landing:true,expires:Date.now()+4000};this.waiting='約4ブロック以内の隙間を低速GLIDEで追尾';return true;}
   const next=f.path?.[0];if(!next||next.action==='scaffold'){b.clearControlStates();b.desiredMoveSpeed=undefined;b.desiredMoveWorld=null;this.waiting='移動経路を再確認中';return false;}
-  if(b.actionHandBusy)return true;
+  // Turning or changing hands does not cancel a world-space walking direction.
   const point=next.position.offset(.5,0,.5),direction=point.minus(pose),length=Math.hypot(direction.x,direction.z)||1;b.desiredMoveWorld={x:direction.x/length,z:direction.z/length};b.lookAt(point.offset(0,1.62,0),false);b.setControlState('forward',true);b.setControlState('jump',next.action==='shore'||require('./navigation').water(b.blockAt(pose.offset(0,1.62,0)))||point.y>pose.y+.6);b.setControlState('sprint',false);b.desiredMoveSpeed=speed>0?Math.min(speed,Math.hypot(point.x-pose.x,point.z-pose.z)):undefined;
   this.waiting=kind==='chase'?`敵を追尾中${speed?' / 速度'+speed:''}`:'徒歩移動中';return true;
  }
  stopFollowing(){if(this.following){this.following=null;this.bot.desiredMoveSpeed=undefined;this.bot.desiredMoveWorld=null;this.bot.clearControlStates();}}
  step(){const b=this.bot;b.straightTimerActive=false;if(!b.connected||b.dead)return false;
+  if(this.floorEscape){const escape=this.floorEscape;if(Date.now()-escape.at>750){this.floorEscape=null;b.setControlState('jump',false);return false;}
+   const result=require('../vendor/bedrockflayer/lib/physics/collision').moveEntity(b,b.entity,new Vec3(0,escape.velocity,0),.6,1.8);
+   b.entity.position=new Vec3(result.position.x,result.position.y,result.position.z);b.entity.velocity=new Vec3(0,result.velocity.y,0);b.entity.onGround=false;b.setControlState('jump',true);escape.velocity=(escape.velocity-.08)*.98;
+   if(b.entity.position.y>=escape.floor&&!require('./positions').inspect(b,b.entity.position).overlaps.length){this.floorEscape=null;b.setControlState('jump',false);b.collisionState={held:false,jumpedFromFloor:true};this.waiting='受信済みの床からジャンプして復帰';}return true;
+  }
   if(this.flight&&this.embed)this.unbury();
   if(this.embed&&(!this.runtime.config.anticrystal||Date.now()<(this.runtime.burrowBlockedUntil||0)))this.unbury();
   if(this.embed){
@@ -58,7 +66,7 @@ class Travel{
     const vertical=b.controlState.jump&&b.entity.onGround? .42:(b.entity.velocity.y||0)-.08;
     const result=moveEntity(b,{...b.entity,position:logical},new Vec3((b.desiredMoveWorld?.x??-Math.sin(yaw))*speed,Math.max(-3.92,vertical),(b.desiredMoveWorld?.z??Math.cos(yaw))*speed),.6,1.8);
     const depth=this.embed.original-this.embed.y;this.embed.original=result.position.y;this.embed.y=result.position.y-depth;b.entity.position=new Vec3(result.position.x,result.position.y-depth,result.position.z);b.entity.velocity=new Vec3(result.velocity.x,result.velocity.y,result.velocity.z);b.entity.onGround=result.onGround;
-   }else{b.entity.position.y=this.embed.y;b.entity.velocity=new Vec3(0,0,0);}return true;
+   }else{b.entity.position.y=this.embed.y;b.entity.velocity=new Vec3(0,0,0);}this.rememberAnti();return true;
   }
   if(!this.flight)return false;
   const f=this.flight,p=b.entity.position,now=Date.now();
@@ -123,7 +131,8 @@ class Travel{
   const path=require('./navigation').groundPath(b,p,destination,{block:stocked});const next=path[0];
   if(next){if(next.action==='scaffold'){await this.runtime.worker.placeOwned(next.position.offset(0,-1,0),stocked,'scaffold',signal);this.waiting='足場を作って移動中';}
    if(next.action==='swim'){this.waiting='水面を泳いで移動中';b.lookAt(next.position.offset(.5,1,.5),false);b.setControlState('forward',true);b.setControlState('jump',require('./navigation').water(b.blockAt(b.entity.position.offset(0,1.62,0)))||next.position.y>b.entity.position.y+.2);await new Promise((resolve,reject)=>{const timer=setTimeout(resolve,200);const abort=()=>{clearTimeout(timer);reject(Error('停止しました'));};signal?.addEventListener('abort',abort,{once:true});setTimeout(()=>signal?.removeEventListener('abort',abort),210);});return;}
-   b.setControlState?.('jump',false);try{await b.go(next.position,signal);}catch(e){if(b.dimensionId!==beforeDimension)return;throw e;}return;
+   const goal=next.position.offset(.5,0,.5),walking=this.walking={goal};const drive=()=>{if(this.walking===walking)this.follow(goal,undefined,'walk-step',.25);};
+   try{drive();b.on('physicsTick',drive);await b.waitUntil(()=>Math.hypot(b.entity.position.x-goal.x,b.entity.position.z-goal.z)<.3&&Math.abs(b.entity.position.y-goal.y)<.25,8000,signal);}catch(e){if(b.dimensionId!==beforeDimension)return;throw e;}finally{b.removeListener('physicsTick',drive);if(this.walking===walking){this.walking=null;this.stopFollowing();}}return;
   }
   if(mode!=='dig')throw Object.assign(Error('受信済み地形に安全な徒歩経路がありません'),{code:'PATH_WAIT'});
   const sx=Math.abs(dx)>=Math.abs(dz)?Math.sign(dx):0,sz=sx?0:Math.sign(dz),q=new Vec3(Math.floor(p.x)+sx,Math.floor(p.y),Math.floor(p.z)+sz);
@@ -131,15 +140,29 @@ class Travel{
   for(const target of [q.offset(0,1,0),q]){const block=b.blockAt(target);if(!block)throw Error('採掘する地形が未受信です');if(air(block))continue;if(require('./navigation').water(block)){b.lookAt(destination.offset(0,1,0),false);b.setControlState('forward',true);b.setControlState('jump',require('./navigation').water(b.blockAt(b.entity.position.offset(0,1.62,0))));this.waiting='水面を泳いで移動中';return;}if(hazard(block)||!block.diggable||block.hardness<0)throw Error('移動先に破壊できない・危険なブロックがあります');if(this.runtime.worker.state.floor!==null&&target.y<=this.runtime.worker.state.floor)throw Error('保護している床は掘りません');await b.dig(block,signal);const w=this.runtime.worker;if(!w.owned(target)){const {addStat}=require('./util');addStat(w.state.stats,block.name);addStat(w.state.session,block.name);w.recordMined(block.name);this.runtime.manager.store.save();}}
   await b.go(q,signal);
  }
- recoverAnti(){
-  const recovery=this.antiRecovery,b=this.bot;if(!recovery||Date.now()-recovery.at>2500||!b.entity){this.antiRecovery=null;return false;}
+ rememberAnti(){const p=this.bot.entity.position;if(this.embed)this.antiAnchor={original:this.embed.original,depth:this.embed.original-this.embed.y,x:p.x,z:p.z,dimension:this.bot.dimensionId,at:Date.now()};}
+ prepareFloorEscape(){
+  const b=this.bot,p=b.entity?.position,normalized=b.lastPositionNormalization?.position;if(!p||this.embed||this.floorEscape||Date.now()<(this.floorEscapeRetryAt||0)||!normalized||p.distanceTo(new Vec3(normalized.x,normalized.y,normalized.z))>.04)return false;
+  const check=require('./positions').inspect(b,p);if(!check.known||!check.overlaps.length)return false;const top=Math.max(...check.overlaps.map(box=>box.maxY)),depth=top-p.y;
+  if(depth<=.125||depth>.8||Math.abs(depth-(this.runtime.config.burrowDepth??.55))>.075)return false;
+  const candidate=new Vec3(p.x,top,p.z),clear=require('./positions').inspect(b,candidate);if(!clear.known||clear.overlaps.length||!clear.support||!bodyClear(b,candidate))return false;
+  // A reconnect has no owned Anti anchor. Try one ordinary vertical jump from
+  // the received server pose, with real collision shapes, rather than snapping
+  // to an invented floor. A new server correction stops this attempt.
+  this.floorEscape={at:Date.now(),floor:top,velocity:.42};this.floorEscapeRetryAt=Date.now()+10000;this.waiting='受信済みの浅い床の重なりからジャンプで復帰中';return true;
+ }
+ recoverAnti(allowJump=true){
+  const recovery=this.antiRecovery||this.antiAnchor,b=this.bot;if(!recovery||Date.now()-recovery.at>30000||!b.entity||recovery.dimension!==b.dimensionId){this.antiRecovery=null;return allowJump?this.prepareFloorEscape():false;}
   if(Date.now()-recovery.at<200)return false;
   const p=b.entity.position,check=require('./positions').inspect(b,p);
-  if(!check.overlaps.length){this.antiRecovery=null;return false;}
+  if(this.embed||!check.overlaps.length){this.antiRecovery=null;return false;}
+  // Only undo our own recorded Anti depth. An unrelated wall, teleport or
+  // unreceived section never authorizes moving the player through terrain.
+  if(Math.hypot(p.x-recovery.x,p.z-recovery.z)>8||Math.abs(p.y-(recovery.original-recovery.depth))>.15)return false;
   const candidate=new Vec3(p.x,recovery.original,p.z),verified=require('./positions').inspect(b,candidate);
-  if(Math.abs(candidate.y-p.y)<=1.65&&verified.known&&!verified.overlaps.length&&verified.support){b.entity.position=candidate;b.entity.velocity=new Vec3(0,0,0);b.entity.onGround=true;this.antiRecovery=null;this.waiting='Antiの直前に確認した足場へ復帰';return true;}return false;
+  if(verified.known&&!verified.overlaps.length&&verified.support){b.entity.position=candidate;b.entity.velocity=new Vec3(0,0,0);b.entity.onGround=true;b.collisionState={held:false,recoveredAnti:true};this.antiRecovery=null;this.waiting='Antiの直前に確認した足場へ復帰';return true;}return false;
  }
- bury(depth){const b=this.bot,p=b.entity.position,floor=b.blockAt(p.offset(0,-.1,0));if(!b.entity.onGround||!solid(floor)||!bodyClear(b,p))return false;this.antiRecovery=null;this.embed={y:p.y-depth,original:p.y};return true;}
- unbury(){if(this.embed){this.bot.entity.position.y=this.embed.original;this.bot.entity.velocity=new Vec3(0,0,0);this.embed=null;}else this.recoverAnti();}
+ bury(depth){const b=this.bot,p=b.entity.position,floor=b.blockAt(p.offset(0,-.1,0));if(!b.entity.onGround||!solid(floor)||!bodyClear(b,p))return false;this.antiRecovery=null;this.embed={y:p.y-depth,original:p.y};this.rememberAnti();return true;}
+ unbury(){if(this.embed){this.rememberAnti();this.bot.entity.position.y=this.embed.original;this.bot.entity.velocity=new Vec3(0,0,0);this.bot.entity.onGround=true;this.embed=null;}else this.recoverAnti(false);}
 }
 module.exports={Travel,bodyClear,sweptClear,landingFloor,nearestPortal,dimension,validateGoal,wallDistance};

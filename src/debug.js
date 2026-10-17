@@ -9,7 +9,7 @@ function sample(runtime){
   sentInputs:b.sentInputs,sentLegacyMoves:b.sentLegacyMoves,corrections:b.positionCorrections||0,
   busy:!!runtime.busy,operation:runtime.operation||null,paused:!!runtime.paused,workerBusy:!!runtime.worker?.busy,
   flight:runtime.travel?.flight?{goal:point(runtime.travel.flight.goal),paused:runtime.travel.flight.paused||false,landing:!!runtime.travel.flight.landing,jetpack:!!runtime.travel.flight.jetpack}:null,
-  movement:runtime.travel?.waiting||'',combatWaiting:runtime.combatWaiting||'',crystalState:runtime.crystals?.state||'',
+  movement:runtime.travel?.waiting||'',combatWaiting:runtime.combatWaiting||'',meleeState:runtime.meleeState||'',loopTiming:runtime.loopTiming?{...runtime.loopTiming}:null,antiAnchor:runtime.travel?.antiAnchor||null,floorEscape:runtime.travel?.floorEscape||null,crystalState:runtime.crystals?.state||'',
   consumption:b.handUse?{...b.handUse}:null,lastItemUse:b.lastItemUse||null,timerActive:!!b.straightTimerActive,legacyMovementFallback:!!b.legacyMovementFallback,
   combatBusy:!!runtime.combatBusy,roof:runtime.travel?.flight?.roof?.snapshot()||null,inventoryResponse:b.lastStackResponse||null,inventoryOpen:!!b.inventoryOpen,inventoryOpenState:b.inventoryOpenState,inventoryOpenRequests:b.inventoryOpenRequests};
 }
@@ -47,7 +47,7 @@ class DebugRecorder{
    for(let y=-16;y<=3;y++)column.push(blockSnapshot(b,base.offset(0,y,0)));}
   return {reasons:reasons(r),current:sample(r),movementMode:b.movementMode,advertisedMovement:b.advertisedMovement,
    physicsLoopRunning:!!b._physicsInterval,lastPacketAgeMs:b.lastPacketAt?Date.now()-b.lastPacketAt:null,nearby,column,
-   samples:this.samples,events:this.events,visiblePlayers:[...(b.actors?.values()||[])].filter(a=>a.player).slice(0,80).map(a=>({name:a.name,position:point(a.position),ageMs:a.seen?Date.now()-a.seen:null,dimension:a.dimension}))};
+   samples:this.samples,events:this.events,combat:r.crystals?.snapshot?.(),visiblePlayers:[...(b.actors?.values()||[])].filter(a=>a.player).slice(0,80).map(a=>({name:a.name,position:point(a.position),rawPosition:point(a.rawPosition),sneaking:!!a.sneaking,feet:blockSnapshot(b,a.position.floored()),ageMs:a.seen?Date.now()-a.seen:null,dimension:a.dimension}))};
  }
  summary(){return reasons(this.runtime).join('\n');}
  destroy(){this.runtime.bot.removeListener('physicsTick',this.onTick);this.runtime.bot.removeListener('forcedMove',this.onCorrection);}
