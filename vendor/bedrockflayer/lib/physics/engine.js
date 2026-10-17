@@ -357,6 +357,15 @@ function _sendPositionPacket(bot, inputX, inputZ) {
     const entity = bot.entity
     const cs = bot.controlState
 
+    // Anti uses a collision-checked logical pose but still needs the same
+    // camera-relative input as ordinary walking. Sending "forward" while the
+    // camera faces a crystal made the server reject sideways chase/retreat.
+    if (bot.desiredMoveWorld && Math.hypot(inputX, inputZ) > 0) {
+        const d = bot.desiredMoveWorld, yaw = entity.yaw || 0
+        inputX = -d.x * Math.cos(yaw) - d.z * Math.sin(yaw)
+        inputZ = d.x * Math.sin(yaw) - d.z * Math.cos(yaw)
+    }
+
     const dx = entity.position.x - (bot._lastSentPos ? bot._lastSentPos.x : entity.position.x)
     const dy = entity.position.y - (bot._lastSentPos ? bot._lastSentPos.y : entity.position.y)
     const dz = entity.position.z - (bot._lastSentPos ? bot._lastSentPos.z : entity.position.z)

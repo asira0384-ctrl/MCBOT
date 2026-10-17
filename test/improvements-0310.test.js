@@ -102,8 +102,8 @@ test('confirmed apples are not eaten again for unchanged low health; fresh damag
  await r.startUse('体力回復',b.find('enchanted_golden_apple'));for(let n=0;n<5;n++){b.emit('health');await r.tick();}assert.equal(uses,1);assert(!r.needsFood());
  r.healLatch.at=Date.now()-3000;b.health=14;assert(r.needsFood());await r.startUse('体力回復',b.find('enchanted_golden_apple'));assert.equal(uses,2);
 });
-test('KA can still attack at low health when no food exists and full-block walls still occlude the hit',t=>{
- const {b,r,item,enemy}=fixture(t,{killaura:true,heal:true});b.health=12;b.items[0]=item('netherite_sword');r.meleeTick(enemy);assert.equal(r.attacks,1);r.lastAttack=0;b.blockAt=p=>Math.floor(p.x)===2?block(p):air(p);r.meleeTick(enemy);assert.equal(r.attacks,1);assert.match(r.meleeState,/壁/);
+test('KA can still attack at low health when no food exists and full-block walls still occlude the hit',async t=>{
+ const {b,r,item,enemy}=fixture(t,{killaura:true,heal:true});b.health=12;b.items[0]=item('netherite_sword');await r.meleeTick(enemy);assert.equal(r.attacks,1);r.lastAttack=0;b.blockAt=p=>Math.floor(p.x)===2?block(p):air(p);await r.meleeTick(enemy);assert.equal(r.attacks,1);assert.match(r.meleeState,/壁/);
 });
 test('legacy inventory refresh retries a snapshot without repeating the item transfer',async t=>{
  const {b,c,item}=adapter(t);b.serverAuthoritativeInventory=false;b.items[15]=item('diamond_sword');let swaps=0,syncs=0;const queue=c.queue;let actions;

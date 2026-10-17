@@ -34,7 +34,7 @@ test('BPS measures horizontal position changes and resets on teleports rather th
  const bot={entity:{position:new Vec3(0,64,0)}},t=new tactics.Telemetry(bot);t.sample(1000);bot.entity.position.x=4;t.sample(2000);assert.equal(t.value.bps,4);bot.entity.position=new Vec3(100,64,0);t.sample(2100);assert.equal(t.value.bps,0);
 });
 test('nearby players include observed armor/hands and live fleet positions with distance',t=>{
- const {b,c,item,r,manager}=fixture(t);b.entity.position=new Vec3(.5,64,.5);c.emit('add_player',{runtime_id:50n,username:'Equipped',position:{x:5.5,y:65.62,z:.5},held_item:item('diamond_sword')});
+ const {b,c,item,r,manager}=fixture(t);b.entity.position=new Vec3(.5,64,.5);c.emit('add_player',{runtime_id:50n,username:'Equipped',position:{x:5.5,y:64,z:.5},held_item:item('diamond_sword')});
  c.emit('mob_armor_equipment',{runtime_entity_id:50n,helmet:item('diamond_helmet'),chestplate:item('diamond_chestplate'),leggings:{network_id:0},boots:{network_id:0}});c.emit('mob_equipment',{runtime_entity_id:50n,window_id:'offhand',item:item('totem_of_undying')});
  const other={connected:true,username:'Fleet',config:{...b.config},dimensionId:0,entity:{position:new Vec3(10.5,64,.5)},armor:[],offhand:[],items:[],name:i=>i?.name||''};manager.workers.set(2,{bot:other});const rows=tactics.nearby(r);assert.equal(rows[0].distance,5);assert.equal(rows[0].mainhand.name,'diamond_sword');assert.equal(rows[0].offhand.name,'totem_of_undying');assert.equal(rows[0].armor[0].name,'diamond_helmet');assert.equal(rows[1].distance,10);assert(rows[1].bot&&rows[1].friend);
 });
