@@ -57,14 +57,14 @@ function pistonServer(t,{mode='look',learn=false,nukkit=false,push=true}={}){
   const quadrant=((Math.round(serverYaw/90)%4)+4)%4,looking=[3,4,2,5][quadrant],facing=mode==='look'?looking:({2:3,3:2,4:5,5:4}[looking]);
   queueMicrotask(()=>{if(held==='end_crystal')c.emit('add_entity',{runtime_id:100n,unique_id:100n,entity_type:'minecraft:ender_crystal',position:base.offset(.5,1,.5)});else{const [x,y,z]=faces[d.face];update(base.offset(x,y,z),held,facing);if(held==='redstone_block'&&push)c.emit('move_entity',{runtime_entity_id:100n,position:hole.offset(.5,1,.5)});}});
  };
- b.physicsEnabled=true;b.emit('spawn');const motion=setInterval(()=>r.motionTick(),10);t.after(()=>clearInterval(motion));return {...f,trace,yawPackets};
+ b.physicsEnabled=true;b.emit('spawn');const motion=setInterval(()=>r.motionTick(),10);t.after(()=>clearInterval(motion));return {...f,trace,yawPackets,motion};
 }
 for(const mode of ['look','opposite'])test(`PA owns movement/camera/hands through real physics, live facing and push confirmation (${mode})`,async t=>{
  const {r,trace,yawPackets}=pistonServer(t,{mode});await r.combatPulse();assert.deepEqual(trace,['obsidian','piston','end_crystal','redstone_block','attack:100']);assert(yawPackets.length>0);assert.equal(r.attacks,0);assert.equal(r.crystals.piston.stage,'break');assert.equal(r.pistonExclusive,false);
  assert(r.crystals.pistonHistory.some(e=>e.action==='pa_pedestal_confirmed'));
 });
 test('PA learns the opposite Nukkit placement convention from a real facing echo, recovers its piston and retries',async t=>{
- const {b,r,w,trace}=pistonServer(t,{mode:'look',learn:true});await r.combatPulse();assert.equal(b.pistonFacingMode,'look');assert.equal(w.state.pistonFacingMode,'look');assert(trace.includes('dig'));assert(!trace.includes('redstone_block'));await r.combatPulse();assert(trace.includes('redstone_block'));assert(trace.includes('attack:100'));assert.equal(r.attacks,0);
+ const {b,r,w,trace,motion}=pistonServer(t,{mode:'look',learn:true});await r.combatPulse();clearInterval(motion);r.travel.stopFollowing();assert.equal(b.pistonFacingMode,'look');assert.equal(w.state.pistonFacingMode,'look');assert(trace.includes('dig'));assert(!trace.includes('redstone_block'));await delay(Math.max(0,(r.crystals.paRetryAt||0)-Date.now())+10);await r.combatPulse();assert(trace.includes('redstone_block'),JSON.stringify({trace,state:r.crystals.snapshot(),errors:r.featureErrors,waiting:r.combatWaiting}));assert(trace.includes('attack:100'));assert.equal(r.attacks,0);
 });
 test('a solid Anti floor is not a PA hole; CA still selects an exposed floor-level blast against a buried enemy',async t=>{
  const {b,c,r,item,enemy}=fixture(t,{crystalaura:true,pistoncrystal:true,crystalPredict:0});enemy.position.y=63.45;b.items[6]=item('end_crystal');

@@ -1,6 +1,6 @@
-# v0.3.16 のコマンド
+# v0.3.17 のコマンド
 
-最新版の操作は [UPDATE-v0.3.16-JA.md](UPDATE-v0.3.16-JA.md)。AutoLogは「装備 → 体力・AutoLog設定」、テーマは「設定」。接続先がIGNのBotは番号に関係なくautoworld・autotp等を使用できます。
+最新版の操作は [UPDATE-v0.3.17-JA.md](UPDATE-v0.3.17-JA.md)。AutoLogは「装備 → 体力・AutoLog設定」、テーマは「設定」。接続先がIGNのBotは番号に関係なくautoworld・autotp等を使用できます。
 
 `/admin add user:@相手`でDiscord管理者へpanel/Webを許可できます（Asira本人だけが登録・解除）。最大20体に対応。グループは`all`・`ign`・`2b2e`。
 
@@ -11,6 +11,7 @@ WebはDiscordの `/web`、Discordのボタンは `/panel` です。下記は `/b
 | 内容 | 動作 |
 | --- | --- |
 | login fresh | 切断済みのこのアカウントだけ保存認証を退避し、再認証して接続 |
+| cleanup | 自分で置いた不要な足場を、安全な地面へ退いて上から回収 |
 | mineblocks obsidian,netherrack | 範囲内の指定ブロックだけを、上から1チャンクずつ掘る。allで解除 |
 | follow direct Player One | 最短の経路を探して追従 |
 | follow trail Player One | 実際に観測した足跡を追従 |
