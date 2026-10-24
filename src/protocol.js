@@ -15,7 +15,7 @@ function adaptInput(bot,p) {
   const names=bot.registry.protocol.types.InputFlag?.[1]?.flags||Object.values(bot.registry.protocol.types.InputData?.[1]?.mappings||{});flags=Object.fromEntries(names.map((s,i)=>[s,!!(p.input_data&(1n<<BigInt(i)))]));
  }
  flags=Array.isArray(flags)?Object.fromEntries(flags.map(s=>[s,true])):{...flags};
- if(bot.breakAction&&!bot.handUse) { flags.block_action=true; flags.block_breaking_delay_enabled=true;p.block_action=[bot.breakAction];bot.breakAction=null; }
+ if(!bot.handUse){const actions=bot.pendingBreakActions?.splice(0)||[];if(bot.breakAction){actions.push(bot.breakAction);bot.breakAction=null;}if(actions.length){flags.block_action=true;flags.block_breaking_delay_enabled=true;p.block_action=actions;}if(bot.pendingMiningRequest){flags.item_stack_request=true;p.item_stack_request=bot.pendingMiningRequest;bot.pendingMiningRequest=null;}}
  if(bot.pendingTeleport){flags.handled_teleport=true;bot.pendingTeleport=false;}
  if(bot.pendingServerData){flags.received_server_data=true;bot.pendingServerData=false;}
  if(bot.pendingGlide){flags[bot.pendingGlide==='start'?'start_gliding':'stop_gliding']=true;bot.pendingGlide=null;}

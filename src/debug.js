@@ -8,6 +8,8 @@ function sample(runtime){
   controls:{...b.controlState},terrainReady:!!b.terrainReady,terrainEstablished:!!b.terrainEstablished,terrainDecodeFailed:!!b.terrainDecodeFailed,
   sentInputs:b.sentInputs,sentLegacyMoves:b.sentLegacyMoves,corrections:b.positionCorrections||0,
   busy:!!runtime.busy,operation:runtime.operation||null,paused:!!runtime.paused,workerBusy:!!runtime.worker?.busy,
+  mining:runtime.worker?.miner?{...runtime.worker.miner.snapshot(),phase:runtime.worker.miningPhase||null,target:runtime.worker.miningTarget||null,approach:runtime.worker.miningApproach||null,missing:runtime.worker.missing||'',area:runtime.worker.state.area,floor:runtime.worker.state.floor,ceiling:runtime.worker.state.ceiling}:null,
+  dig:b.digState?{...b.digState}:null,collisionRecovery:runtime.travel?.collisionRecovery||null,walking:runtime.travel?.walking?{goal:point(runtime.travel.walking.goal),action:runtime.travel.walking.action,at:runtime.travel.walking.at,progressAt:runtime.travel.walking.progressAt,error:runtime.travel.walking.error||null}:null,
   flight:runtime.travel?.flight?{goal:point(runtime.travel.flight.goal),paused:runtime.travel.flight.paused||false,landing:!!runtime.travel.flight.landing,jetpack:!!runtime.travel.flight.jetpack}:null,
   movement:runtime.travel?.waiting||'',combatWaiting:runtime.combatWaiting||'',meleeState:runtime.meleeState||'',pistonExclusive:!!runtime.pistonExclusive,antiProtected:!!runtime.protectAnti?.(),target:runtime.target?{name:runtime.target.name,position:point(runtime.target.position),rawPosition:point(runtime.target.rawPosition),packet:runtime.target.positionKind||null,frame:runtime.target.positionFrame||null}:null,loopTiming:runtime.loopTiming?{...runtime.loopTiming}:null,antiAnchor:runtime.travel?.antiAnchor||null,floorEscape:runtime.travel?.floorEscape||null,crystalState:runtime.crystals?.state||'',
   consumption:b.handUse?{...b.handUse}:null,lastItemUse:b.lastItemUse||null,timerActive:!!b.straightTimerActive,legacyMovementFallback:!!b.legacyMovementFallback,
@@ -23,7 +25,9 @@ function reasons(runtime){
  if(runtime.travel?.embed)out.push('AntiCrystalの埋まり動作中です');
  if(runtime.paused)out.push('操作は停止状態です。移動先の指定や機能のON操作で再開します');
  if(runtime.busy)out.push('実行・応答待ち: '+(runtime.operation||'処理中'));
- if(runtime.worker?.busy)out.push('整地側の処理が実行中です');
+ if(runtime.worker?.busy)out.push('整地側の処理が実行中です: '+(runtime.worker.miningPhase||runtime.worker.miner?.state||''));
+ if(runtime.worker?.running&&runtime.worker?.missing)out.push('採掘: '+runtime.worker.missing);
+ if(runtime.travel?.collisionRecovery?.reason)out.push('埋まり復帰: '+runtime.travel.collisionRecovery.reason);
  for(const [feature,error]of Object.entries(runtime.featureErrors||{}))out.push(feature+': '+error.message);
  if(runtime.combatWaiting)out.push(runtime.combatWaiting);
  if(runtime.crystals?.state&&runtime.crystals.state!=='OFF')out.push(runtime.crystals.state);

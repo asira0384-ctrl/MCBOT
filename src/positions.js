@@ -12,6 +12,10 @@ function serverPosition(bot,raw,kind='move_player',defaultFrame='eye'){
  const p=frame==='eye'?eye:feet;bot.lastPositionNormalization={kind,raw:{...raw},position:{x:p.x,y:p.y,z:p.z},frame,reason};return p;
 }
 function guardPenetration(bot){const p=bot.entity?.position;if(!p)return false;const check=inspect(bot,p);if(!check.overlaps.length){bot.collisionState={held:false};return false;}
+ // Repair only tiny lateral rounding into a known wall. Never select an exit
+ // through a full block or move across unknown space.
+ const exits=[];for(const box of check.overlaps)for(const [x,z]of [[box.minX-.3,p.z],[box.maxX+.3,p.z],[p.x,box.minZ-.3],[p.x,box.maxZ+.3]]){const q=new Vec3(x,p.y,z),distance=q.distanceTo(p);if(distance>0&&distance<=.125){const clear=inspect(bot,q);if(clear.known&&!clear.overlaps.length&&clear.support)exits.push({q,distance});}}
+ if(exits.length){exits.sort((a,b)=>a.distance-b.distance);p.x=exits[0].q.x;p.z=exits[0].q.z;bot.entity.velocity.x=bot.entity.velocity.z=0;bot.collisionState={held:false,roundedFromWall:true,distance:exits[0].distance};return false;}
  const top=Math.max(...check.overlaps.map(b=>b.maxY)),depth=top-p.y;const repaired=new Vec3(p.x,top,p.z),clear=inspect(bot,repaired);
  if(depth>0&&depth<=.125&&clear.known&&!clear.overlaps.length){p.y=top;bot.entity.velocity.y=0;bot.entity.onGround=true;bot.collisionState={held:false,roundedToFloor:true,depth};return false;}
  const wasHeld=bot.collisionState?.held;bot.collisionState={held:true,depth,position:{x:p.x,y:p.y,z:p.z},reason:'受信済みブロックと体が重なっています。位置補正待ち'};bot.entity.velocity=new Vec3(0,0,0);bot.clearControlStates?.();if(!wasHeld)bot.emit('collisionBlocked',bot.collisionState);return true;

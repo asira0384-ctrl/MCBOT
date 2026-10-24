@@ -21,7 +21,7 @@ class Runtime{
   this.bot.on('death',()=>{this.combatAbort?.abort();this.consumeAbort?.abort();this.travel.stopFollowing();this.safety.cancel();this.abort?.abort();this.travel.cancel(false);this.receiving=false;this.target=null;if(worker.state.respawn)this.bot.requestRespawn();this.notice('死亡・自動リスポーン待ち');});
   this.bot.on('respawned',()=>{this.safety.arm();this.dirty=true;this.telemetry.reset();if(this.worker.state.autoSupply&&!(this.ignActions.enabled&&this.ignActions.settings.autoKit))this.restock.request('死亡後の1kit補充','kit',true);const p=this.bot.entity.position;this.notice(`リスポーンしました。座標: ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)} / ${['現世','ネザー','エンド'][this.bot.dimensionId]||this.bot.dimensionId}。装備の補給待ちです`);});
   this.bot.on('collisionBlocked',()=>{this.speedBlockedUntil=Date.now()+2000;if(this.protectAnti()){this.travel.recoverAnti();this.noticeOnce('戦闘中のAntiを維持し、受信した足場と追尾経路を再確認中',false);}else{this.burrowBlockedUntil=Date.now()+3000;this.travel.recoverAnti?.(!this.paused);this.noticeOnce('ブロックとの重なりを検知。足場と位置補正を確認中',false);}});
-  this.onHandAvailable=()=>{if(this.pendingFood&&!this.destroyed){this.pendingFood=false;queueMicrotask(()=>{if(this.needsFood())this.startUse('体力回復',this.bot.find('enchanted_golden_apple'));});}};this.bot.on('handAvailable',this.onHandAvailable);
+  this.onHandAvailable=()=>{if(this.pendingFood&&!this.destroyed){this.pendingFood=false;queueMicrotask(()=>{if(this.needsFood())this.startUse('体力回復',this.bot.find('enchanted_golden_apple'));});}if(this.dirty&&!this.destroyed)this.wakeEquipment();};this.bot.on('handAvailable',this.onHandAvailable);
   this.bot.on('forcedMove',()=>{this.travel.rollback();this.telemetry.reset();this.safety.invalidate();});
   this.bot.on('actorAdded',()=>this.wakeCombat());this.bot.on('actorRemoved',()=>this.wakeCombat());this.bot.on('actorUpdated',()=>this.wakeCombat());
   this.bot.on('end',()=>this.destroy());
@@ -78,7 +78,7 @@ class Runtime{
   const b=this.bot;this.telemetry.sample();this.travel.recoverAnti?.(!this.paused);
   if(!b.connected||b.ended||b.dead||this.paused||this.safety.active||!b.entity)return;
   if(this.restock.running){this.travel.stopFollowing();return;}if(this.worker.running||this.worker.startRequested)return;
-  if(this.travel.walking){this.travel.follow(this.travel.walking.goal,undefined,'walk-step',.25);return;}
+  if(this.travel.walking){this.travel.driveStep(this.travel.walking);return;}
   const enemy=this.canFight()&&!this.travel.route?this.chooseTarget():null;
   const healing=(this.consumeTask&&b.handUse?.kind==='food')||this.needsFood();
   if(healing&&enemy){
@@ -94,7 +94,7 @@ class Runtime{
  }
 
  wakeEquipment(){if(this.destroyed||this.equipmentWake)return;this.equipmentWake=setTimeout(()=>{this.equipmentWake=null;this.equipmentPulse().catch(e=>this.noticeOnce('装備: '+e.message,false));},0);this.equipmentWake.unref?.();}
- async equipmentPulse(){const b=this.bot;if(this.equipmentBusy||this.destroyed||!b.connected||b.loggingOut||b.dead||b.manualInventoryBusy||b.window||b.inventoryOpening||this.restock.running)return;this.equipmentBusy=true;
+ async equipmentPulse(){const b=this.bot;if(this.equipmentBusy||this.destroyed||!b.connected||b.loggingOut||b.dead||b.manualInventoryBusy||b.window||b.inventoryOpening||b.mining||b.actionHandBusy?.kind==='mining'||this.restock.running)return;this.equipmentBusy=true;
   try{await this.maintenance('オフハンド装着',()=>equipment.wear(b,{armor:false,totem:this.config.autototem}));if(this.dirty&&!this.paOwnsHand()&&!b.actionHandBusy&&!b.handUse){if(this.config.gear)await this.maintenance('防具装着',()=>equipment.wear(b,{armor:true,totem:this.config.autototem,elytra:!!this.travel.flight}));if(this.config.autoslot&&Date.now()>(this.manualSlotsUntil||0)){const complete=await equipment.autoSlots(b,undefined,{pistoncrystal:this.config.pistoncrystal});this.dirty=!complete;if(complete)this.lastSort=Date.now();}}}finally{this.equipmentBusy=false;}
  }
  notice(text,game=true){this.events.push({at:Date.now(),text:String(text).slice(0,250)});this.events=this.events.slice(-12);this.manager.notice(this.worker.id,text,{game});}
@@ -118,6 +118,7 @@ class Runtime{
   if(this.pendingMove&&(!low||!b.find('enchanted_golden_apple'))){const args=this.pendingMove;this.pendingMove=null;this.paused=false;this.travel.command(...args);}
   this.busy=true;w.controlBusy=true;this.abort=new AbortController();const signal=this.abort.signal;b.operationSignal=signal;
   try{
+   if(this.travel.recoverCollision&&await this.travel.recoverCollision(signal))return;
    if(low)w.mode='healing';
    if(low&&b.find('enchanted_golden_apple')&&Date.now()-this.lastHeal>=800)this.startUse('体力回復',b.find('enchanted_golden_apple'));
    if(low)await this.maintenance('オフハンド装着',()=>equipment.wear(b,{armor:false,totem:this.config.autototem},signal),signal);

@@ -34,7 +34,7 @@ class BedrockBot extends EventEmitter {
   this.client.on('set_movement_authority',p=>{this.advertisedMovement=p.movement_authority;this.emit('diagnostic',`移動方式: ${this.advertisedMovement}`);});
   this.client.on('start_game',p=>{try{
    this.serverAuthoritativeInventory=p.server_authoritative_inventory;this.advertisedMovement=p.movement_authority??p.player_movement_settings?.movement_type??'未指定';this.serverPosition={...p.player_position};
-   this._runtimeEntityId=p.runtime_entity_id;this.serverBreak=p.server_authoritative_block_breaking!==false;this.dimensionId=typeof p.dimension==='number'?p.dimension:({overworld:0,nether:1,end:2,the_nether:1,the_end:2}[p.dimension]??0);
+   this._runtimeEntityId=p.runtime_entity_id;this.serverBreak=p.server_authoritative_block_breaking===true;this.dimensionId=typeof p.dimension==='number'?p.dimension:({overworld:0,nether:1,end:2,the_nether:1,the_end:2}[p.dimension]??0);
    this.worldMirror.init(p);this.entity={position:require('./positions').serverPosition(this,p.player_position,'start_game'),velocity:new Vec3(0,0,0),yaw:(p.rotation?.y||0)*Math.PI/180,pitch:(p.rotation?.x||0)*Math.PI/180,onGround:false,effects:{}};this.position=this.entity.position;this.terrainReady=false;this.emit('diagnostic',`start_game: world=${p.world_name||p.level_id||'不明'} dimension=${this.dimensionId} 座標=${JSON.stringify(p.player_position)} entity=${String(this._runtimeEntityId)} movement=${this.advertisedMovement}`);
    this.client.queue('client_cache_status',{enabled:false});
   }catch(e){this.emit('error',e);this.disconnect();}});
@@ -97,7 +97,7 @@ class BedrockBot extends EventEmitter {
    for(const e of events)this.on(e,check);this.on('end',end);signal?.addEventListener('abort',abort,{once:true});poll=setInterval(check,20);timer=setTimeout(()=>done(Error('サーバーの確認がタイムアウトしました')),ms);check();
   });
  }
- halt(){this.naturalIdleFall=true;this.passivePhysics=false;this.abortVersion++;this.pathfinder?.stop();this.clearControlStates?.();if(this.mining)this.breakAction={action:'abort_break',position:this.mining,face:1};this.mining=null;this.usingItem=!!this.handUse;}
+ halt(){this.naturalIdleFall=true;this.passivePhysics=false;this.abortVersion++;this.pathfinder?.stop();this.clearControlStates?.();require('./digging').cancel(this);this.usingItem=!!this.handUse;}
  finish(){this.chatQueue?.close();if(this.ended)return;this.ended=true;this.connected=false;this.connectionPhase='切断済み';this.halt();this.emit('end');}
  disconnect(){this.chatQueue?.close();if(this.ended)return;this.halt();try{this.closeContainer();}catch{}try{this.client.disconnect('Stopping');}catch{}finally{try{this.client.close();}catch{}this.finish();}}
  chat(text,immediate=false,options){this.chatQueue??=new(require('./chat-queue').ChatQueue)(this);return this.chatQueue.enqueue(String(text).slice(0,220),immediate,options);}
@@ -108,13 +108,7 @@ class BedrockBot extends EventEmitter {
  reach(block){const p=this.entity?.position;if(!p||!block)return false;return p.offset(0,1.62,0).distanceTo(block.position.offset(.5,.5,.5))<=(this.motion?.runtime?.config.blockReach||5);}
  visible(block){const eye=this.entity.position.offset(0,1.62,0);const center=block.position.offset(.5,.5,.5);const d=center.minus(eye);const n=Math.ceil(d.norm()*8);for(let j=1;j<n;j++){const b=this.blockAt(eye.plus(d.scaled(j/n)));if(!b)return false;if(key(b.position)===key(block.position))return true;if(solid(b))return false;}return true;}
  breakTime(block,tool){const speeds={netherite_pickaxe:9,diamond_pickaxe:8,iron_pickaxe:6,stone_pickaxe:4,golden_pickaxe:12,wooden_pickaxe:2};let speed=/obsidian|stone|ore|netherrack|basalt|brick|rock|iron|metal/.test(block.name+' '+(block.material||''))?(speeds[tool.name]||1):1;const eff=(this.nbt(tool.raw)?.ench||[]).find(e=>e.id===15||e.id==='efficiency')?.lvl||0;if(speed>1&&eff)speed+=eff*eff+1;return Math.ceil(1500*Math.max(0,block.hardness)/speed/50)*50+100;}
- async dig(block,signal,preferredTool,options={}){if(this.handUse)throw require('./item-use').busy();this.straightTimerActive=false;if(!this.reach(block)||!this.visible(block))throw Error('ブロックに手が届きません');if(!block.diggable||block.hardness<0)throw Error('破壊できないブロックです');const tool=preferredTool||this.tool();if(!tool)throw Error('ピッケルがなくなりました');if(block.name==='obsidian'&&!['diamond_pickaxe','netherite_pickaxe'].includes(tool.name))throw Error('黒曜石用のダイヤ・ネザライトピッケルが必要です');
-  await this.equip(tool.slot,signal);this.clearControlStates();await sleep(150);this.lookAt(block.position.offset(.5,.5,.5),false);
-  const startId=block.stateId;this.mining={x:block.position.x,y:block.position.y,z:block.position.z};this.breakAction={action:'start_break',position:this.mining,face:1};
-  let predicted=false;const started=Date.now();const breakMs=this.breakTime(block,tool);
-  const sustaining=setInterval(()=>{try{if(this.mining){this.breakAction={action:'crack_break',position:this.mining,face:1};if(!this.serverBreak&&!predicted&&Date.now()-started>=breakMs){predicted=true;this.client.queue('inventory_transaction',useItem(this,'break_block',this.mining,1,block.stateId));}}}catch(e){this.halt();this.emit('error',e);}},50);
-  try{await this.waitUntil(()=>{const b=this.blockAt(block.position);return !!b&&b.stateId!==startId&&air(b);},options.timeout||Math.min(90000,Math.max(5000,breakMs*2+3000)),signal);}finally{clearInterval(sustaining);if(this.mining)this.breakAction={action:'abort_break',position:this.mining,face:1};this.mining=null;}
- }
+ async dig(block,signal,preferredTool,options={}){return require('./digging').dig(this,block,signal,preferredTool,options);}
  async place(target,item,signal,options={}){if(!item)throw Error('設置するアイテムがありません');if(!air(this.blockAt(target)))throw Error('設置場所が空いていません');const placement=require('./geometry').placementSupport(this,target),support=placement?.block,face=placement?.face;
   if(!support)throw Error('足場を置くための隣接ブロックがありません');if(/^(sand|red_sand|gravel|.*concrete_powder)$/.test(item.name)&&!solid(this.blockAt(target.offset(0,-1,0))))throw Error('砂系の足場は下に支えが必要です');
   const hand=require('./hand'),lease=hand.claim(this);

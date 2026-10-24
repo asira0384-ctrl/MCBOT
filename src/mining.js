@@ -8,6 +8,17 @@ function filter(value,registry){
  return [...new Set(words.map(word=>{let n=itemName(word);n=aliases[n]||n;if(/^\d+$/u.test(n))n=registry?.blocks?.[Number(n)]?.name||'';if(!n||!registry?.blocksByName?.[n])throw Error('不明なブロック: '+word);if(registry.blocksByName[n].diggable===false||registry.blocksByName[n].hardness<0)throw Error('破壊できないブロック: '+word);return n;}))];
 }
 function wanted(worker,block){return !worker.state.miningFilter?.length||worker.state.miningFilter.includes(block.name);}
+function stands(worker,target){
+ const b=worker.bot,p=b.entity.position,t=target.position,eyeReach=b.motion?.runtime?.config.blockReach||5,spots=[],navigation=require('./navigation'),geometry=require('./geometry');
+ const stock=b.list?.().some(i=>i.name===worker.state.scaffold||['cobblestone','stone','dirt','obsidian','slime','slime_block'].includes(i.name));
+ for(let dy=-3;dy<=1;dy++)for(let dx=-3;dx<=3;dx++)for(let dz=-3;dz<=3;dz++){
+  const q=t.offset(dx,dy,dz),center=q.offset(.5,0,.5),eye=center.offset(0,1.62,0),under=b.blockAt(q.offset(0,-1,0));if(eye.distanceTo(t.offset(.5,.5,.5))>eyeReach-.1||!navigation.pass(b,q))continue;
+  if(!under||under.name==='unknown'||hazard(under)||!under.solid&&(!stock||!air(under)))continue;
+  if(!geometry.rayClear(b,eye,t.offset(.5,.5,.5),{ignore:[t]}))continue;
+  spots.push({position:center,score:p.distanceTo(center)+(under.solid?0:4)});
+ }
+ return spots.sort((a,c)=>a.score-c.score).map(s=>s.position);
+}
 class ChunkMining{
  constructor(worker){this.worker=worker;this.bot=worker.bot;this.onUpdate=p=>{const c=this.chunk;if(c&&p.x>=c.x1&&p.x<=c.x2&&p.z>=c.z1&&p.z<=c.z2&&p.y>this.worker.state.floor&&p.y<=this.top())this.layer=Math.max(this.layer??this.top(),Math.floor(p.y));};this.bot.on('worldUpdate',this.onUpdate);this.reset();}
  top(){return Math.min(this.worker.state.ceiling,this.bot.dimensionId===1?127:this.bot.dimensionId===2?255:319);}
@@ -30,7 +41,7 @@ class ChunkMining{
     this.layer=y;this.unknown=unknown;
     // Never mine a lower level while the upper one is unknown or occupied.
     if(unknown){this.state=`チャンク ${c.x},${c.z} / Y${y}の地形受信待ち`;return null;}
-    if(targets.length){targets.sort((a,c)=>feet.distanceTo(a.position)-feet.distanceTo(c.position));this.state=`チャンク ${this.index+1}/${this.chunks.length} (${c.x},${c.z}) / Y${y}を採掘`;return targets[0];}
+    if(targets.length){const usable=new Map(targets.map(t=>[t,!!(b.reach?.(t)&&b.visible?.(t))]));targets.sort((a,c)=>Number(usable.get(c))-Number(usable.get(a))||feet.distanceTo(a.position)-feet.distanceTo(c.position));this.state=`チャンク ${this.index+1}/${this.chunks.length} (${c.x},${c.z}) / Y${y}を採掘`;return targets[0];}
     if(blocked){this.state=`チャンク ${c.x},${c.z} / Y${y}の他Bot・足元・再試行待ち`;return null;}
    }
    this.index++;this.layer=null;
@@ -41,4 +52,4 @@ class ChunkMining{
  snapshot(){return {order:'chunk-top-down',filter:this.worker.state.miningFilter||[],state:this.state,chunk:this.chunk?{x:this.chunk.x,z:this.chunk.z}:null,layer:this.layer,index:this.index,total:this.chunks.length,unknown:this.unknown,done:this.done};}
  destroy(){this.bot.removeListener('worldUpdate',this.onUpdate);}
 }
-module.exports={ChunkMining,filter,wanted};
+module.exports={ChunkMining,filter,wanted,stands};

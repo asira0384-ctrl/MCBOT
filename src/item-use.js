@@ -4,11 +4,11 @@ const {useItem,emptyItem}=require('./protocol');
 function busy(){return Object.assign(Error('飲食中の手の操作が完了するまで待機します'),{code:'HAND_BUSY'});}
 function protects(bot,type,slot){return !!bot.handUse&&(['hotbar_and_inventory','inventory','hotbar'].includes(type))&&(bot.handUse.slot===undefined||bot.handUse.slot===slot);}
 async function consume(bot,item,kind,signal){
- if(bot.handUse)throw busy();if(!item)throw Error('飲食アイテムがありません');
+ if(bot.handUse||bot.actionHandBusy)throw busy();if(!item)throw Error('飲食アイテムがありません');
  const state={kind,phase:'selecting',name:item.name,originalSlot:item.slot,startedAt:Date.now(),attempt:0};bot.handUse=state;bot.straightTimerActive=false;
  try{
   // A pending break / repeated equipment packet cancels eating on Nukkit.
-  bot.mining=null;bot.breakAction=null;bot.setControlState('sprint',false);
+  bot.mining=null;bot.breakAction=null;bot.pendingBreakActions=[];bot.pendingMiningRequest=null;bot.setControlState('sprint',false);
   await bot.equip(item.slot,signal);await require('./hand').settled(bot,signal);if(signal?.aborted)throw Error('停止しました');
   const slot=bot.quickBarSlot,held=bot.items[slot];if(bot.name(held)!==item.name)throw Error('手に持った飲食アイテムを確認できません');
   state.slot=slot;const metadata=held.metadata||0,initialCount=held.count||0;
