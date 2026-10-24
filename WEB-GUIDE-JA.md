@@ -1,14 +1,17 @@
-# v0.3.13 Web操作
+# v0.3.14 Web操作
 
+アカウント追加：概要 → ＋アカウントを追加（最大20）。
+採掘：採掘タブで範囲・Y・ブロックを保存 → 整地を開始。上から1チャンクずつ。
+グリーター・返事・定期案内：チャットタブで保存。
 AutoLog：Botを選択 → 装備 →「体力・AutoLog設定」。戦闘タブからも開けます。
 テーマ：設定 → テーマ。金ハートは通常の体力の横に表示します。
 接続先変更：単体Bot → 概要のアカウント欄 → 接続先を選んで変更。IGNではWorld・Kit・TPA・Backも表示します。
 
-最新の全操作は [UPDATE-v0.3.13-JA.md](UPDATE-v0.3.13-JA.md) を開いてください。
+最新の全操作は [UPDATE-v0.3.14-JA.md](UPDATE-v0.3.14-JA.md) を開いてください。
 
 初回のDiscord OAuth設定と保存の手順は [UPDATE-v0.3.12-JA.md](UPDATE-v0.3.12-JA.md) を開いてください。
 
-Webの「Discordでログイン」から入ります。AsiraがDiscordの `/webaccess add user:@相手` で許可した人だけ操作可能です。表示するアイコン・名前・IDは実際のDiscordアカウント情報です。セッションは通常30日間でDATA_DIRに保存します。許可の取り消し・手動ログアウトで解除できます。
+Webの「Discordでログイン」から入ります。AsiraがDiscordの `/admin add user:@相手` で登録したDiscord管理者、または `/webaccess add user:@相手` で許可した人だけ操作可能です。表示するアイコン・名前・IDは実際のDiscordアカウント情報です。セッションは通常30日間でDATA_DIRに保存します。許可の取り消し・手動ログアウトで解除できます。
 
 Discord OAuth未設定時のAsira専用リンクは `/web` から発行できます。
 

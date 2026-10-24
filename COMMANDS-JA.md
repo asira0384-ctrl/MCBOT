@@ -1,11 +1,21 @@
-# v0.3.13 のコマンド
+# v0.3.14 のコマンド
 
-最新版の操作は [UPDATE-v0.3.13-JA.md](UPDATE-v0.3.13-JA.md)。AutoLogは「装備 → 体力・AutoLog設定」、テーマは「設定」。接続先がIGNのBotは番号に関係なくautoworld・autotp等を使用できます。
+最新版の操作は [UPDATE-v0.3.14-JA.md](UPDATE-v0.3.14-JA.md)。AutoLogは「装備 → 体力・AutoLog設定」、テーマは「設定」。接続先がIGNのBotは番号に関係なくautoworld・autotp等を使用できます。
+
+`/admin add user:@相手`でDiscord管理者へpanel/Webを許可できます（Asira本人だけが登録・解除）。最大20体に対応。グループは`all`・`ign`・`2b2e`。
 
 WebはDiscordの `/web`、Discordのボタンは `/panel` です。下記は `/bot target:1 command:内容` の「内容」に入れます。
 
 | 内容 | 動作 |
 | --- | --- |
+| login fresh | 切断済みのこのアカウントだけ保存認証を退避し、再認証して接続 |
+| mineblocks obsidian,netherrack | 範囲内の指定ブロックだけを、上から1チャンクずつ掘る。allで解除 |
+| follow direct Player One | 最短の経路を探して追従 |
+| follow trail Player One | 実際に観測した足跡を追従 |
+| inventory sync | 所持品の再同期を要求 |
+| chatqueue clear | 待機中の公開チャットを取り消し |
+| world coe | IGNにコマンド `/.world coe` を送る |
+| autoworld on coe | IGNのリスポーン後にWorldコマンド |
 | login | Minecraftに接続せずMicrosoft認証を開始 |
 | account set Aslrq01x | ゲーマータグを保存して切り替え。認証はアカウント別に保持 |
 | eatspeed 0.12 | 食事中の移動速度を指定。NoSlowもON |

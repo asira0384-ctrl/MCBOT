@@ -1,10 +1,10 @@
-AsiraClearBot v0.3.13 / Minecraft統合版
+AsiraClearBot v0.3.14 / Minecraft統合版
 
 更新
 1. ZIPを展開し、AsiraClearBotフォルダの中身を既存GitHubのルートへ全て上書き。
    package.json・src・web・vendor・scripts・Dockerfileが同じ階層にある状態にします。
 2. Railwayの新しいデプロイの成功を確認。Variablesと既存のdataを引き継ぎます。
-3. WebをCtrl+F5で再読み込みし、起動ログとWebの表示がv0.3.13か確認。
+3. WebをCtrl+F5で再読み込みし、起動ログとWebの表示がv0.3.14か確認。
 
 保存
 RailwayのMCBOTサービスにVolumeを接続し、Mount Path=/data、DATA_DIR=/data。
@@ -17,13 +17,17 @@ DATA_DIRだけを設定してもVolumeは作成されません。
 ・単体Botを選び、正確なゲーマータグを保存して「ログイン・接続」。
 ・認証コードをコピーし、Microsoft公式ページでBot用アカウントにサインイン。
 ・認証後は自動で接続開始。保存認証が有効なら次回のコード入力は不要です。
+・アカウント追加: 概要 → ＋アカウントを追加（最大20）。
+・採掘: 採掘 → 範囲・Y・ブロックを保存 → 整地開始。上から1チャンクずつ。
+・再認証: 対象Botを切断 → ログイン画面 → このアカウントを再認証。
+・Discord管理者: Asiraから /admin add user:@相手 → panelとWebを利用可能。
 ・AutoLog: Bot → 装備 → 体力・AutoLog設定。戦闘タブにもショートカット。
 ・テーマ: 設定 → テーマ。壁紙・音も変更できます。
 ・接続先: Bot → 概要 → アカウント → 接続先を選択して変更。
 ・IGNへ移す前にIGN_HOST・IGN_PORTを設定。IGNではAntiCrystalは使いません。
-・IGNのWorld・Kit・TPA・Back: 装備タブ。AutoWorldは .world cpe を送ります。
+・IGNのWorld・Kit・TPA・Back: 装備タブ。AutoWorldは /.world coe を送ります。
 ・FeetTrap: 自分の周りにホールを作る/近くのホールへ入る。IGNでは近距離PvP時に自動。
 ・停止: Discord /bot target:all command:stop
 
-詳しい更新内容・コマンドはUPDATE-v0.3.13-JA.md、検証範囲はVALIDATION-v0.3.13.md。
-324件の自動テスト成功。実サーバー・Railway・実アカウントの動作確認は行っていません。
+詳しい更新内容・コマンドはUPDATE-v0.3.14-JA.md、検証範囲はVALIDATION-v0.3.14.md。
+354件の自動テスト成功。実サーバー・Railway・実アカウントの動作確認は行っていません。
