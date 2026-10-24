@@ -106,6 +106,7 @@ class Manager{
     case 'disconnect':this.connectionKeeper?.wanted(id,false,'manual');this.cancelConnection(id);this.reentries.delete(id);clearTimeout(this.transferTimers.get(id));this.transferTimers.delete(id);if(w){w.runtime?.stop();w.stop();await w.bot.logout('バイバイ！');w.destroy();}this.workers.delete(id);this.auth.delete(id);this.attempts.delete(id);results.push(`Bot${id}を切断`);break;
     case 'stop':w?.runtime?.stop();w?.stop();results.push(`Bot${id}停止`);break;
     case 'start':{const started=this.worker(id).start();results.push(started===false?`Bot${id}: 現在の操作が終わり次第採掘を開始します`:`Bot${id}開始`);break;}
+    case 'cleanup':results.push(this.worker(id).requestCleanup());break;
     case 'area':{if(args.length!==4)throw Error('area x1 z1 x2 z2');const [x1,z1,x2,z2]=args.map(v=>integer(v,-30000000,30000000));const area={x1:Math.min(x1,x2),z1:Math.min(z1,z2),x2:Math.max(x1,x2),z2:Math.max(z1,z2)};if((area.x2-area.x1+1)*(area.z2-area.z1+1)>262144)throw Error('最初は512×512ブロック以内にしてください');w?.stop();state.area=area;if(w)w.survey=0;results.push(`Bot${id} 範囲 ${JSON.stringify(area)}`);break;}
     case 'mineblocks':{const registry=w?.bot.registry||require('prismarine-registry')('bedrock_1.26.51'),filter=require('./mining').filter(args.join(' '),registry);w?.stop();state.miningFilter=filter;w?.miner?.reset();results.push('採掘対象: '+(filter.join(', ')||'全ての採掘可能ブロック')+' / 上から1チャンクずつ');break;}
     case 'floor':{const n=integer(args[0],-64,318);if(n>=state.ceiling)throw Error('床はceilingより低く指定');w?.stop();state.floor=n;results.push(`Bot${id}: Y=${n}以下を残す`);break;}

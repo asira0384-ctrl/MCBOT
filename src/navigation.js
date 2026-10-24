@@ -31,11 +31,12 @@ function airDetour(bot,start,goal,clear,margin=1.3){
  }
  plans.sort((a,b)=>a.cost-b.cost);return plans[0]?.path||null;
 }
-function groundPath(bot,start,goal,{block=null,dig=false,canDig=()=>true,stopRadius=.7,limit=700,radius=14}={}){
+function groundPath(bot,start,goal,{block=null,dig=false,canDig=()=>true,stopRadius=.7,limit=700,radius=14,blocked=()=>false}={}){
  start=start.floored();goal=goal.floored();const memo=new Map(),source=bot;bot={blockAt:p=>{const k=`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;if(!memo.has(k))memo.set(k,source.blockAt(p));return memo.get(k);}};
  return search(start,goal,p=>{const out=[];
   for(const [dx,dz]of [[1,0],[-1,0],[0,1],[0,-1]])for(const dy of [0,1,-1]){
    const q=p.offset(dx,dy,dz),under=bot.blockAt(q.offset(0,-1,0)),feet=bot.blockAt(q),head=bot.blockAt(q.offset(0,1,0));let breaking=false;
+   if(blocked(p,q))continue;
    if(!pass(bot,q)){
     if(!dig||dy!==0||[feet,head].some(b=>!b||danger(b)||b.name==='unknown'||b.solid&&(!b.diggable||b.hardness<0||!canDig(b))))continue;
     if(![feet,head].some(b=>b.solid))continue;breaking=true;

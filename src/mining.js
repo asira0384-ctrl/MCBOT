@@ -1,7 +1,7 @@
 'use strict';
 const {Vec3}=require('vec3');
 const {air,hazard,key,itemName}=require('./util');
-const aliases={黒曜石:'obsidian',石:'stone',丸石:'cobblestone',ネザーラック:'netherrack',土:'dirt',岩盤:'bedrock',深層岩:'deepslate',砂:'sand'};
+const aliases={黒曜石:'obsidian',石:'stone',丸石:'cobblestone',ネザーラック:'netherrack',ネザライトブロック:'netherite_block',土:'dirt',岩盤:'bedrock',深層岩:'deepslate',砂:'sand'};
 function filter(value,registry){
  const words=Array.isArray(value)?value:String(value||'all').split(/[,、\s]+/u).filter(Boolean);if(words.length===1&&['all','*','すべて'].includes(words[0]))return [];
  if(!words.length||words.length>64)throw Error('採掘するブロックを1〜64種類、またはallで指定してください');
@@ -27,7 +27,7 @@ class ChunkMining{
   for(let z=a.z1>>4;z<=a.z2>>4;z++)for(let x=a.x1>>4;x<=a.x2>>4;x++){const sx=Math.max(a.x1,x*16),sz=Math.max(a.z1,z*16);if(w.manager.assigned(w,sx,sz))this.chunks.push({x,z,x1:sx,z1:sz,x2:Math.min(a.x2,x*16+15),z2:Math.min(a.z2,z*16+15)});}
   const p=this.bot.entity.position;this.chunks.sort((a,b)=>Math.hypot((a.x1+a.x2)/2-p.x,(a.z1+a.z2)/2-p.z)-Math.hypot((b.x1+b.x2)/2-p.x,(b.z1+b.z2)/2-p.z)||a.z-b.z||a.x-b.x);
  }
- scan(){this.prepare();const w=this.worker,b=this.bot,feet=b.entity.position;this.unknown=0;
+ scan(){this.prepare();const w=this.worker,b=this.bot,feet=b.entity.position;this.unknown=0;this.supportBlocks=[];
   for(let guard=0;guard<3;guard++){
    const c=this.chunk=this.chunks[this.index];if(!c){this.done=true;this.state='担当チャンクの指定ブロックを確認済み';return null;}
    b.worldMirror?.request(c.x,c.z,(w.state.floor+1)>>4,this.top()>>4);this.layer??=this.top();
@@ -35,7 +35,8 @@ class ChunkMining{
     for(let z=c.z1;z<=c.z2;z++)for(let x=c.x1;x<=c.x2;x++){
      const block=b.blockAt(new Vec3(x,y,z));if(!block||block.name==='unknown'){unknown++;continue;}
      if(air(block)||hazard(block)||!block.diggable||block.hardness<0||w.owned(block.position)||!wanted(w,block))continue;
-     if(w.underPlayer(block.position)||(w.failed.get(key(block.position))||0)>Date.now()||w.manager.claims.has(`${b.dimensionId}:${key(block.position)}`)){blocked=true;continue;}
+     if(w.underPlayer(block.position)){blocked=true;this.supportBlocks.push({x,y,z});continue;}
+     if((w.failed.get(key(block.position))||0)>Date.now()||w.manager.claims.has(`${b.dimensionId}:${key(block.position)}`)){blocked=true;continue;}
      targets.push(block);
     }
     this.layer=y;this.unknown=unknown;
@@ -49,7 +50,7 @@ class ChunkMining{
   this.state='次の担当チャンクを確認';return null;
  }
  goal(){const c=this.chunk;if(!c)return null;return new Vec3((c.x1+c.x2)/2,this.bot.entity.position.y,(c.z1+c.z2)/2);}
- snapshot(){return {order:'chunk-top-down',filter:this.worker.state.miningFilter||[],state:this.state,chunk:this.chunk?{x:this.chunk.x,z:this.chunk.z}:null,layer:this.layer,index:this.index,total:this.chunks.length,unknown:this.unknown,done:this.done};}
+ snapshot(){return {order:'chunk-top-down',filter:this.worker.state.miningFilter||[],state:this.state,chunk:this.chunk?{x:this.chunk.x,z:this.chunk.z}:null,layer:this.layer,index:this.index,total:this.chunks.length,unknown:this.unknown,done:this.done,supportBlocks:(this.supportBlocks||[]).slice(0,32)};}
  destroy(){this.bot.removeListener('worldUpdate',this.onUpdate);}
 }
 module.exports={ChunkMining,filter,wanted,stands};

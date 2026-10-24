@@ -77,7 +77,7 @@ class Runtime{
  motionTick(){
   const b=this.bot;this.telemetry.sample();this.travel.recoverAnti?.(!this.paused);
   if(!b.connected||b.ended||b.dead||this.paused||this.safety.active||!b.entity)return;
-  if(this.restock.running){this.travel.stopFollowing();return;}if(this.worker.running||this.worker.startRequested)return;
+  if(this.restock.running){this.travel.stopFollowing();return;}if(this.worker.running||this.worker.startRequested||this.worker.cleanupRequested&&!this.travel.walking)return;
   if(this.travel.walking){this.travel.driveStep(this.travel.walking);return;}
   const enemy=this.canFight()&&!this.travel.route?this.chooseTarget():null;
   const healing=(this.consumeTask&&b.handUse?.kind==='food')||this.needsFood();
@@ -112,7 +112,7 @@ class Runtime{
   if(low&&w.running){this.resumeMining=true;w.stop();}
   if(low&&!this.paused&&b.find('enchanted_golden_apple'))this.startUse('体力回復',b.find('enchanted_golden_apple'));
   if(!low&&!this.paused&&!this.travel.route&&!this.pendingMove)await this.combatPulse();
-  if(w.running)return;if(this.busy||Date.now()<(this.retryAt||0))return;
+  if(w.running||w.cleanupRequested&&!low&&!this.travel.route&&!this.travel.flight)return;if(this.busy||Date.now()<(this.retryAt||0))return;
   if(low&&w.running){this.resumeMining=true;w.stop();}
   if(w.busy)return;
   if(this.pendingMove&&(!low||!b.find('enchanted_golden_apple'))){const args=this.pendingMove;this.pendingMove=null;this.paused=false;this.travel.command(...args);}
@@ -146,7 +146,7 @@ class Runtime{
  noticeOnce(text,game=true){if(this.lastWarning===text&&Date.now()-(this.lastWarningAt||0)<30000)return;this.lastWarning=text;this.lastWarningAt=Date.now();this.notice(text,game);}
  wakeCombat(){if(this.destroyed||this.combatWakeTimer)return;this.combatWakeTimer=setTimeout(()=>{this.combatWakeTimer=null;this.nextCombatAt=Date.now()+25;this.combatPulse().catch(e=>{if(e.code!=='HAND_BUSY'&&!this.destroyed)this.noticeOnce('戦闘: '+e.message,false);});},Math.max(0,(this.nextCombatAt||0)-Date.now()));this.combatWakeTimer.unref?.();}
  async combatPulse(){
-  const b=this.bot;if(this.worker.running||this.worker.startRequested||this.combatBusy||this.destroyed||!b.connected||b.ended||b.loggingOut||b.dead||this.paused||this.safety.active||this.travel.route||this.pendingMove||!this.canFight()||this.restock.running||this.receiving||b.manualInventoryBusy)return;
+  const b=this.bot;if(this.worker.running||this.worker.startRequested||this.worker.cleanupRequested||this.combatBusy||this.destroyed||!b.connected||b.ended||b.loggingOut||b.dead||this.paused||this.safety.active||this.travel.route||this.pendingMove||!this.canFight()||this.restock.running||this.receiving||b.manualInventoryBusy)return;
   const low=this.needsFood();
   if(low||b.handUse||this.consumeTask)return;
   const enemy=this.chooseTarget();if(!enemy)return;b.lowPriorityHandBlockedUntil=Date.now()+250;this.target=enemy;this.engagedAt=Date.now();
