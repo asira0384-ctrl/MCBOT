@@ -1,10 +1,10 @@
-# v0.3.15 最初に読む
+# v0.3.16 最初に読む
 
 ## 既存のRailwayを更新
 
 1. ZIPを解凍します。
 2. `AsiraClearBot` フォルダの中身を既存GitHubへ上書きします。`src`・`web`・`vendor`・`scripts`・`package.json`・`package-lock.json`・Dockerfileを含めます。
-3. Railwayのデプロイ成功後、起動ログとWeb右上の `v0.3.15` を確認します。古いWebが残る場合はCtrl+F5で更新します。
+3. Railwayのデプロイ成功後、起動ログとWeb右上の `v0.3.16` を確認します。古いWebが残る場合はCtrl+F5で更新します。
 4. この版で一度「接続」を押します。次からは接続希望も保存され、バックエンド再起動時に保存認証で再接続します。
 
 既存の保存データ・Variablesは維持します。IDのVariablesを新たに設定する必要はありません。
@@ -35,4 +35,4 @@ WebのURLがまだなければ、RailwayのMCBOT → Settings → Networking →
 - 接続を止める：「切断」。Webを閉じる操作と違い、再起動時の自動再接続も止めます。
 - 不具合：操作を1回試し、「状態レポート」を保存します。
 
-詳しくは [更新ガイド](UPDATE-v0.3.15-JA.md) と [Web操作](WEB-GUIDE-JA.md) を参照してください。
+詳しくは [更新ガイド](UPDATE-v0.3.16-JA.md) と [Web操作](WEB-GUIDE-JA.md) を参照してください。

@@ -1,6 +1,6 @@
-# v0.3.15 のコマンド
+# v0.3.16 のコマンド
 
-最新版の操作は [UPDATE-v0.3.15-JA.md](UPDATE-v0.3.15-JA.md)。AutoLogは「装備 → 体力・AutoLog設定」、テーマは「設定」。接続先がIGNのBotは番号に関係なくautoworld・autotp等を使用できます。
+最新版の操作は [UPDATE-v0.3.16-JA.md](UPDATE-v0.3.16-JA.md)。AutoLogは「装備 → 体力・AutoLog設定」、テーマは「設定」。接続先がIGNのBotは番号に関係なくautoworld・autotp等を使用できます。
 
 `/admin add user:@相手`でDiscord管理者へpanel/Webを許可できます（Asira本人だけが登録・解除）。最大20体に対応。グループは`all`・`ign`・`2b2e`。
 
