@@ -31,9 +31,25 @@ function airDetour(bot,start,goal,clear,margin=1.3){
  }
  plans.sort((a,b)=>a.cost-b.cost);return plans[0]?.path||null;
 }
-function groundPath(bot,start,goal,{block=null,stopRadius=.7,limit=600,radius=12}={}){start=start.floored();goal=goal.floored();const memo=new Map(),source=bot;bot={blockAt:p=>{const key=`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;if(!memo.has(key))memo.set(key,source.blockAt(p));return memo.get(key);}};return search(start,goal,p=>{const out=[];for(const [dx,dz]of [[1,0],[-1,0],[0,1],[0,-1]])for(const dy of [0,1,-1]){const q=p.offset(dx,dy,dz);if(!pass(bot,q)||dy===1&&!pass(bot,p.offset(0,1,0)))continue;const under=bot.blockAt(q.offset(0,-1,0)),feet=bot.blockAt(q),head=bot.blockAt(q.offset(0,1,0));let action=dy===1?'jump':'walk',cost=1+(dy>0?3.5:dy<0?.6:0);
-  if(water(feet)||water(under)){if(danger(head)||head?.solid)continue;action='swim';cost+=2.5;}else if(!under?.solid){if(!block||dy!==0||!under?.isAir)continue;const support=[[0,-1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]].some(([x,y,z])=>bot.blockAt(q.offset(x,y-1,z))?.solid);if(!support)continue;action='scaffold';cost+=2;}else if(danger(under))continue;
-  if(dy===1&&(water(bot.blockAt(p))||water(bot.blockAt(p.offset(0,-1,0)))))action='shore';
-  out.push({p:q,cost,action});break;
- }return out;},{radius,limit,stopRadius});}
+function groundPath(bot,start,goal,{block=null,dig=false,canDig=()=>true,stopRadius=.7,limit=700,radius=14}={}){
+ start=start.floored();goal=goal.floored();const memo=new Map(),source=bot;bot={blockAt:p=>{const k=`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;if(!memo.has(k))memo.set(k,source.blockAt(p));return memo.get(k);}};
+ return search(start,goal,p=>{const out=[];
+  for(const [dx,dz]of [[1,0],[-1,0],[0,1],[0,-1]])for(const dy of [0,1,-1]){
+   const q=p.offset(dx,dy,dz),under=bot.blockAt(q.offset(0,-1,0)),feet=bot.blockAt(q),head=bot.blockAt(q.offset(0,1,0));let breaking=false;
+   if(!pass(bot,q)){
+    if(!dig||dy!==0||[feet,head].some(b=>!b||danger(b)||b.name==='unknown'||b.solid&&(!b.diggable||b.hardness<0||!canDig(b))))continue;
+    if(![feet,head].some(b=>b.solid))continue;breaking=true;
+   }
+   if(dy===1&&!pass(bot,p.offset(0,1,0)))continue;
+   let action=breaking?'dig':dy===1?'jump':'walk',cost=1+(dy>0?3.5:dy<0?.6:0)+(breaking?8:0);
+   if(water(feet)||water(under)){if(danger(head)||head?.solid)continue;action='swim';cost+=2.5;}
+   else if(!under?.solid){if(!block||dy<0||!under?.isAir)continue;const support=[[0,-1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]].some(([x,y,z])=>bot.blockAt(q.offset(x,y-1,z))?.solid);if(!support)continue;action='scaffold';cost+=3;}
+   else if(danger(under))continue;
+   if(dy===1&&(water(bot.blockAt(p))||water(bot.blockAt(p.offset(0,-1,0)))))action='shore';out.push({p:q,cost,action});break;
+  }
+  if(block&&goal.y>p.y+1&&pass(bot,p.offset(0,1,0))&&bot.blockAt(p.offset(0,-1,0))?.solid&&!water(bot.blockAt(p)))out.push({p:p.offset(0,1,0),cost:4.5,action:'pillar'});
+  return out;
+ },{radius,limit,stopRadius});
+}
+
 module.exports={airDetour,airPath,groundPath,water,pass};

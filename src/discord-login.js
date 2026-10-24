@@ -2,7 +2,7 @@
 const crypto=require('node:crypto');
 const OWNER=require('./store').OWNER;
 const ID=/^[1-9]\d{16,19}$/;
-function permitted(store,id,owner=OWNER){return String(id)===owner||(store.data.webAccess||[]).some(v=>v.id===String(id));}
+function permitted(store,id,owner=OWNER){return require('./access').operator(store,id,owner)||(store.data.webAccess||[]).some(v=>v.id===String(id));}
 function grant(store,actor,action,user,owner=OWNER){if(String(actor)!==owner)throw Error('Webの利用許可を変更できるのはAsira本人だけです');store.data.webAccess??=[];if(action==='list')return store.data.webAccess.map(v=>({...v}));if(!ID.test(String(user?.id)))throw Error('Discordユーザーを指定してください');if(user.id===owner)throw Error('Asira本人の利用許可は常に有効です');store.data.webAccess=store.data.webAccess.filter(v=>v.id!==user.id);if(action==='add')store.data.webAccess.push({id:user.id,name:String(user.globalName||user.username||user.id).slice(0,80),at:Date.now()});else if(action!=='remove')throw Error('許可操作が不正です');store.save();return store.data.webAccess;
 }
 function profile(user){if(!ID.test(String(user?.id)))throw Error('Discordのユーザー情報を確認できません');const hash=/^(?:a_)?[a-f0-9]{32}$/.test(user.avatar||'')?user.avatar:null;const fallback=Number((BigInt(user.id)>>22n)%6n);return {id:user.id,name:String(user.global_name||user.username||user.id).slice(0,80),username:String(user.username||user.id).slice(0,80),avatar:hash?`https://cdn.discordapp.com/avatars/${user.id}/${hash}.png?size=128`:`https://cdn.discordapp.com/embed/avatars/${fallback}.png`};}

@@ -8,7 +8,7 @@ const COOKIE='asira_session';
 const digest=value=>crypto.createHash('sha256').update(String(value)).digest('hex');
 const random=()=>crypto.randomBytes(32).toString('base64url');
 const fail=(status,message)=>Object.assign(Error(message),{status});
-const itemToken=raw=>digest(raw?[raw.network_id,raw.metadata||0,raw.stack_id||0,raw.count||0].join(':'):'empty');
+const itemToken=raw=>digest(raw?[raw.network_id,raw.metadata||0,raw.count||0,JSON.stringify(raw.extra?.nbt||null)].join(':'):'empty');
 const cleanCode=value=>String(value||'').toUpperCase().replace(/[\s-]/g,'');
 function baseURL(value){
  if(!value)return '';
@@ -58,22 +58,22 @@ class WebControl{
  loginMessage(actor,label){if(this.discordLogin.ready()&&this.isAllowed(String(actor)))return {content:`[DiscordでWeb管理へログイン](${this.base}/)`,allowedMentions:{parse:[]}};if(String(actor)!==this.owner)throw Error('Discordログインの設定がまだ完了していません');const login=this.issueLogin(actor,label);return {content:`[Web管理画面を開く](${login.url})\n本人専用・一度限り・2分間有効です。\n手入力する場合のコード: **${login.code}**`,allowedMentions:{parse:[]}};}
  targets(value){
   const target=String(value||'');if(target==='2b2e'||target==='ign')return [...this.manager.names.keys()].filter(n=>require('./realms').selected(this.manager.store,n)===target);
-  if(target!=='all'&&!/^(?:[1-9]|10|11)$/.test(target))throw fail(400,'Bot番号またはグループを選んでください');
+  if(target!=='all'&&!/^(?:[1-9]|1[0-9]|20)$/.test(target))throw fail(400,'Bot番号またはグループを選んでください');
   return this.manager.targets(target);
  }
  snapshot(){
   const names=this.manager.names,bots=[...names].map(([id,name])=>{
    const w=this.manager.workers.get(id),b=w?.bot,state=this.manager.store.bot(id),r=w?.runtime?.snapshot?.(),p=b?.entity?.position,realm=b?.config?.realm||require('./realms').selected(this.manager.store,id),ign=realm==='ign';
    const item=(raw,slot)=>{if(!raw?.count)raw=null;return {slot,name:raw?(b?.name?.(raw)||raw.name||'unknown'):'',count:raw?.count||0,damage:raw?(b?.damage?.(raw)||0):0,token:itemToken(raw),selected:slot===b?.quickBarSlot};};
-   return {id,name,server:realm,connected:!!b?.connected,dead:!!b?.dead,phase:b?.connectionPhase||'未接続',mode:w?.mode||'offline',health:b?.health??null,absorption:Math.max(0,Number(b?.absorption)||0),chatDelivery:b?require('./chat-delivery').snapshot(b):null,
+   return {id,name,server:realm,connected:!!b?.connected,dead:!!b?.dead,phase:b?.connectionPhase||'未接続',mode:w?.mode||'offline',health:b?.health??null,absorption:Math.max(0,Number(b?.absorption)||0),chatDelivery:b?require('./chat-delivery').snapshot(b):null,chatQueue:b?.chatQueue?.snapshot?.()||{pending:0,waitMs:0},onlinePlayers:b?[...(b.players?.values()||[])].map(p=>p.name):[],mining:w?.miner?.snapshot()||null,
     endpoint:{host:b?.config?.host||(ign?this.env.IGN_HOST:this.env.MC_HOST)|| (ign?'IGN未設定':'2b2e.org'),port:b?.config?.port||Number((ign?this.env.IGN_PORT:this.env.MC_PORT)||19132)},
     position:p?{x:p.x,y:p.y,z:p.z}:null,dimension:b?.dimensionId??0,config:{...defaults,...state.runtime,...(ign?{anticrystal:false}:{})},
-    options:{respawn:state.respawn,autoSupply:state.autoSupply,chat:state.chat,floor:state.floor,ceiling:state.ceiling,area:state.area,scaffold:state.scaffold},
+    messaging:require('./messaging').snapshot(this.manager,id,b),options:{respawn:state.respawn,autoSupply:state.autoSupply,chat:state.chat,floor:state.floor,ceiling:state.ceiling,area:state.area,scaffold:state.scaffold,miningFilter:state.miningFilter||[]},
     inventorySync:{revision:b?.inventoryRevision||0,at:b?.lastInventoryAt||null,pending:b?.pendingStackRequest?{action:b.pendingStackRequest.action,at:b.pendingStackRequest.at}:null,manual:b?.manualInventoryOperation||null,last:b?.lastStackResponse||null},inventory:Array.from({length:36},(_,n)=>item(b?.items?.[n],n)),armor:Array.from({length:4},(_,n)=>item(b?.armor?.[n],n)),offhand:item(b?.offhand?.[0],-1),
     bps:r?.telemetry?.bps||0,verticalBps:r?.telemetry?.verticalBps||0,restock:r?.restock||null,nearby:w?.runtime?.telemetry?require('./tactics').nearby(w.runtime):[],accounts:state.accountHistory||[name],authentication:this.manager.authentication?.(id)||null,authCacheSaved:this.manager.accounts?.snapshot(id,name).saved||false,ignActions:r?.ignActions||state.ignActions||null,followingPlayer:r?.followingPlayer||{...state.follow,points:0},runtime:r?{selfDefense:r.selfDefense,autoLog:r.autoLog,rollbackRecovery:r.rollbackRecovery,paused:r.paused,operation:r.operation,movement:r.movement,target:r.target,combatWaiting:r.combatWaiting,attacksSent:r.attacksSent,totemsUsed:r.totemsUsed,consumption:r.consumption,lastItemUse:r.lastItemUse,crystalCombat:r.crystalCombat,featureErrors:r.featureErrors,lastError:r.lastError}:null,
     packetsReceived:Object.values(b?.packetCounts||{}).reduce((a,n)=>a+Number(n||0),0),corrections:b?.positionCorrections||0,logs:(this.manager.logs.get(id)||[]).slice(-30).map(redact)};
   });
-  return {version:require('../package.json').version,at:this.now(),bots,friends:(this.manager.store.data.friends||[]).map(e=>e.name),enemies:(this.manager.store.data.enemies||[]).map(e=>e.name),audit:this.audit.slice(-30)};
+  return {version:require('../package.json').version,at:this.now(),bots,alerts:this.manager.alerts||[],friends:(this.manager.store.data.friends||[]).map(e=>e.name),enemies:(this.manager.store.data.enemies||[]).map(e=>e.name),audit:this.audit.slice(-30)};
  }
  session(req){
   const cookie=String(req.headers.cookie||'').split(';').map(p=>p.trim()).find(p=>p.startsWith(COOKIE+'='));if(!cookie)return null;
@@ -114,7 +114,7 @@ class WebControl{
   const name=command.split(/\s/)[0].toLowerCase();if(['admin','owner','web'].includes(name))throw fail(403,'管理者の登録はDiscordから行ってください');
   const results=[];for(const [index,id]of ids.entries()){
    if(this.closed)throw fail(503,'終了処理中のため残りの操作を中止しました');
-   try{if(name==='connect'&&this.manager.requestConnection){this.manager.requestConnection(id);results.push({id,ok:true,result:'ログイン・接続を開始しました。認証画面で進行状況を確認してください'});}else if(name==='connect'&&this.manager.accounts&&!this.manager.workers.get(id)?.bot.connected&&!this.manager.accounts.snapshot(id,this.manager.names.get(id)).saved)results.push({id,ok:true,result:'先に単体Botを選んで「Microsoft認証」を押してください。未認証のままサーバーには接続しません'});else results.push({id,ok:true,result:await this.manager.execute(String(id),command,'web')});}catch(e){results.push({id,ok:false,result:String(e.message)});}
+   try{if(name==='anticrystal'&&command.split(/\s+/)[1]!=='off'&&this.manager.realm?.(id)==='ign'&&ids.length>1){results.push({id,ok:true,result:'IGNではAntiをOFFのまま維持します'});continue;}if(['autokit','autotp','autoback','autoworld','kit','tpa','back','world'].includes(name)&&this.manager.realm?.(id)!=='ign'){results.push({id,ok:true,result:'IGN専用操作のため省略'});continue;}if(name==='connect'&&this.manager.requestConnection){this.manager.requestConnection(id);results.push({id,ok:true,result:'ログイン・接続を開始しました。認証画面で進行状況を確認してください'});}else if(name==='connect'&&this.manager.accounts&&!this.manager.workers.get(id)?.bot.connected&&!this.manager.accounts.snapshot(id,this.manager.names.get(id)).saved)results.push({id,ok:true,result:'先に単体Botを選んで「Microsoft認証」を押してください。未認証のままサーバーには接続しません'});else results.push({id,ok:true,result:await this.manager.execute(String(id),command,'web')});}catch(e){results.push({id,ok:false,result:String(e.message)});}
    if(name==='connect'&&index<ids.length-1)await new Promise(resolve=>setTimeout(resolve,1500));
   }
   this.record(ids,name+' / '+(results.every(r=>r.ok)?'受付完了':'一部未完了'));return {ok:results.every(r=>r.ok),result:results.map(r=>`Bot${r.id}: ${r.result}`).join('\n').slice(0,16000),results};
@@ -159,6 +159,7 @@ class WebControl{
    if(pathname==='/api/appearance'){const data=await body(req,12*1024*1024),appearance=await this.once(req,session,()=>require('./appearance').update(this.manager.store,session.discordId||session.owner,data));this.json(res,200,{ok:true,appearance});return;}
    if(pathname==='/api/backup'){this.requireOwner(session);const data=await body(req,36*1024*1024),result=await this.once(req,session,()=>{const backup=require('./backup');if(data.action==='export')return {ok:true,backup:backup.exported(this.manager,data.password)};if(data.action==='restore'){backup.restored(this.manager,data.password,data.backup);this.record([],'暗号化バックアップを復元');return {ok:true,result:'アカウント・設定・壁紙・音声を復元しました'};}throw fail(400,'バックアップ操作を選んでください');});this.json(res,200,result);return;}
    if(pathname==='/api/command'){const data=await body(req);const result=await this.once(req,session,()=>this.command(data));this.json(res,200,result);return;}
+   if(pathname==='/api/messaging'){const data=await body(req,128*1024),result=await this.once(req,session,()=>{const ids=this.targets(data.target),settings=require('./messaging').configure(this.manager,ids,data.section,data.settings||{});this.record(ids,'チャット設定: '+data.section);return {ok:true,settings,result:'選択したBotへ設定を保存しました。重複する自動通知は1体が担当します'};});this.json(res,200,result);this.requestPump();return;}
    if(pathname==='/api/chat'){
     const data=await body(req),result=await this.once(req,session,async()=>{const ids=this.targets(data.target);if(!['public','whisper'].includes(data.type))throw fail(400,'送信先を選んでください');const results=[];for(const id of ids){try{results.push({id,ok:true,result:data.type==='public'?this.manager.say(String(id),data.message):this.manager.whisper(String(id),data.recipient,data.message)});}catch(e){results.push({id,ok:false,result:e.message});}}this.record(ids,data.type==='public'?'公開チャット':'tell');return {ok:results.every(r=>r.ok),result:results.map(r=>`Bot${r.id}: ${r.result}`).join('\n')};});this.json(res,200,result);return;
    }
@@ -166,8 +167,9 @@ class WebControl{
     const data=await body(req),result=await this.once(req,session,async()=>{const ids=this.targets(data.target);if(ids.length!==1||typeof data.approve!=='boolean')throw fail(400,'対象と許可・見送りを選んでください');const r=this.manager.worker(ids[0]).runtime;const message=r.restock.decide(String(data.id||''),data.approve);this.record(ids,data.approve?'今回の補充を許可':'今回の補充を見送り');return {ok:true,result:message};});this.json(res,200,result);return;
    }
    if(pathname==='/api/auth'){
-    const data=await body(req),result=await this.once(req,session,async()=>{const ids=this.targets(data.target);if(ids.length!==1)throw fail(400,'認証はBotを1体選んでください');const authentication=this.manager.requestConnection?this.manager.requestConnection(ids[0]):this.manager.login(ids[0]);this.record(ids,'Minecraft認証');return {ok:true,authentication,message:this.manager.authStatus(ids[0])};});this.json(res,200,result);return;
+    const data=await body(req),result=await this.once(req,session,async()=>{const ids=this.targets(data.target);if(ids.length!==1)throw fail(400,'認証はBotを1体選んでください');const authentication=data.fresh===true?this.manager.reauthenticate(ids[0]):this.manager.requestConnection?this.manager.requestConnection(ids[0]):this.manager.login(ids[0]);this.record(ids,'Minecraft認証');return {ok:true,authentication,message:this.manager.authStatus(ids[0])};});this.json(res,200,result);return;
    }
+   if(pathname==='/api/accounts'){const data=await body(req),result=await this.once(req,session,()=>{const account=require('./account-slots').add(this.manager,data.name,data.realm);this.record([account.id],'アカウントを追加');return {ok:true,account};});this.json(res,200,result);this.requestPump();return;}
    if(pathname==='/api/account'){
     const data=await body(req),result=await this.once(req,session,async()=>{const ids=this.targets(data.target),name=String(data.name||'').trim();if(ids.length!==1||!name||name.length>64||/[\x00-\x1f]/.test(name))throw fail(400,'単体Botとゲーマータグを指定してください');const message=await this.manager.execute(String(ids[0]),'account set '+name,'web');this.record(ids,'Minecraftアカウント変更');return {ok:true,result:message};});this.json(res,200,result);return;
    }

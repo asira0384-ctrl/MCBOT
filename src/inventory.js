@@ -3,7 +3,7 @@ const {request,emptyItem}=require('./protocol');
 const clone=i=>i?structuredClone(i):null;
 const same=(a,b)=>!a?.network_id&&!b?.network_id||!!a&&!!b&&a.network_id===b.network_id&&a.count===b.count&&(a.metadata||0)===(b.metadata||0)&&require('node:util').isDeepStrictEqual(a.extra?.nbt,b.extra?.nbt);
 function canonical(type){return ['hotbar','inventory','hotbar_and_inventory'].includes(type)?'inventory':['shulker','level_entity','container'].includes(type)?'container':type;}
-function changesWithTypes(bot,changes){return changes.map(c=>({...c,type:c.array===bot.items?'inventory':c.array===bot.armor?'armor':c.array===bot.offhand?'offhand':'container'}));}
+function changesWithTypes(bot,changes){return changes.map(c=>({...c,type:c.type|| (c.array===bot.items?'inventory':c.array===bot.armor?'armor':c.array===bot.offhand?'offhand':'container')}));}
 function current(bot,c){return bot.array(c.type)?.[c.slot]||null;}
 function matches(bot,changes){return changes.every(c=>same(current(bot,c),c.item));}
 function windowId(bot,type){return type==='inventory'?0:type==='armor'?120:type==='offhand'?119:typeof bot.window?.id==='number'?bot.window.id:({first:1,last:100}[bot.window?.id]);}
@@ -18,7 +18,7 @@ async function openInventory(bot,signal){signal??=bot.operationSignal;
  bot.inventoryOpening=new Promise((resolve,reject)=>{let timer,syncTimer,retryTimer;
   const clean=()=>{clearTimeout(timer);clearTimeout(syncTimer);clearTimeout(retryTimer);bot.removeListener('inventoryOpenAcknowledged',ack);bot.removeListener('inventoryContents',contents);bot.removeListener('inventoryClosed',closed);bot.removeListener('end',ended);signal?.removeEventListener('abort',aborted);};
   const fail=e=>{clean();if(bot.connected)try{bot.closeContainer();}catch{}bot.inventoryOpen=false;bot.inventoryOpenState.phase='unconfirmed';reject(e);};
-  const finish=()=>{clean();bot.inventoryOpenState.phase='opened';resolve();},ack=()=>{bot.inventoryOpenState.acknowledged=true;bot.inventoryOpenState.confirmedBy='container_open';finish();},contents=wid=>{if(bot.serverAuthoritativeInventory===false&&(wid===0||wid==='inventory')){bot.inventoryOpenState.acknowledged=true;bot.inventoryOpenState.confirmedBy='inventory_content';finish();}},closed=()=>fail(Error('サーバーがインベントリを閉じました')),ended=()=>fail(Error('切断')),aborted=()=>fail(Error('停止しました'));
+  const finish=()=>{clean();bot.inventoryOpenState.phase='opened';resolve();},ack=()=>{bot.inventoryOpenState.acknowledged=true;bot.inventoryOpenState.confirmedBy='container_open';finish();},contents=wid=>{if(wid===0||wid==='inventory'){bot.inventoryOpenState.acknowledged=true;bot.inventoryOpenState.confirmedBy='inventory_content';finish();}},closed=()=>fail(Error('サーバーがインベントリを閉じました')),ended=()=>fail(Error('切断')),aborted=()=>fail(Error('停止しました'));
   bot.on('inventoryOpenAcknowledged',ack);bot.on('inventoryClosed',closed);bot.on('end',ended);signal?.addEventListener('abort',aborted,{once:true});
   bot.on('inventoryContents',contents);
   // Request the screen, then ask legacy peers for actual contents if no open echo arrives.
@@ -35,10 +35,15 @@ function applyResponse(bot,list,response){
    }
   }
 async function transact(bot,action,changes,signal){signal??=bot.operationSignal;
+ // Capture container identities before openInventory can replace their arrays.
+ // A full inventory_content often arrives while the screen is opening.
+ const list=changesWithTypes(bot,changes),before=list.map(c=>clone(current(bot,c)));
  if(signal?.aborted||!bot.connected)throw Error('停止・切断しました');if(bot.inventoryOpening)await bot.inventoryOpening;else if(!bot.inventoryOpen&&!bot.window)await bot.openInventory(signal);
- const id=bot.requestId--,epoch=bot.abortVersion,list=changesWithTypes(bot,changes),legacy=bot.inventoryMode==='legacy'||bot.inventoryMode!=='stack'&&bot.serverAuthoritativeInventory===false;
+ if(!list.every((c,i)=>same(current(bot,c),before[i])))throw Error('インベントリを開く間に所持品が変わりました。最新の枠で再実行してください');
+ action={...action};for(const field of ['source','destination'])if(action[field]){const ref=action[field],type=canonical(typeof ref.slot_type==='string'?ref.slot_type:ref.slot_type?.container_id);action[field]={...ref,stack_id:bot.array(type)?.[ref.slot]?.stack_id||0};}
+ const id=bot.requestId--,epoch=bot.abortVersion,legacy=bot.inventoryMode==='legacy'||bot.inventoryMode!=='stack'&&bot.serverAuthoritativeInventory===false;
  bot.pendingStackRequest={id,action:action.type_id,mode:legacy?'legacy':'stack',at:Date.now(),source:action.source,destination:action.destination};
- const before=list.map(c=>clone(current(bot,c))),type=legacy?'legacy':'stack';
+ const type=legacy?'legacy':'stack';
  try{
   const response=await new Promise((resolve,reject)=>{let timer,refreshTimer,finished=false;
    const clean=()=>{finished=true;clearTimeout(timer);clearTimeout(refreshTimer);bot.client.removeListener('item_stack_response',onResponse);bot.removeListener('inventorySnapshot',onSnapshot);bot.removeListener('end',ended);signal?.removeEventListener('abort',aborted);};
@@ -67,7 +72,7 @@ async function transact(bot,action,changes,signal){signal??=bot.operationSignal;
   });
   bot.lastInventoryAt=Date.now();bot.lastStackResponse={id,status:'ok',mode:type,at:Date.now(),durationMs:Date.now()-(bot.pendingStackRequest?.at||Date.now()),confirmedBy:response.verifiedSnapshot?'inventory_snapshot':'item_stack_response'};
   if(signal?.aborted||epoch!==bot.abortVersion)throw Error('停止しました');return response;
- }catch(e){bot.lastStackResponse={id,status:'failed',mode:type,at:Date.now(),reason:e.message};throw e;}
+ }catch(e){bot.lastStackResponse={id,status:'failed',mode:type,at:Date.now(),reason:e.message};if(bot.connected&&!bot.ended)try{requestSync(bot);bot.client._tick?.();}catch{}throw e;}
  finally{if(bot.pendingStackRequest?.id===id)bot.pendingStackRequest=null;bot.inventoryRevision=(bot.inventoryRevision||0)+1;bot.emit('inventorySnapshot');}
 }
 function touches(bot,slot){const request=bot.pendingStackRequest;if(!request)return false;return [request.source,request.destination].some(ref=>ref&&['hotbar','inventory','hotbar_and_inventory'].includes(typeof ref.slot_type==='string'?ref.slot_type:ref.slot_type?.container_id)&&ref.slot===slot);}

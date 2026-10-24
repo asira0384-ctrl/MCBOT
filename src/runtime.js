@@ -15,7 +15,7 @@ class Runtime{
   this.autoLog=new(require('./auto-log').AutoLog)(this);this.ignActions=new(require('./ign-actions').IgnActions)(this);this.follower=new(require('./follow').TrailFollower)(this);this.selfDefense=new(require('./self-defense').SelfDefense)(this);
   this.onEquipment=()=>this.wakeEquipment();this.bot.on('inventorySnapshot',this.onEquipment);this.bot.on('totemUsed',this.onEquipment);
   this.bot.on('inventory',(_,item)=>{if(item&&equipment.wanted(this.bot.name(item))){this.dirty=true;queueMicrotask(()=>{if(!this.destroyed)this.tick().catch(e=>this.noticeOnce('AutoSlot: '+e.message));});}});
-  this.bot.on('health',()=>{if(this.bot.health>this.config.healHearts*2)this.healLatch=null;if(this.needsFood()){if(this.worker.running)this.worker.stop();this.startUse('体力回復',this.bot.find('enchanted_golden_apple'));}queueMicrotask(()=>{if(!this.destroyed)this.tick().catch(e=>this.noticeOnce(e.message));});});
+  this.bot.on('health',()=>{if(this.bot.health>this.config.healHearts*2)this.healLatch=null;if(this.needsFood()){if(this.worker.running){this.resumeMining=true;this.worker.stop();}this.startUse('体力回復',this.bot.find('enchanted_golden_apple'));}queueMicrotask(()=>{if(!this.destroyed)this.tick().catch(e=>this.noticeOnce(e.message));});});
   this.bot.on('totemUsed',()=>{this.totemsUsed++;if(this.worker.running)this.worker.stop();this.wakeEquipment();this.notice('Totemが割れました。オフハンドを補充します');});
   this.bot.on('dimensionChanged',()=>{this.combatAbort?.abort();this.consumeAbort?.abort();});
   this.bot.on('death',()=>{this.combatAbort?.abort();this.consumeAbort?.abort();this.travel.stopFollowing();this.safety.cancel();this.abort?.abort();this.travel.cancel(false);this.receiving=false;this.target=null;if(worker.state.respawn)this.bot.requestRespawn();this.notice('死亡・自動リスポーン待ち');});
@@ -29,7 +29,7 @@ class Runtime{
   this.motionTimer=setInterval(()=>{const at=Date.now(),started=performance.now();this.loopTiming??={maxLagMs:0};const lag=Math.max(0,at-(this.lastMotionAt||at)-50);this.lastMotionAt=at;this.loopTiming.lagMs=lag;this.loopTiming.maxLagMs=Math.max(this.loopTiming.maxLagMs,lag);try{this.motionTick();}catch(e){this.combatWaiting='経路確認待ち: '+e.message;}finally{this.loopTiming.motionMs=+(performance.now()-started).toFixed(2);}},50);this.motionTimer.unref?.();
   this.timer=setInterval(()=>this.tick().catch(e=>{if(e.code==='PATH_WAIT'){this.lastError=e.message;this.travel.waiting=e.message+'（5秒後に再確認）';this.retryAt=Date.now()+5000;this.bot.clearControlStates();this.noticeOnce(this.travel.waiting);return;}if(e.message!==this.lastError){this.lastError=e.message;this.notice(e.message);}this.retryAt=Date.now()+300;if(!this.bot.handUse&&!this.bot.manualInventoryBusy)this.bot.closeContainer();if(this.travel.following)this.travel.following.plannedAt=0;if(this.travel.flight){this.travel.flight.paused='replan';this.travel.flight.retryAt=Date.now()+500;}}),100);this.timer.unref?.();
  }
- prioritize(feature,on=true){
+ prioritize(feature,on=true){this.resumeMining=false;
   if(!on&&['feettrap','pvp'].includes(feature)){this.crystals.trapAbort?.abort();this.selfDefense.stop();}
   this.combatAbort?.abort();this.latestFeature=feature;this.featureOrder??={};this.featureOrder[feature]=Date.now();this.abort?.abort();this.bot.closeContainer();if(!this.bot.handUse)this.bot.halt();else{this.bot.pathfinder?.stop();this.bot.clearControlStates();}this.retryAt=0;this.featureErrors={};this.lastError='';this.paused=false;this.worker.state.runtimePaused=false;this.dirty=true;
   if(on&&['killaura','crystalaura','pistoncrystal','pvp'].includes(feature)){this.pendingMove=null;this.travel.cancel(false,{preserveAnti:this.config.anticrystal});this.worker.stop();}
@@ -77,7 +77,7 @@ class Runtime{
  motionTick(){
   const b=this.bot;this.telemetry.sample();this.travel.recoverAnti?.(!this.paused);
   if(!b.connected||b.ended||b.dead||this.paused||this.safety.active||!b.entity)return;
-  if(this.restock.running){this.travel.stopFollowing();return;}
+  if(this.restock.running){this.travel.stopFollowing();return;}if(this.worker.running||this.worker.startRequested)return;
   if(this.travel.walking){this.travel.follow(this.travel.walking.goal,undefined,'walk-step',.25);return;}
   const enemy=this.canFight()&&!this.travel.route?this.chooseTarget():null;
   const healing=(this.consumeTask&&b.handUse?.kind==='food')||this.needsFood();
@@ -99,20 +99,21 @@ class Runtime{
  }
  notice(text,game=true){this.events.push({at:Date.now(),text:String(text).slice(0,250)});this.events=this.events.slice(-12);this.manager.notice(this.worker.id,text,{game});}
  async maintenance(name,fn,signal){this.featureErrors??={};const previous=this.featureErrors[name];if(previous?.retryAt>Date.now())return false;const oldOperation=this.operation;this.operation=name;try{await fn();delete this.featureErrors[name];return true;}catch(e){if(signal?.aborted)throw e;if(e.code==='HAND_BUSY')return false;this.featureErrors[name]={message:e.message,at:Date.now(),retryAt:Date.now()+(['Crystal/PA','Jetpack'].includes(name)?350:name==='オフハンド装着'?150:name==='AutoSlot'?250:name==='防具装着'?500:5000)};if(!this.bot.handUse)this.bot.closeContainer();this.noticeOnce(`${name}: ${e.message}。この機能を再試行します`,false);return false;}finally{if(this.operation===name)this.operation=this.busy?oldOperation:null;}}
- stop(cancelSafety=true){this.selfDefense.stop();this.follower.stop();this.combatAbort?.abort();this.consumeAbort?.abort();this.travel.stopFollowing();if(cancelSafety)this.safety.cancel();this.pendingMove=null;this.paused=true;this.worker.state.runtimePaused=true;this.receiving=false;this.travel.cancel(false);this.abort?.abort();this.bot.closeContainer();}
- requestMove(...args){require('./travel').validateGoal(...args);this.combatAbort?.abort();this.abort?.abort();this.worker.stop();this.bot.closeContainer();this.latestFeature='travel';this.follower.stop();this.selfDefense.stop();this.pendingMove=args;this.receiving=false;this.paused=false;this.worker.state.runtimePaused=false;this.retryAt=0;this.manager.store.save();this.notice('移動先を受け付けました。現在の操作を止めて移動します');}
+ stop(cancelSafety=true){this.resumeMining=false;this.selfDefense.stop();this.follower.stop();this.combatAbort?.abort();this.consumeAbort?.abort();this.travel.stopFollowing();if(cancelSafety)this.safety.cancel();this.pendingMove=null;this.paused=true;this.worker.state.runtimePaused=true;this.receiving=false;this.travel.cancel(false);this.abort?.abort();this.bot.closeContainer();}
+ requestMove(...args){this.resumeMining=false;require('./travel').validateGoal(...args);this.combatAbort?.abort();this.abort?.abort();this.worker.stop();this.bot.closeContainer();this.latestFeature='travel';this.follower.stop();this.selfDefense.stop();this.pendingMove=args;this.receiving=false;this.paused=false;this.worker.state.runtimePaused=false;this.retryAt=0;this.manager.store.save();this.notice('移動先を受け付けました。現在の操作を止めて移動します');}
  receive(){this.latestFeature='supply';this.worker.stop();this.stop(false);this.paused=false;this.worker.state.runtimePaused=false;this.retryAt=0;this.processedBoxes.clear();this.receiving=true;this.receivedAt=Date.now();this.dirty=true;this.notice('装備・アイテム・シュルカー受け取り待ち。アイテムは受信直後に整理し、最後の受信から3秒で待機を終了します');}
  snapshot(){return {telemetry:this.telemetry.sample(),restock:this.restock.snapshot(),autoLog:this.autoLog.snapshot(),ignActions:this.ignActions.snapshot(),followingPlayer:this.follower.snapshot(),selfDefense:this.selfDefense.snapshot(),rollbackRecovery:{antiPaused:Date.now()<(this.burrowBlockedUntil||0),speedPaused:Date.now()<(this.speedBlockedUntil||0)},busy:this.busy,operation:this.operation||null,consumption:this.bot.handUse?{...this.bot.handUse}:null,lastItemUse:this.bot.lastItemUse||null,autoSlotPending:this.dirty,lastAutoSlotVerifiedAt:this.lastSort||null,latestFeature:this.latestFeature||null,lastError:this.lastError,featureErrors:this.featureErrors||{},pendingMove:this.pendingMove||null,waterSafety:this.safety.snapshot(),crystalCombat:this.crystals.snapshot(),inventoryMode:this.bot.inventoryMode,serverAuthoritativeInventory:this.bot.serverAuthoritativeInventory,paused:this.paused,combatWaiting:this.combatWaiting,target:this.target?.name||null,attacksSent:this.attacks,totemsUsed:this.totemsUsed,receiving:this.receiving,travel:this.travel.route?{mode:this.travel.route.mode,dimension:this.travel.route.dimension,destination:this.travel.route.destination}:null,movement:this.travel.waiting,flight:!!this.travel.flight,burrowActive:!!this.travel.embed,config:this.config,offhand:this.bot.name(this.bot.offhand?.[0]),armor:(this.bot.armor||[]).map(i=>this.bot.name(i)),lastEvent:this.events.at(-1)||null};}
  async tick(){const b=this.bot,w=this.worker;if(!b.connected||b.ended||b.loggingOut||!b.entity)return;
   if(b.dead){if(w.state.respawn)b.requestRespawn();return;}
-  if(await this.autoLog.check())return;this.ignActions.tick();
+  if(await this.autoLog.check())return;this.ignActions.tick();if(w.startRequested){if(!this.busy&&!w.busy){w.controlBusy=false;try{w.start();}catch(e){w.startRequested=false;this.notice(e.message);}}return;}
   if(this.safety.update()||this.safety.active)return;
   const low=this.needsFood();
-  if(low&&w.running)w.stop();
+  if(!low&&this.resumeMining&&!this.consumeTask&&!b.handUse&&!w.running){this.resumeMining=false;w.startRequested=true;return;}
+  if(low&&w.running){this.resumeMining=true;w.stop();}
   if(low&&!this.paused&&b.find('enchanted_golden_apple'))this.startUse('体力回復',b.find('enchanted_golden_apple'));
   if(!low&&!this.paused&&!this.travel.route&&!this.pendingMove)await this.combatPulse();
-  if(this.busy||Date.now()<(this.retryAt||0))return;
-  if(low&&w.running){w.stop();}
+  if(w.running)return;if(this.busy||Date.now()<(this.retryAt||0))return;
+  if(low&&w.running){this.resumeMining=true;w.stop();}
   if(w.busy)return;
   if(this.pendingMove&&(!low||!b.find('enchanted_golden_apple'))){const args=this.pendingMove;this.pendingMove=null;this.paused=false;this.travel.command(...args);}
   this.busy=true;w.controlBusy=true;this.abort=new AbortController();const signal=this.abort.signal;b.operationSignal=signal;
@@ -136,7 +137,7 @@ class Runtime{
    if(this.config.anticrystal&&!b.handUse&&!this.travel.route&&!this.travel.flight&&!this.travel.embed&&Date.now()>(this.burrowBlockedUntil||0))this.travel.bury(this.config.burrowDepth);
    
    const enemy=this.canFight()&&!low?this.chooseTarget():null;this.target=enemy;if(enemy)this.engagedAt=Date.now();this.combatWaiting=low?'敵から離れながら回復を優先':enemy?`敵: ${enemy.name}`:this.config.attackAll?'30ブロック以内に攻撃対象がいません':'登録した敵・援護対象が検知範囲にいません';
-   if(enemy&&!this.travel.route)return;if(!this.travel.route&&this.follower.config.enabled){this.follower.tick();return;}
+   if(enemy&&!this.travel.route)return;if(!this.travel.route&&this.follower.config.enabled){await this.follower.work(signal);return;}
    if(this.crystals.piston)await this.crystals.cleanup(signal);
    this.operation=this.travel.route?'座標移動':null;if(!this.config.anticrystal||this.travel.route)this.travel.unbury();b.setControlState('sneak',false);await this.travel.tick(signal);this.lastError='';
   }catch(e){if(!signal.aborted)throw e;}finally{if(b.operationSignal===signal)b.operationSignal=null;this.operation=null;this.busy=false;w.controlBusy=false;}
@@ -144,7 +145,7 @@ class Runtime{
  noticeOnce(text,game=true){if(this.lastWarning===text&&Date.now()-(this.lastWarningAt||0)<30000)return;this.lastWarning=text;this.lastWarningAt=Date.now();this.notice(text,game);}
  wakeCombat(){if(this.destroyed||this.combatWakeTimer)return;this.combatWakeTimer=setTimeout(()=>{this.combatWakeTimer=null;this.nextCombatAt=Date.now()+25;this.combatPulse().catch(e=>{if(e.code!=='HAND_BUSY'&&!this.destroyed)this.noticeOnce('戦闘: '+e.message,false);});},Math.max(0,(this.nextCombatAt||0)-Date.now()));this.combatWakeTimer.unref?.();}
  async combatPulse(){
-  const b=this.bot;if(this.combatBusy||this.destroyed||!b.connected||b.ended||b.loggingOut||b.dead||this.paused||this.safety.active||this.travel.route||this.pendingMove||!this.canFight()||this.restock.running||this.receiving||b.manualInventoryBusy)return;
+  const b=this.bot;if(this.worker.running||this.worker.startRequested||this.combatBusy||this.destroyed||!b.connected||b.ended||b.loggingOut||b.dead||this.paused||this.safety.active||this.travel.route||this.pendingMove||!this.canFight()||this.restock.running||this.receiving||b.manualInventoryBusy)return;
   const low=this.needsFood();
   if(low||b.handUse||this.consumeTask)return;
   const enemy=this.chooseTarget();if(!enemy)return;b.lowPriorityHandBlockedUntil=Date.now()+250;this.target=enemy;this.engagedAt=Date.now();
