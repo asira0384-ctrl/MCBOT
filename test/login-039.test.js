@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),EventEmitter=require('node:events');
 const bedrock=require('bedrock-protocol'),{Store}=require('../src/store'),{Manager}=require('../src/manager'),UI=require('../web/ui-state');
 function fixture(t){
- const dir=fs.mkdtempSync(path.join(os.tmpdir(),'asira-login039-')),m=new Manager(new Store(dir)),clients=[],flows=[],original=bedrock.createClient;
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'asira-login039-')),m=new Manager(require('./helpers/accounts').configured(new Store(dir))),clients=[],flows=[],original=bedrock.createClient;
  class Flow{
   constructor(username,directory,options,code){Object.assign(this,{directory,code,msa:{}});flows.push(this);}
   getMinecraftBedrockToken(){this.code({user_code:'DEVICE-'+flows.length,expires_in:600});return new Promise((resolve,reject)=>{this.reject=reject;this.finish=name=>{fs.mkdirSync(this.directory,{recursive:true});fs.writeFileSync(path.join(this.directory,'user_live-cache.json'),JSON.stringify({token:{refresh_token:'PRIVATE-CREDENTIAL'}}));const payload=Buffer.from(JSON.stringify({extraData:{displayName:name}})).toString('base64url');resolve({chain:['first','header.'+payload+'.signature']});};});}

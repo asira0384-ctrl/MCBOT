@@ -20,11 +20,11 @@ test('inventory_content is a usable acknowledgement on peers that omit container
 test('drag tokens survive wire stack-ID renewal and distinguish NBT, counts and item types',()=>{
  const {itemToken}=require('../src/web'),a={network_id:1,count:1,stack_id:3,extra:{nbt:{tag:'a'}}};assert.equal(itemToken(a),itemToken({...a,stack_id:55}));assert.notEqual(itemToken(a),itemToken({...a,count:2}));assert.notEqual(itemToken(a),itemToken({...a,extra:{nbt:{tag:'b'}}}));assert.notEqual(itemToken(a),itemToken({...a,network_id:2}));
 });
-test('World sends /.world coe through command_request with no public text packet',async t=>{
- const {b,packets}=adapter(t);assert.equal(b.world(),true);const command=packets.find(p=>p.name==='command_request');assert.equal(command.params.command,'/.world coe');assert.equal(packets.filter(p=>p.name==='text').length,0);assert.throws(()=>b.world('coe\n/kill'),/不正/);
+test('World sends /world cpe through command_request with no public text packet',async t=>{
+ const {b,packets}=adapter(t);assert.equal(b.world(),true);const command=packets.find(p=>p.name==='command_request');assert.equal(command.params.command,'/world cpe');assert.equal(packets.filter(p=>p.name==='text').length,0);assert.throws(()=>b.world('coe\n/kill'),/不正/);
 });
 test('IGN AutoWorld sends a slash command after confirmed respawn and keeps initial spawn quiet',()=>{
- const {IgnActions}=require('../src/ign-actions'),sent=[],b=Object.assign(new EventEmitter(),{connected:true,terrainReady:true,dead:false,config:{realm:'ign'},command:c=>sent.push(c)}),r={bot:b,worker:{id:12,state:{ignActions:{autoWorld:true,worldName:'coe'}}},notice(){}};const actions=new IgnActions(r);b.emit('spawn');assert.equal(actions.queue.length,0);b.emit('respawned');actions.nextAt=0;actions.tick();assert.deepEqual(sent,['/.world coe']);actions.destroy();
+ const {IgnActions}=require('../src/ign-actions'),sent=[],b=Object.assign(new EventEmitter(),{connected:true,terrainReady:true,dead:false,config:{realm:'ign'},command:c=>sent.push(c)}),r={bot:b,worker:{id:12,state:{ignActions:{autoWorld:true,worldName:'cpe'}}},notice(){}};const actions=new IgnActions(r);b.emit('spawn');assert.equal(actions.queue.length,0);b.emit('respawned');actions.nextAt=0;actions.tick();assert.deepEqual(sent,['/world cpe']);actions.destroy();
 });
 test('20 slots retain the old IGN number and survive restart and newly added slots',t=>{
  const slots=require('../src/account-slots'),s=store(t),names=slots.load(s,{BOT_NAMES:Array.from({length:19},(_,i)=>'Account '+i).join(','),IGN_BOT_NAME:'IGN Alt'});assert.equal(names.size,20);assert.equal(names.get(11),'IGN Alt');assert.equal(names.get(12),'Account 10');const m={store:s,names};slots.save(m);const reloaded=slots.load(new Store(s.dir),{});assert.deepEqual([...reloaded],[...names]);assert.throws(()=>slots.add(m,'Twenty One'),/20/);

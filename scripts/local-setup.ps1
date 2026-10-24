@@ -7,13 +7,12 @@ try {
     if ($owner -notmatch '^[1-9][0-9]{16,19}$') { throw 'メンションではなく数字のユーザーIDを入力してください。' }
     $guild = (Read-Host 'DiscordサーバーID（空欄も可）').Trim()
     if ($guild -and $guild -notmatch '^[1-9][0-9]{16,19}$') { throw 'DiscordサーバーIDが正しくありません。' }
-    $names = (Read-Host 'Bot用Minecraftゲーマータグ（複数はコンマ区切り）').Trim()
-    if (-not $names -or $names -match '[\x22\x27\r\n]') { throw 'ゲーマータグを入力してください。引用符は不要です。' }
+    Write-Host 'Minecraftのゲーマータグは起動後にWebから追加します。'
     $secret = Read-Host '自分のDiscord Botトークン（入力は非表示）' -AsSecureString
     $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secret)
     try { $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
     if (-not $token -or $token -match '[\x22\x27\s]') { throw 'Discord Botトークンが正しくありません。' }
-    $lines = @("DISCORD_OWNER_ID=$owner", "DISCORD_TOKEN='$token'", "DISCORD_GUILD_ID=$guild", 'MC_HOST=2b2e.org', 'MC_PORT=19132', "BOT_NAMES='$names'", 'MC_VERSION=1.26.51', 'DATA_DIR=./data', 'PORT=3000')
+    $lines = @("DISCORD_OWNER_ID=$owner", "DISCORD_TOKEN='$token'", "DISCORD_GUILD_ID=$guild", 'MC_HOST=2b2e.org', 'MC_PORT=19132', 'MC_VERSION=1.26.51', 'DATA_DIR=./data', 'PORT=3000')
     [IO.File]::WriteAllLines((Join-Path (Get-Location) '.env'), $lines, (New-Object System.Text.UTF8Encoding($false)))
     $token = $null
     Write-Host '設定を保存しました。.envとdataフォルダーは人に渡さないでください。'
