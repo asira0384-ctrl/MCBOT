@@ -1,34 +1,38 @@
-v0.3.14：最初に UPDATE-v0.3.14-JA.md を開いてください。Discordログインと権限、Microsoft認証、保存、IGNと追従、画面の設定が変わっています。
+# v0.3.15 最初に読む
 
-# v0.3.14 最初に読む
-
-## 既存のRailwayを更新する
+## 既存のRailwayを更新
 
 1. ZIPを解凍します。
-2. AsiraClearBotフォルダの**中身**を既存GitHubリポジトリへ上書きします。src・web・vendor・scripts・package.json・package-lock.json・Dockerfileを含めます。
-3. Railwayの新しいデプロイが成功するまで待ちます。Variablesとdataは引き継ぎます。
-4. 起動ログとWeb右上がv0.3.14か確認します。WebはCtrl+F5で更新してください。
+2. `AsiraClearBot` フォルダの中身を既存GitHubへ上書きします。`src`・`web`・`vendor`・`scripts`・`package.json`・`package-lock.json`・Dockerfileを含めます。
+3. Railwayのデプロイ成功後、起動ログとWeb右上の `v0.3.15` を確認します。古いWebが残る場合はCtrl+F5で更新します。
+4. この版で一度「接続」を押します。次からは接続希望も保存され、バックエンド再起動時に保存認証で再接続します。
 
-認証を残すため、MCBOTにVolumeを接続し、Mount Path=/data・DATA_DIR=/dataとします。DATA_DIRだけの設定ではVolumeは作成されません。
+既存の保存データ・Variablesは維持します。IDのVariablesを新たに設定する必要はありません。
 
-## WebからBot1を認証して接続する
+## ログインを残す準備
 
-1. Discordで /web を実行し、Webの「Discordでログイン」から入ります。許可設定はUPDATE-v0.3.12-JA.mdを参照してください。
-2. Bot1を選択。必要なら「Minecraftアカウント」で正確なゲーマータグを保存します。
-3. ログイン・接続を押し、コードが出たら https://www.microsoft.com/link で入力します。
-4. Bot用アカウントでサインインすると、Minecraftへの接続を自動で開始します。
-5. 同じ画面で接続の段階・失敗理由を確認できます。再試行・キャンセルもここから操作します。次からは保存した認証を再利用し、失効した場合だけ再認証します。
+MCBOTにRailway Volumeを接続し、Mount Pathを `/data`、DATA_DIRを `/data` にします。DATA_DIRだけではVolumeは作成されません。既存のデータが別の保存先にある場合は、消さずにバックアップして移行してください。
 
-初回でまだWebのURLがない場合は、RailwayのMCBOT→Settings→Networking→Generate Domainを使い、生成されたhttpsのURLをDiscordの /web url: に設定します。HTTPポートはPORT（未指定なら3000）です。
+Webの更新・タブを閉じる操作ではMinecraftを切断しません。Webログインは同じ公開ドメイン・同じブラウザで保持されます。Cookieを削除した時などは再ログインします。再デプロイ中のMinecraft接続は一度切れ、その後再接続します。
 
-## ローカルで動かす
+## Webでアカウントを追加・接続
 
-Node.js 24を入れ、.env.exampleを.envにコピーしてDISCORD_TOKEN等を設定します。作業フォルダで npm ci → npm start。DATA_DIRには保存先フォルダを指定してください。自分のPCからUDPでサーバーへ通信できる環境が必要です。
+1. Discordの `/web` から開き、「Discordでログイン」を使います。
+2. 初回の空の一覧なら「＋アカウント追加」を押し、正確なゲーマータグと接続先を選んで追加します。既存のアカウントは一覧をそのまま使えます。
+3. Botを1体選び「ログイン・接続」。コードが出たらコピーし、Microsoft公式ページでBot用のアカウントにサインインします。
+4. 認証が終わるとMinecraftへ接続します。失敗時は同じ画面の理由を確認します。次回は保存認証を使い、失効した場合だけ再認証します。
 
-## 確認しながら操作する
+Minecraftのゲーマータグ・グリーター対象のIDはWebへ入力します。`BOT_NAMES`・`IGN_BOT_NAME`・`GREET_TARGET_ID` のVariables設定は不要です。IGNの接続先IP・ポートは引き続き `IGN_HOST`・`IGN_PORT` を設定します。
 
-最初はBot1だけで接続・アイテム移動・食事・歩行を確認してください。Webの「装備」で手動操作した後、AutoSlotは30秒待機します。「停止」は移動と戦闘を止めます。「音をテスト」で音を確認できます。
+WebのURLがまだなければ、RailwayのMCBOT → Settings → Networking → Generate Domain。生成されたHTTPSのURLをDiscordの `/web url:` に保存します。WebのポートはPORT、未指定なら3000です。
 
-使えない操作があれば、実行直後に「状態レポート」を保存してください。操作待ち・サーバー確認・地形・飲食・PA・Jetpackのどこで止まっているかを記録します。
+## よく使う場所
 
-詳しくはUPDATE-v0.3.11-JA.mdとWEB-GUIDE-JA.mdを参照してください。
+- グリーター：対象Botを選ぶ → チャット → グリーターの「設定を開く」→ 対象ID・文章・ONを保存。
+- IGN World：移動 → IGN専用操作 → World名 `cpe` → 実行。送信コマンドは `/world cpe`。
+- 全員ON/OFF：グループを選ぶ → 各機能の「⋯」。
+- 見た目：設定 → テーマ・壁紙・操作音。
+- 接続を止める：「切断」。Webを閉じる操作と違い、再起動時の自動再接続も止めます。
+- 不具合：操作を1回試し、「状態レポート」を保存します。
+
+詳しくは [更新ガイド](UPDATE-v0.3.15-JA.md) と [Web操作](WEB-GUIDE-JA.md) を参照してください。

@@ -37,14 +37,15 @@ class WebControl{
    ['/assets/app.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'app.js'))}],
    ['/favicon.svg',{type:'image/svg+xml',buffer:fs.readFileSync(path.join(directory,'favicon.svg'))}]
   ]);
-  for(const v of manager.store.data.webSessions||[])if(v.owner===this.owner&&this.isAllowed(v.discordId||v.owner)&&/^[a-f0-9]{64}$/.test(v.key)&&v.expires>this.now()&&typeof v.csrf==='string')this.sessions.set(v.key,{csrf:v.csrf,expires:v.expires,label:String(v.label||'Asira').slice(0,80),owner:this.owner,discordId:v.discordId||v.owner,profile:v.profile||null});
+  this.sessionRepository=new(require('./web-sessions').WebSessions)(manager.store,this.owner,this.now);
+  for(const v of this.sessionRepository.rows())if(v.owner===this.owner&&this.isAllowed(v.discordId||v.owner)&&/^[a-f0-9]{64}$/.test(v.key)&&v.expires>this.now()&&typeof v.csrf==='string')this.sessions.set(v.key,{csrf:v.csrf,expires:v.expires,label:String(v.label||'Asira').slice(0,80),owner:this.owner,discordId:v.discordId||v.owner,profile:v.profile||null});
   this.manager.stateSubscribers??=new Set();this.onStateChange=()=>this.requestPump();this.manager.stateSubscribers.add(this.onStateChange);this.timer=setInterval(()=>this.pump(),1000);this.timer.unref?.();
  }
  isAllowed(id){return require('./discord-login').permitted(this.manager.store,String(id),this.owner);}
  publicProfile(session){return session.profile||{id:session.discordId||this.owner,name:session.label,username:session.label,avatar:null};}
- createSession(req,res,user){for(const [key,s]of this.sessions)if(s.discordId===user.id||s.expires<=this.now())this.sessions.delete(key);if(this.sessions.size>=30)this.sessions.delete(this.sessions.keys().next().value);const token=random(),session={csrf:random(),expires:this.now()+this.sessionTTL,label:user.name,owner:this.owner,discordId:user.id,profile:user};this.sessions.set(digest(token),session);this.persistSessions();const old=res.getHeader('Set-Cookie');res.setHeader('Set-Cookie',[...(old?[].concat(old):[]),this.cookie(req,token,this.sessionTTL/1000)]);return session;}
+ createSession(req,res,user){for(const [key,s]of this.sessions)if(s.expires<=this.now())this.sessions.delete(key);if(this.sessions.size>=60)this.sessions.delete(this.sessions.keys().next().value);const token=random(),session={csrf:random(),expires:this.now()+this.sessionTTL,label:user.name,owner:this.owner,discordId:user.id,profile:user};this.sessions.set(digest(token),session);this.persistSessions();const old=res.getHeader('Set-Cookie');res.setHeader('Set-Cookie',[...(old?[].concat(old):[]),this.cookie(req,token,this.sessionTTL/1000)]);return session;}
  requireOwner(session){if((session.discordId||session.owner)!==this.owner)throw fail(403,'この操作はAsira本人専用です');}
- persistSessions(){this.manager.store.data.webSessions=[...this.sessions].slice(-30).map(([key,s])=>({key,csrf:s.csrf,expires:s.expires,label:s.label,owner:this.owner,discordId:s.discordId||this.owner,profile:s.profile||null}));this.manager.store.save();}
+ persistSessions(revocations=[]){const rows=[...this.sessions].slice(-60).map(([key,s])=>({key,csrf:s.csrf,expires:s.expires,label:s.label,owner:this.owner,discordId:s.discordId||this.owner,profile:s.profile||null}));this.manager.store.data.webSessions=this.sessionRepository.save(rows,revocations);this.manager.store.save();}
  configureURL(actor,value){if(String(actor)!==this.owner)throw fail(403,'本人のみ設定できます');this.base=baseURL(value);this.manager.store.data.webBaseURL=this.base;this.manager.store.save();return this.base;}
  issueLogin(actor,label='Asira'){
   if(this.closed)throw Error('再起動中です。少し待ってください');
@@ -65,7 +66,7 @@ class WebControl{
   const names=this.manager.names,bots=[...names].map(([id,name])=>{
    const w=this.manager.workers.get(id),b=w?.bot,state=this.manager.store.bot(id),r=w?.runtime?.snapshot?.(),p=b?.entity?.position,realm=b?.config?.realm||require('./realms').selected(this.manager.store,id),ign=realm==='ign';
    const item=(raw,slot)=>{if(!raw?.count)raw=null;return {slot,name:raw?(b?.name?.(raw)||raw.name||'unknown'):'',count:raw?.count||0,damage:raw?(b?.damage?.(raw)||0):0,token:itemToken(raw),selected:slot===b?.quickBarSlot};};
-   return {id,name,server:realm,connected:!!b?.connected,dead:!!b?.dead,phase:b?.connectionPhase||'未接続',mode:w?.mode||'offline',health:b?.health??null,absorption:Math.max(0,Number(b?.absorption)||0),chatDelivery:b?require('./chat-delivery').snapshot(b):null,chatQueue:b?.chatQueue?.snapshot?.()||{pending:0,waitMs:0},onlinePlayers:b?[...(b.players?.values()||[])].map(p=>p.name):[],mining:w?.miner?.snapshot()||null,
+   return {id,name,reconnection:this.manager.connectionKeeper?.snapshot(id)||null,server:realm,connected:!!b?.connected,dead:!!b?.dead,phase:b?.connectionPhase||'未接続',mode:w?.mode||'offline',health:b?.health??null,absorption:Math.max(0,Number(b?.absorption)||0),chatDelivery:b?require('./chat-delivery').snapshot(b):null,chatQueue:b?.chatQueue?.snapshot?.()||{pending:0,waitMs:0},onlinePlayers:b?[...(b.players?.values()||[])].map(p=>p.name):[],mining:w?.miner?.snapshot()||null,
     endpoint:{host:b?.config?.host||(ign?this.env.IGN_HOST:this.env.MC_HOST)|| (ign?'IGN未設定':'2b2e.org'),port:b?.config?.port||Number((ign?this.env.IGN_PORT:this.env.MC_PORT)||19132)},
     position:p?{x:p.x,y:p.y,z:p.z}:null,dimension:b?.dimensionId??0,config:{...defaults,...state.runtime,...(ign?{anticrystal:false}:{})},
     messaging:require('./messaging').snapshot(this.manager,id,b),options:{respawn:state.respawn,autoSupply:state.autoSupply,chat:state.chat,floor:state.floor,ceiling:state.ceiling,area:state.area,scaffold:state.scaffold,miningFilter:state.miningFilter||[]},
@@ -76,9 +77,13 @@ class WebControl{
   return {version:require('../package.json').version,at:this.now(),bots,alerts:this.manager.alerts||[],friends:(this.manager.store.data.friends||[]).map(e=>e.name),enemies:(this.manager.store.data.enemies||[]).map(e=>e.name),audit:this.audit.slice(-30)};
  }
  session(req){
-  const cookie=String(req.headers.cookie||'').split(';').map(p=>p.trim()).find(p=>p.startsWith(COOKIE+'='));if(!cookie)return null;
-  const key=digest(cookie.slice(COOKIE.length+1)),session=this.sessions.get(key);if(!session||session.expires<=this.now()||!this.isAllowed(session.discordId||session.owner)){this.sessions.delete(key);return null;}return {...session,key};
+  const token=this.token(req);if(!token)return null;const key=digest(token);let session=this.sessions.get(key);if(this.sessionRepository.revoked(key)){this.sessions.delete(key);return null;}
+  if(!session){const saved=this.sessionRepository.find(key);if(saved){const {key:ignored,...value}=saved;session=value;this.sessions.set(key,value);}}
+  if(!session||session.expires<=this.now()||!this.isAllowed(session.discordId||session.owner)){this.sessions.delete(key);return null;}return {...session,key};
  }
+ token(req){const cookie=String(req.headers.cookie||'').split(';').map(p=>p.trim()).find(p=>p.startsWith(COOKIE+'='));return cookie?.slice(COOKIE.length+1)||null;}
+ renew(req,res,session){if(session.expires-this.now()>this.sessionTTL*.75)return;const current=this.sessions.get(session.key);if(!current)return;current.expires=this.now()+this.sessionTTL;session.expires=current.expires;this.persistSessions();res.setHeader('Set-Cookie',this.cookie(req,this.token(req),this.sessionTTL/1000));}
+
  ip(req){return req.socket.remoteAddress||'local';}
  origin(req){return this.base||((req.socket.encrypted?'https':'http')+'://'+req.headers.host);}
  checkOrigin(req){if(req.headers.origin&&req.headers.origin!==this.origin(req))throw fail(403,'別のサイトからの操作は受け付けません');}
@@ -86,10 +91,10 @@ class WebControl{
   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Frame-Options','DENY');
   res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://cdn.discordapp.com; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'");
  }
- cookie(req,value,seconds){const secure=this.origin(req).startsWith('https:');return `${COOKIE}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${seconds}${secure?'; Secure':''}`;}
+ cookie(req,value,seconds){const secure=this.origin(req).startsWith('https:');return `${COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${seconds}; Expires=${new Date(this.now()+seconds*1000).toUTCString()}${secure?'; Secure':''}`;}
  json(res,status,value){if(res.writableEnded)return;res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value,(_,v)=>typeof v==='bigint'?String(v):v));}
  authenticate(req){const session=this.session(req);if(!session)throw fail(401,'Discordの /web からログインしてください');return session;}
- mutate(req,session){this.checkOrigin(req);if(!sameToken(req.headers['x-csrf-token'],session.csrf))throw fail(403,'画面を再読み込みしてから操作してください');}
+ mutate(req,session){this.checkOrigin(req);if(!sameToken(req.headers['x-csrf-token'],session.csrf))throw Object.assign(fail(403,'画面の認証状態を更新しています。もう一度操作してください'),{code:'CSRF_STALE'});}
  async login(req,res){
   this.checkOrigin(req);const ip=this.ip(req),now=this.now(),previous=this.attempts.get(ip);
   if(previous&&previous.until>now&&previous.count>=8){res.setHeader('Retry-After','60');throw fail(429,'少し待ってから /web で新しいリンクを発行してください');}
@@ -98,7 +103,7 @@ class WebControl{
   if(!/^[A-HJ-NP-Z2-9]{12}$/.test(normalized)||!entry||entry.expires<=now)throw fail(401,'リンクが使用済みか期限切れです。Discordの /web から開き直してください');
   this.codes.delete(digest(normalized));this.attempts.delete(ip);
   for(const [key,value]of this.sessions)if(value.expires<=now)this.sessions.delete(key);
-  if(this.sessions.size>=5)this.sessions.delete(this.sessions.keys().next().value);
+  if(this.sessions.size>=60)this.sessions.delete(this.sessions.keys().next().value);
   const token=random(),session={csrf:random(),expires:now+this.sessionTTL,label:entry.label,owner:this.owner};this.sessions.set(digest(token),session);this.persistSessions();
   res.setHeader('Set-Cookie',this.cookie(req,token,this.sessionTTL/1000));this.json(res,200,{ok:true,csrf:session.csrf,owner:session.label,expires:session.expires});
  }
@@ -112,7 +117,7 @@ class WebControl{
  async command(data){
   const ids=this.targets(data.target),command=String(data.command||'').trim();if(!command||command.length>1000||/[\x00-\x1f]/.test(command))throw fail(400,'コマンドの内容が不正です');
   const name=command.split(/\s/)[0].toLowerCase();if(['admin','owner','web'].includes(name))throw fail(403,'管理者の登録はDiscordから行ってください');
-  const results=[];for(const [index,id]of ids.entries()){
+  if(!ids.length)throw fail(400,'先にWebでアカウントを追加してください');const results=[];for(const [index,id]of ids.entries()){
    if(this.closed)throw fail(503,'終了処理中のため残りの操作を中止しました');
    try{if(name==='anticrystal'&&command.split(/\s+/)[1]!=='off'&&this.manager.realm?.(id)==='ign'&&ids.length>1){results.push({id,ok:true,result:'IGNではAntiをOFFのまま維持します'});continue;}if(['autokit','autotp','autoback','autoworld','kit','tpa','back','world'].includes(name)&&this.manager.realm?.(id)!=='ign'){results.push({id,ok:true,result:'IGN専用操作のため省略'});continue;}if(name==='connect'&&this.manager.requestConnection){this.manager.requestConnection(id);results.push({id,ok:true,result:'ログイン・接続を開始しました。認証画面で進行状況を確認してください'});}else if(name==='connect'&&this.manager.accounts&&!this.manager.workers.get(id)?.bot.connected&&!this.manager.accounts.snapshot(id,this.manager.names.get(id)).saved)results.push({id,ok:true,result:'先に単体Botを選んで「Microsoft認証」を押してください。未認証のままサーバーには接続しません'});else results.push({id,ok:true,result:await this.manager.execute(String(id),command,'web')});}catch(e){results.push({id,ok:false,result:String(e.message)});}
    if(name==='connect'&&index<ids.length-1)await new Promise(resolve=>setTimeout(resolve,1500));
@@ -123,10 +128,11 @@ class WebControl{
   this.headers(res);
   try{
    const url=new URL(req.url,'http://localhost'),pathname=url.pathname;
-   if(pathname==='/health'){this.json(res,this.ready()?200:503,{ok:!!this.ready()});return;}
+   if(pathname==='/health'){const ready=!this.closed&&this.ready();this.json(res,ready?200:503,{ok:!!ready});return;}
    if(!this.enabled)throw fail(404,'Web管理はOFFです');
    if(req.method==='GET'&&['/assets/items.png','/assets/items.json'].includes(pathname)){const file=path.join(__dirname,'..','web',pathname.endsWith('.png')?'items.png':'items.json');if(!fs.existsSync(file))throw fail(404,'アイテム画像が未配置です');res.writeHead(200,{'Content-Type':pathname.endsWith('.png')?'image/png':'application/json; charset=utf-8'});res.end(fs.readFileSync(file));return;}
    if(req.method==='GET'&&this.assets.has(pathname)){const asset=this.assets.get(pathname);res.writeHead(200,{'Content-Type':asset.type});res.end(asset.buffer);return;}
+   if(this.closed)throw Object.assign(fail(503,'サーバー更新中です。保存したログインで再接続します'),{code:'RESTARTING'});
    if(pathname==='/api/login-info'&&req.method==='GET'){this.json(res,200,{discordReady:this.discordLogin.ready(),callbackURL:this.base?this.discordLogin.redirect():null});return;}
    if(pathname==='/api/oauth/start'&&req.method==='GET'){this.discordLogin.start(req,res);return;}
    if(pathname==='/oauth/discord/callback'&&req.method==='GET'){await this.discordLogin.callback(req,res,url);return;}
@@ -134,7 +140,7 @@ class WebControl{
    if(!pathname.startsWith('/api/'))throw fail(404,'ページがありません');
    const session=this.authenticate(req);
    if(req.method==='GET'){
-    if(pathname==='/api/state'){this.json(res,200,{...this.snapshot(),csrf:session.csrf,owner:session.label,profile:this.publicProfile(session),isOwner:(session.discordId||session.owner)===this.owner,appearance:require('./appearance').preferences(this.manager.store,session.discordId||session.owner),storage:{directory:this.manager.store.dir,persistent:!!this.env.RAILWAY_VOLUME_MOUNT_PATH&&require('node:path').relative(this.env.RAILWAY_VOLUME_MOUNT_PATH,this.manager.store.dir).split(require('node:path').sep)[0]!=='..',backupOwnerOnly:true}});return;}
+    if(pathname==='/api/state'){this.renew(req,res,session);this.json(res,200,{...this.snapshot(),csrf:session.csrf,owner:session.label,profile:this.publicProfile(session),isOwner:(session.discordId||session.owner)===this.owner,appearance:require('./appearance').preferences(this.manager.store,session.discordId||session.owner),storage:{directory:this.manager.store.dir,persistent:!!this.env.RAILWAY_VOLUME_MOUNT_PATH&&require('node:path').relative(this.env.RAILWAY_VOLUME_MOUNT_PATH,this.manager.store.dir).split(require('node:path').sep)[0]!=='..',backupOwnerOnly:true}});return;}
     if(/^\/api\/media\/(wallpaper|click|notify)$/.test(pathname)){const asset=require('./appearance').media(this.manager.store,session.discordId||session.owner,pathname.split('/').pop());if(!asset)throw fail(404,'ファイルがありません');res.writeHead(200,{'Content-Type':asset.type});res.end(asset.data);return;}
     if(pathname==='/api/events'){
      if(this.events.size>=12)throw fail(429,'開いている画面を減らしてください');
@@ -155,7 +161,7 @@ class WebControl{
     }
    }
    if(req.method!=='POST')throw fail(404,'操作がありません');this.mutate(req,session);
-   if(pathname==='/api/logout'){this.sessions.delete(session.key);this.persistSessions();res.setHeader('Set-Cookie',this.cookie(req,'',0));this.json(res,200,{ok:true});this.pump();return;}
+   if(pathname==='/api/logout'){this.sessions.delete(session.key);this.persistSessions([session.key]);res.setHeader('Set-Cookie',this.cookie(req,'',0));this.json(res,200,{ok:true});this.pump();return;}
    if(pathname==='/api/appearance'){const data=await body(req,12*1024*1024),appearance=await this.once(req,session,()=>require('./appearance').update(this.manager.store,session.discordId||session.owner,data));this.json(res,200,{ok:true,appearance});return;}
    if(pathname==='/api/backup'){this.requireOwner(session);const data=await body(req,36*1024*1024),result=await this.once(req,session,()=>{const backup=require('./backup');if(data.action==='export')return {ok:true,backup:backup.exported(this.manager,data.password)};if(data.action==='restore'){backup.restored(this.manager,data.password,data.backup);this.record([],'暗号化バックアップを復元');return {ok:true,result:'アカウント・設定・壁紙・音声を復元しました'};}throw fail(400,'バックアップ操作を選んでください');});this.json(res,200,result);return;}
    if(pathname==='/api/command'){const data=await body(req);const result=await this.once(req,session,()=>this.command(data));this.json(res,200,result);return;}
@@ -180,7 +186,7 @@ class WebControl{
     const data=await body(req);const result=await this.once(req,session,async()=>{const ids=this.targets(data.target),slot=Number(data.slot);if(ids.length!==1||!Number.isInteger(slot)||slot<0||slot>35)throw fail(400,'Botとスロットを選んでください');const bot=this.manager.worker(ids[0]).bot;if(!bot.items[slot])throw fail(400,'そのスロットは空です');const runtime=this.manager.worker(ids[0]).runtime;if(runtime)runtime.manualSlotsUntil=Date.now()+30000;await bot.equip(slot);this.record(ids,'アイテムを選択');return {ok:true,result:'アイテムの持ち替えを送信しました'};});this.json(res,200,result);return;
    }
    throw fail(404,'操作がありません');
-  }catch(e){if(res.headersSent){res.end();return;}this.json(res,e.status||(e.code==='HAND_BUSY'?409:400),{ok:false,error:String(e.message||'操作できません').slice(0,1000)});}
+  }catch(e){if(res.headersSent){res.end();return;}this.json(res,e.status||(e.code==='HAND_BUSY'?409:400),{ok:false,error:String(e.message||'操作できません').slice(0,1000),...(e.code==='RESTARTING'||e.code==='CSRF_STALE'?{code:e.code}:{})});}
  }
  async inventoryAction(data){
   const ids=this.targets(data.target),from=Number(data.from),to=Number(data.to);if(ids.length!==1||!Number.isInteger(from)||from<0||from>35||!['swap','drop'].includes(data.action))throw fail(400,'Botとスロットを指定してください');
@@ -202,11 +208,11 @@ class WebControl{
   for(const [key,value]of this.requests)if(now-value.at>600000)this.requests.delete(key);
   for(const [key,value]of this.sessions)if(value.expires<=now)this.sessions.delete(key);
   if(!this.events.size)return;
-  let packet;for(const connection of this.events){const {res,key}=connection;if(!this.sessions.has(key)||!this.isAllowed(this.sessions.get(key)?.discordId||this.sessions.get(key)?.owner)){res.write('event: expired\ndata: {}\n\n');res.end();this.events.delete(connection);continue;}
+  let packet;for(const connection of this.events){const {res,key}=connection;if(this.sessionRepository.revoked(key)||!this.sessions.has(key)||!this.isAllowed(this.sessions.get(key)?.discordId||this.sessions.get(key)?.owner)){res.write('event: expired\ndata: {}\n\n');res.end();this.events.delete(connection);continue;}
    if(res.writableLength>262144){res.end();this.events.delete(connection);continue;}
    packet??='event: state\ndata: '+JSON.stringify(this.snapshot())+'\n\n';res.write(packet);
   }
  }
- close(){this.closed=true;clearTimeout(this.pumpSoon);this.manager.stateSubscribers?.delete(this.onStateChange);clearInterval(this.timer);this.codes.clear();this.sessions.clear();this.requests.clear();for(const {res}of this.events)res.end();this.events.clear();}
+ close(){if(this.closed)return;try{this.persistSessions();}catch{}this.closed=true;clearTimeout(this.pumpSoon);this.manager.stateSubscribers?.delete(this.onStateChange);clearInterval(this.timer);this.codes.clear();this.sessions.clear();this.requests.clear();for(const {res}of this.events)res.end();this.events.clear();}
 }
 module.exports={WebControl,itemToken,baseURL,cleanCode,redact};

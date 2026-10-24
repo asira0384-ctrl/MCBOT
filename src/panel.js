@@ -49,7 +49,7 @@ class ControlPanel{
   if(s.result)description+='\n'+s.result.slice(0,600);
   return {content:'',embeds:[{title:`Bot管理 / ${pages[s.page]} / v${require('../package.json').version}`,description,fields,color:0x5865f2}],components,allowedMentions:{parse:[]}};
  }
- async create(i,target){for(const [id,s]of this.sessions)if(Date.now()-s.updatedAt>3600000)this.sessions.delete(id);const selected=target||String([...this.manager.names.keys()][0]);this.manager.targets(selected);const s={target:selected,page:'home',mode:'walk',dimension:'overworld',actorId:i.user.id,updatedAt:Date.now()};const message=await i.editReply(this.render(s));this.sessions.set(message.id,s);}
+ async create(i,target){if(!this.manager.names.size){await i.editReply({content:'WebでMinecraftアカウントを追加してください。VariablesへのID登録は不要です。',components:this.entryMessage().components,allowedMentions:{parse:[]}});return;}for(const [id,s]of this.sessions)if(Date.now()-s.updatedAt>3600000)this.sessions.delete(id);const selected=target||String([...this.manager.names.keys()][0]);this.manager.targets(selected);const s={target:selected,page:'home',mode:'walk',dimension:'overworld',actorId:i.user.id,updatedAt:Date.now()};const message=await i.editReply(this.render(s));this.sessions.set(message.id,s);}
  modal(id,s,form){const current=this.manager.workers.get(this.ids(s)[0]),b=current?.bot,c=this.settings(s)[0];const p=b?.entity?.position||{x:0,y:64,z:0};const definitions={
   say:['公開チャットに送信',[['message','メッセージ','']]],w:['tellを送信',[['id','相手のゲーマータグ（空白対応）',''],['message','メッセージ','']]],
   move:['移動先の座標',[['x','X',Math.floor(p.x)],['y','Y',Math.floor(p.y)],['z','Z',Math.floor(p.z)]]],
