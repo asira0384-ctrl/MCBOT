@@ -2,7 +2,7 @@
 const {Vec3}=require('vec3'),{air,solid,key}=require('./util');
 function rows(worker){return Object.values(worker.state.owned||{}).filter(o=>o.kind==='scaffold'&&o.dimension===worker.bot.dimensionId);}
 function occupied(worker,q){if(worker.underPlayer(q))return true;return [...(worker.bot.actors?.values()||[])].some(a=>a.player&&(a.dimension===undefined||a.dimension===worker.bot.dimensionId)&&Math.abs(a.position.x-q.x-.5)<.85&&Math.abs(a.position.z-q.z-.5)<.85&&a.position.y>=q.y&&a.position.y<q.y+2.1);}
-function usedByPath(worker,q){return [...worker.manager.workers.values()].some(w=>{if(w.bot.dimensionId!==worker.bot.dimensionId)return false;const t=w.runtime?.travel;return [t?.walking?.goal,...(t?.following?.path||[]).map(n=>n.position)].filter(Boolean).some(p=>Math.floor(p.x)===q.x&&Math.floor(p.z)===q.z&&Math.floor(p.y)-1===q.y);});}
+function usedByPath(worker,q){return [...worker.manager.workers.values()].some(w=>{if(w.bot.dimensionId!==worker.bot.dimensionId)return false;const t=w.runtime?.travel;return [t?.walking?.goal,...(t?.following?.path||[]).map(n=>n.position),...(t?.groundPlan?.path||[]).map(n=>n.position)].filter(Boolean).some(p=>Math.floor(p.x)===q.x&&Math.floor(p.z)===q.z&&Math.floor(p.y)-1===q.y);});}
 function leaves(worker){const all=rows(worker),supports=Object.values(worker.state.owned||{}).filter(o=>o.dimension===worker.bot.dimensionId);return all.filter(o=>!supports.some(other=>other!==o&&other.p.x===o.p.x&&other.p.z===o.p.z&&other.p.y>o.p.y)).sort((a,b)=>b.p.y-a.p.y);}
 function permanent(worker,point){const floor=point.offset(0,-1,0);return solid(worker.bot.blockAt(floor))&&!worker.owned(floor);}
 async function step(worker,signal,{finish=false}={}){

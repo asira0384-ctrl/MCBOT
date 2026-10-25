@@ -27,9 +27,9 @@ class Runtime{
   this.bot.on('end',()=>this.destroy());
   this.combatTimer=setInterval(()=>this.wakeCombat(),25);this.combatTimer.unref?.();
   this.motionTimer=setInterval(()=>{const at=Date.now(),started=performance.now();this.loopTiming??={maxLagMs:0};const lag=Math.max(0,at-(this.lastMotionAt||at)-50);this.lastMotionAt=at;this.loopTiming.lagMs=lag;this.loopTiming.maxLagMs=Math.max(this.loopTiming.maxLagMs,lag);try{this.motionTick();}catch(e){this.combatWaiting='経路確認待ち: '+e.message;}finally{this.loopTiming.motionMs=+(performance.now()-started).toFixed(2);}},50);this.motionTimer.unref?.();
-  this.timer=setInterval(()=>this.tick().catch(e=>{if(e.code==='PATH_WAIT'){this.lastError=e.message;this.travel.waiting=e.message+'（5秒後に再確認）';this.retryAt=Date.now()+5000;this.bot.clearControlStates();this.noticeOnce(this.travel.waiting);return;}if(e.message!==this.lastError){this.lastError=e.message;this.notice(e.message);}this.retryAt=Date.now()+300;if(!this.bot.handUse&&!this.bot.manualInventoryBusy)this.bot.closeContainer();if(this.travel.following)this.travel.following.plannedAt=0;if(this.travel.flight){this.travel.flight.paused='replan';this.travel.flight.retryAt=Date.now()+500;}}),100);this.timer.unref?.();
+  this.timer=setInterval(()=>this.tick().catch(e=>{if(e.code==='PATH_WAIT'){this.lastError=e.message;this.travel.waiting=e.message+'（経路を再確認）';this.retryAt=Date.now()+600;this.travel.groundPlan=null;this.bot.clearControlStates();this.noticeOnce(this.travel.waiting,false);return;}if(e.message!==this.lastError){this.lastError=e.message;this.notice(e.message);}this.retryAt=Date.now()+300;if(!this.bot.handUse&&!this.bot.manualInventoryBusy)this.bot.closeContainer();if(this.travel.following)this.travel.following.plannedAt=0;if(this.travel.flight){this.travel.flight.paused='replan';this.travel.flight.retryAt=Date.now()+500;}}),100);this.timer.unref?.();
  }
- prioritize(feature,on=true){this.resumeMining=false;
+ prioritize(feature,on=true){this.resumeCleanup=false;this.resumeMining=false;
   if(!on&&['feettrap','pvp'].includes(feature)){this.crystals.trapAbort?.abort();this.selfDefense.stop();}
   this.combatAbort?.abort();this.latestFeature=feature;this.featureOrder??={};this.featureOrder[feature]=Date.now();this.abort?.abort();this.bot.closeContainer();if(!this.bot.handUse)this.bot.halt();else{this.bot.pathfinder?.stop();this.bot.clearControlStates();}this.retryAt=0;this.featureErrors={};this.lastError='';this.paused=false;this.worker.state.runtimePaused=false;this.dirty=true;
   if(on&&['killaura','crystalaura','pistoncrystal','pvp'].includes(feature)){this.pendingMove=null;this.travel.cancel(false,{preserveAnti:this.config.anticrystal});this.worker.stop();}
@@ -41,18 +41,19 @@ class Runtime{
   // Finish/cancel an in-flight placement before selecting food; two concurrent
   // equip continuations can otherwise replace the apple just after click_air.
   this.combatAbort?.abort();this.crystals.trapAbort?.abort();
+  if(kind==='体力回復'){this.bot.urgentFoodPending=true;if(this.worker.running){this.resumeMining=true;this.worker.stop();}else if(this.worker.cleanupRequested){this.resumeCleanup=true;this.worker.stop();}this.abort?.abort();}
   if(this.bot.actionHandBusy){if(kind==='体力回復')this.pendingFood=true;return null;}
   const controller=this.consumeAbort=new AbortController();this.consumeTask=(async()=>{
    try{await (kind==='体力回復'?this.bot.eat(controller.signal):this.bot.drink(item,controller.signal));if(kind==='体力回復'){this.lastHeal=Date.now();this.healLatch={at:this.lastHeal,health:this.bot.health};}else this.lastStrength=Date.now();delete this.featureErrors?.[kind];this.dirty=true;this.noticeOnce(kind+'をサーバー更新で確認しました');}
    catch(e){if(!controller.signal.aborted){this.featureErrors??={};this.featureErrors[kind]={message:e.message,at:Date.now(),retryAt:Date.now()+700};this.noticeOnce(kind+': '+e.message,false);}}
-   finally{this.consumeTask=null;this.consumeAbort=null;}
+   finally{this.consumeTask=null;this.consumeAbort=null;this.bot.urgentFoodPending=false;this.bot.emit('handAvailable');}
   })();return this.consumeTask;
  }
  needsFood(){
   const b=this.bot;if(!this.config.heal||this.paused||!b.connected||b.dead||!(b.health>0&&b.health<=this.config.healHearts*2)||!b.find('enchanted_golden_apple'))return false;
   const last=this.healLatch;if(!last)return true;const elapsed=Date.now()-last.at;if(elapsed<2500)return false;
   // Rearm after fresh damage, or after the server's regeneration expires.
-  const regeneration=b.effects?.get(10);return b.health<=last.health-2||b.health<=Math.max(4,this.config.healHearts*2-6)||(!regeneration||regeneration.expires<=Date.now())&&elapsed>=5000;
+  const regeneration=b.effects?.get(10);return b.health<last.health||(!regeneration||regeneration.expires<=Date.now())&&elapsed>=5000;
  }
  meleeTick(enemy){if(this.meleeTask)return this.meleeTask;const task=this.performMelee(enemy).finally(()=>{if(this.meleeTask===task)this.meleeTask=null;});this.meleeTask=task;task.catch(e=>{if(e.code!=='HAND_BUSY')this.meleeState='剣の確認待ち: '+e.message;});return task;}
  async performMelee(enemy,signal){
@@ -89,18 +90,18 @@ class Runtime{
   }
   if(this.paOwnsHand(enemy)){this.travel.stopFollowing();this.combatWaiting='PAを専用実行中・KAとCAを待機';return;}
   if(enemy){this.target=enemy;this.engagedAt=Date.now();if(!this.combatBusy)this.meleeTick(enemy);if(this.selfDefense.motion(enemy))return;this.travel.follow(enemy.position,Date.now()<(this.speedBlockedUntil||0)?0:this.config.chaseSpeed,'chase',this.canSeeEnemy(enemy)?this.config.range*.8:.6);}
-  else if(this.travel.route&&['walk','dig'].includes(this.travel.route.mode)&&this.travel.route.dimension===b.dimensionId)this.travel.follow(this.travel.route.destination,undefined,'route',.65);
+  else if(this.travel.route&&['walk','dig'].includes(this.travel.route.mode)&&this.travel.route.dimension===b.dimensionId)return;
   else if(!this.travel.route&&this.follower.tick())return;else if(this.travel.following)this.travel.stopFollowing();
  }
 
  wakeEquipment(){if(this.destroyed||this.equipmentWake)return;this.equipmentWake=setTimeout(()=>{this.equipmentWake=null;this.equipmentPulse().catch(e=>this.noticeOnce('装備: '+e.message,false));},0);this.equipmentWake.unref?.();}
- async equipmentPulse(){const b=this.bot;if(this.equipmentBusy||this.destroyed||!b.connected||b.loggingOut||b.dead||b.manualInventoryBusy||b.window||b.inventoryOpening||b.mining||b.actionHandBusy?.kind==='mining'||this.restock.running)return;this.equipmentBusy=true;
+ async equipmentPulse(){const b=this.bot;if(this.equipmentBusy||this.destroyed||!b.connected||b.loggingOut||b.dead||b.manualInventoryBusy||b.handUse||b.urgentFoodPending||b.window||b.inventoryOpening||b.mining||b.actionHandBusy?.kind==='mining'||this.restock.running)return;this.equipmentBusy=true;
   try{await this.maintenance('オフハンド装着',()=>equipment.wear(b,{armor:false,totem:this.config.autototem}));if(this.dirty&&!this.paOwnsHand()&&!b.actionHandBusy&&!b.handUse){if(this.config.gear)await this.maintenance('防具装着',()=>equipment.wear(b,{armor:true,totem:this.config.autototem,elytra:!!this.travel.flight}));if(this.config.autoslot&&Date.now()>(this.manualSlotsUntil||0)){const complete=await equipment.autoSlots(b,undefined,{pistoncrystal:this.config.pistoncrystal});this.dirty=!complete;if(complete)this.lastSort=Date.now();}}}finally{this.equipmentBusy=false;}
  }
  notice(text,game=true){this.events.push({at:Date.now(),text:String(text).slice(0,250)});this.events=this.events.slice(-12);this.manager.notice(this.worker.id,text,{game});}
  async maintenance(name,fn,signal){this.featureErrors??={};const previous=this.featureErrors[name];if(previous?.retryAt>Date.now())return false;const oldOperation=this.operation;this.operation=name;try{await fn();delete this.featureErrors[name];return true;}catch(e){if(signal?.aborted)throw e;if(e.code==='HAND_BUSY')return false;this.featureErrors[name]={message:e.message,at:Date.now(),retryAt:Date.now()+(['Crystal/PA','Jetpack'].includes(name)?350:name==='オフハンド装着'?150:name==='AutoSlot'?250:name==='防具装着'?500:5000)};if(!this.bot.handUse)this.bot.closeContainer();this.noticeOnce(`${name}: ${e.message}。この機能を再試行します`,false);return false;}finally{if(this.operation===name)this.operation=this.busy?oldOperation:null;}}
- stop(cancelSafety=true){this.resumeMining=false;this.selfDefense.stop();this.follower.stop();this.combatAbort?.abort();this.consumeAbort?.abort();this.travel.stopFollowing();if(cancelSafety)this.safety.cancel();this.pendingMove=null;this.paused=true;this.worker.state.runtimePaused=true;this.receiving=false;this.travel.cancel(false);this.abort?.abort();this.bot.closeContainer();}
- requestMove(...args){this.resumeMining=false;require('./travel').validateGoal(...args);this.combatAbort?.abort();this.abort?.abort();this.worker.stop();this.bot.closeContainer();this.latestFeature='travel';this.follower.stop();this.selfDefense.stop();this.pendingMove=args;this.receiving=false;this.paused=false;this.worker.state.runtimePaused=false;this.retryAt=0;this.manager.store.save();this.notice('移動先を受け付けました。現在の操作を止めて移動します');}
+ stop(cancelSafety=true){this.resumeCleanup=false;this.resumeMining=false;this.selfDefense.stop();this.follower.stop();this.combatAbort?.abort();this.consumeAbort?.abort();this.travel.stopFollowing();if(cancelSafety)this.safety.cancel();this.pendingMove=null;this.paused=true;this.worker.state.runtimePaused=true;this.receiving=false;this.travel.cancel(false);this.abort?.abort();this.bot.closeContainer();}
+ requestMove(...args){this.resumeCleanup=false;this.resumeMining=false;require('./travel').validateGoal(...args);this.combatAbort?.abort();this.abort?.abort();this.worker.stop();this.bot.closeContainer();this.latestFeature='travel';this.follower.stop();this.selfDefense.stop();this.pendingMove=args;this.receiving=false;this.paused=false;this.worker.state.runtimePaused=false;this.retryAt=0;this.manager.store.save();this.notice('移動先を受け付けました。現在の操作を止めて移動します');}
  receive(){this.latestFeature='supply';this.worker.stop();this.stop(false);this.paused=false;this.worker.state.runtimePaused=false;this.retryAt=0;this.processedBoxes.clear();this.receiving=true;this.receivedAt=Date.now();this.dirty=true;this.notice('装備・アイテム・シュルカー受け取り待ち。アイテムは受信直後に整理し、最後の受信から3秒で待機を終了します');}
  snapshot(){return {telemetry:this.telemetry.sample(),restock:this.restock.snapshot(),autoLog:this.autoLog.snapshot(),ignActions:this.ignActions.snapshot(),followingPlayer:this.follower.snapshot(),selfDefense:this.selfDefense.snapshot(),rollbackRecovery:{antiPaused:Date.now()<(this.burrowBlockedUntil||0),speedPaused:Date.now()<(this.speedBlockedUntil||0)},busy:this.busy,operation:this.operation||null,consumption:this.bot.handUse?{...this.bot.handUse}:null,lastItemUse:this.bot.lastItemUse||null,autoSlotPending:this.dirty,lastAutoSlotVerifiedAt:this.lastSort||null,latestFeature:this.latestFeature||null,lastError:this.lastError,featureErrors:this.featureErrors||{},pendingMove:this.pendingMove||null,waterSafety:this.safety.snapshot(),crystalCombat:this.crystals.snapshot(),inventoryMode:this.bot.inventoryMode,serverAuthoritativeInventory:this.bot.serverAuthoritativeInventory,paused:this.paused,combatWaiting:this.combatWaiting,target:this.target?.name||null,attacksSent:this.attacks,totemsUsed:this.totemsUsed,receiving:this.receiving,travel:this.travel.route?{mode:this.travel.route.mode,dimension:this.travel.route.dimension,destination:this.travel.route.destination}:null,movement:this.travel.waiting,flight:!!this.travel.flight,burrowActive:!!this.travel.embed,config:this.config,offhand:this.bot.name(this.bot.offhand?.[0]),armor:(this.bot.armor||[]).map(i=>this.bot.name(i)),lastEvent:this.events.at(-1)||null};}
  async tick(){const b=this.bot,w=this.worker;if(!b.connected||b.ended||b.loggingOut||!b.entity)return;
@@ -108,6 +109,7 @@ class Runtime{
   if(await this.autoLog.check())return;this.ignActions.tick();if(w.startRequested){if(!this.busy&&!w.busy){w.controlBusy=false;try{w.start();}catch(e){w.startRequested=false;this.notice(e.message);}}return;}
   if(this.safety.update()||this.safety.active)return;
   const low=this.needsFood();
+  if(!low&&this.resumeCleanup&&!this.consumeTask&&!b.handUse){this.resumeCleanup=false;w.cleanupRequested=true;w.mode='cleaning';return;}
   if(!low&&this.resumeMining&&!this.consumeTask&&!b.handUse&&!w.running){this.resumeMining=false;w.startRequested=true;return;}
   if(low&&w.running){this.resumeMining=true;w.stop();}
   if(low&&!this.paused&&b.find('enchanted_golden_apple'))this.startUse('体力回復',b.find('enchanted_golden_apple'));
@@ -121,7 +123,7 @@ class Runtime{
    if(this.travel.recoverCollision&&await this.travel.recoverCollision(signal))return;
    if(low)w.mode='healing';
    if(low&&b.find('enchanted_golden_apple')&&Date.now()-this.lastHeal>=800)this.startUse('体力回復',b.find('enchanted_golden_apple'));
-   if(low)await this.maintenance('オフハンド装着',()=>equipment.wear(b,{armor:false,totem:this.config.autototem},signal),signal);
+   if(low&&!b.handUse&&!b.urgentFoodPending)await this.maintenance('オフハンド装着',()=>equipment.wear(b,{armor:false,totem:this.config.autototem},signal),signal);
    if(low&&b.find('enchanted_golden_apple')){w.mode='healing';if(Date.now()-this.lastHeal>=800)this.startUse('体力回復',b.find('enchanted_golden_apple'));}
    if(low&&!b.find('enchanted_golden_apple'))this.noticeOnce('回復用エンチャント金リンゴがありません。指定座標への移動は続けます');
    if(w.mode==='healing')w.mode='stopped';if(this.travel.flight?.paused==='health')this.travel.flight.paused=false;
@@ -132,7 +134,7 @@ class Runtime{
     ['gear','防具装着',()=>equipment.wear(b,{armor:this.config.gear,totem:this.config.autototem,elytra:!!(this.travel.flight||this.travel.route?.mode==='fly')},signal)],
     ['autoslot','AutoSlot',async()=>{if(this.config.autoslot&&Date.now()>(this.manualSlotsUntil||0)&&(this.dirty||Date.now()-(this.lastSort||0)>5000)&&b.list().some(i=>equipment.wanted(i.name))){const complete=await equipment.autoSlots(b,signal,{pistoncrystal:this.config.pistoncrystal});this.dirty=!complete;if(complete)this.lastSort=Date.now();}}]
    ].sort((a,c)=>(this.featureOrder?.[c[0]]||0)-(this.featureOrder?.[a[0]]||0));
-   for(const [,label,run]of tasks)if(!b.manualInventoryBusy&&!(this.paOwnsHand()&&label!=='オフハンド装着'))await this.maintenance(label,run,signal);
+   for(const [,label,run]of tasks)if(!b.manualInventoryBusy&&!b.handUse&&!b.urgentFoodPending&&!(this.paOwnsHand()&&label!=='オフハンド装着'))await this.maintenance(label,run,signal);
    if(!this.paused&&!this.receiving&&w.state.autoSupply&&Date.now()-(this.lastSupplyScan||0)>3000){this.lastSupplyScan=Date.now();this.restock.scan();}
    if(this.paused)return;
    if(this.config.anticrystal&&!b.handUse&&!this.travel.route&&!this.travel.flight&&!this.travel.embed&&Date.now()>(this.burrowBlockedUntil||0))this.travel.bury(this.config.burrowDepth);

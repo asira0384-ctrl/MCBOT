@@ -9,7 +9,7 @@ async function consume(bot,item,kind,signal){
  try{
   // A pending break / repeated equipment packet cancels eating on Nukkit.
   bot.mining=null;bot.breakAction=null;bot.pendingBreakActions=[];bot.pendingMiningRequest=null;bot.setControlState('sprint',false);
-  await bot.equip(item.slot,signal);await require('./hand').settled(bot,signal);if(signal?.aborted)throw Error('停止しました');
+  await bot.equip(item.slot,signal);bot.closeContainer();require('./hand').flush(bot);await require('./hand').settled(bot,signal);if(signal?.aborted)throw Error('停止しました');
   const slot=bot.quickBarSlot,held=bot.items[slot];if(bot.name(held)!==item.name)throw Error('手に持った飲食アイテムを確認できません');
   state.slot=slot;const metadata=held.metadata||0,initialCount=held.count||0;
   const count=()=>bot.items.reduce((n,i)=>n+(i&&bot.name(i)===item.name&&(i.metadata||0)===metadata?(i.count||0):0),0),before=count();
@@ -26,7 +26,7 @@ async function consume(bot,item,kind,signal){
    state.attempt=attempt;state.phase='using';state.firstUseAt??=Date.now();state.selectDelayMs=state.firstUseAt-state.startedAt;delete state.serverUsingAt;delete state.serverCancelledAt;bot.usingItem=true;
    // Re-sending MobEquipment, even for this same slot, cancels Nukkit's use.
    // Keep one selected stack throughout a timed use and any bounded retry.
-   bot.client.queue('inventory_transaction',useItem(bot,'click_air',{x:0,y:0,z:0},-1));
+   bot.closeContainer();bot.client.queue('inventory_transaction',useItem(bot,'click_air',{x:0,y:0,z:0},-1));require('./hand').flush(bot);
    await pause(duration,true);
    if(state.serverCancelledAt&&!confirmed()){state.phase='cancelled_by_server';bot.usingItem=false;continue;}
    if(!confirmed()){

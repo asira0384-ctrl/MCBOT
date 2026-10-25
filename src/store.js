@@ -14,7 +14,7 @@ class Store {
   if(!loaded&&error)throw Error('設定ファイルを読み込めません。既存データを残して起動を停止しました: '+error.message);
   this.data=Object.assign({schema:1,admins:[],friends:[],enemies:[],bots:{},webAccess:[],logChannel:null},loaded||{});
  }
- bot(id) { return this.data.bots[id]??= {area:null,floor:null,ceiling:319,scaffold:'slime',chat:true,autoSupply:true,respawn:true,stats:emptyStats(),session:emptyStats(),owned:{},minedItems:[]}; }
+ bot(id) { return this.data.bots[id]??= {area:null,floor:null,ceiling:319,scaffold:'slime',scaffoldEnabled:true,maxDrop:64,chat:true,autoSupply:true,respawn:true,stats:emptyStats(),session:emptyStats(),owned:{},minedItems:[]}; }
  save() { const tmp=this.file+'.tmp';this.data.savedAt=Date.now();const fd=fs.openSync(tmp,'w',0o600);try{fs.writeFileSync(fd,JSON.stringify(this.data,null,2));fs.fsyncSync(fd);}finally{fs.closeSync(fd);}if(fs.existsSync(this.file))fs.copyFileSync(this.file,this.file+'.bak');fs.renameSync(tmp,this.file); }
  adminAdd(name,xuid) { if (!/^\d{5,20}$/.test(xuid)||/^0+$/.test(xuid)) throw Error('有効なXbox XUIDが必要です'); const old=this.data.admins.find(a=>a.xuid===xuid);if(old)old.name=name;else this.data.admins.push({name,xuid});this.save(); }
  authorized(packet,players) { if(packet.type!=='chat'&&packet.type!=='whisper')return false;

@@ -4,7 +4,7 @@ const commands=[
  ...require('./coordinates').aliases.map(name=>new SlashCommandBuilder().setName(name).setDescription('Botの座標を確認（誰でも利用可能）').addStringOption(o=>o.setName('target').setDescription('Bot番号 / all（省略時1）'))),
  new SlashCommandBuilder().setName('say').setDescription('Botから公開チャットへ送信（管理者専用）').addStringOption(o=>o.setName('target').setDescription('Bot番号 / all').setRequired(true)).addStringOption(o=>o.setName('message').setDescription('送信するメッセージ').setMaxLength(220).setRequired(true)),
  new SlashCommandBuilder().setName('w').setDescription('Botからtellを送信（管理者専用）').addStringOption(o=>o.setName('target').setDescription('Bot番号 / all').setRequired(true)).addStringOption(o=>o.setName('id').setDescription('相手のゲーマータグ（空白対応）').setAutocomplete(true).setMaxLength(64).setRequired(true)).addStringOption(o=>o.setName('message').setDescription('送信するメッセージ').setMaxLength(220).setRequired(true)),
- new SlashCommandBuilder().setName('web').setDescription('Web管理画面に本人専用のリンクでログイン').addStringOption(o=>o.setName('url').setDescription('初回のみ: Railwayの公開URL（https://〜）')),
+ new SlashCommandBuilder().setName('web').setDescription('許可済みユーザーがWeb管理へそのままログイン').addStringOption(o=>o.setName('url').setDescription('初回のみ: Railwayの公開URL（https://〜）')),
  new SlashCommandBuilder().setName('panel').setDescription('ボタンと選択メニューでBotを管理する（管理者専用）'),
  new SlashCommandBuilder().setName('bot').setDescription('Botを番号/allで操作する（管理者専用）').addStringOption(o=>o.setName('target').setDescription('1〜20 / all / ign / 2b2e').setRequired(true)).addStringOption(o=>o.setName('command').setDescription('例: connect / follow / area / mineblocks').setAutocomplete(true).setRequired(true)),
  new SlashCommandBuilder().setName('auth').setDescription('Microsoft認証を開始・コードを確認（管理者専用）').addIntegerOption(o=>o.setName('target').setDescription('Bot番号').setMinValue(1).setMaxValue(20).setRequired(true)),
@@ -13,7 +13,7 @@ const commands=[
  .addSubcommand(s=>s.setName('remove').setDescription('登録を解除').addUserOption(o=>o.setName('user').setDescription('解除するDiscord管理者')).addStringOption(o=>o.setName('mcid').setDescription('解除するゲーマータグ')))
  .addSubcommand(s=>s.setName('list').setDescription('登録一覧')),
  new SlashCommandBuilder().setName('logchannel').setDescription('補給・切断通知のチャンネル（管理者専用）').addChannelOption(o=>o.setName('channel').setDescription('通知先').setRequired(true)),
- new SlashCommandBuilder().setName('webaccess').setDescription('Webの利用許可を管理（Asira専用）')
+ new SlashCommandBuilder().setName('webaccess').setDescription('Web・パネルの利用許可を管理（Asira専用）')
   .addSubcommand(v=>v.setName('add').setDescription('Webの利用を許可').addUserOption(o=>o.setName('user').setDescription('許可するユーザー').setRequired(true)))
   .addSubcommand(v=>v.setName('remove').setDescription('Webの利用許可を解除').addUserOption(o=>o.setName('user').setDescription('解除するユーザー').setRequired(true)))
   .addSubcommand(v=>v.setName('list').setDescription('利用許可の一覧')),
@@ -28,10 +28,10 @@ async function startDiscord(manager){const token=process.env.DISCORD_TOKEN;if(!t
  client.on('interactionCreate',async i=>{if(i.isAutocomplete?.()){try{if(!require('./access').operator(manager.store,i.user.id,OWNER)){await i.respond([]);return;}const focused=i.options.getFocused(true),target=i.options.getString('target')||'all',rows=require('./player-candidates').autocomplete(manager,target,focused.name,focused.value);await i.respond(rows);}catch{await i.respond([]).catch(()=>{});}return;}if(!i.isChatInputCommand()){try{await panel.handle(i);}catch(e){console.error('管理パネル:',e.message);}return;}if(await require('./coordinates').discordCoordinates(i,manager))return;if(!require('./access').operator(manager.store,i.user.id,OWNER)&&!(i.commandName==='web'&&manager.web?.isAllowed(i.user.id))){await i.reply({content:'このBotに設定された管理者のみ使用できます。',flags:MessageFlags.Ephemeral});return;}await i.deferReply({flags:MessageFlags.Ephemeral});
   try{let result;if(['admin','webaccess'].includes(i.commandName)&&i.user.id!==OWNER)throw Error('管理者・Web許可の登録はAsira本人だけが行えます');
    switch(i.commandName){
-    case 'webaccess':{const action=i.options.getSubcommand(),user=action==='list'?null:i.options.getUser('user',true);const list=require('./discord-login').grant(manager.store,i.user.id,action,user);result=action==='list'?(list.map(v=>`${v.name} / ${v.id}`).join('\n')||'Asira本人のみ利用できます'):action==='add'?`${user.username} (${user.id}) のWeb利用を許可しました`:`${user.username} (${user.id}) のWeb利用許可を解除しました`;manager.web?.pump();break;}
+    case 'webaccess':{const action=i.options.getSubcommand(),user=action==='list'?null:i.options.getUser('user',true);if(action!=='list'){await require('./shared-access').change(i,manager,panel,action,user,OWNER);return;}const list=require('./access').rows(manager.store);result=list.map(v=>`${v.name} / ${v.id}`).join('\n')||'Asira本人のみ利用できます';break;}
      case 'say':result=manager.say(i.options.getString('target',true),i.options.getString('message',true));break;
     case 'w':result=manager.whisper(i.options.getString('target',true),i.options.getString('id',true),i.options.getString('message',true));break;
-    case 'web':{if(!manager.web)throw Error('Web管理に対応した版へ更新してください');const url=i.options.getString('url');if(url)manager.web.configureURL(i.user.id,url);await i.editReply(manager.web.loginMessage(i.user.id,i.user.globalName||i.user.username));return;}
+    case 'web':{if(!manager.web)throw Error('Web管理に対応した版へ更新してください');const url=i.options.getString('url');if(url)manager.web.configureURL(i.user.id,url);await i.editReply(manager.web.loginMessage(i.user.id,i.user.globalName||i.user.username,i.user));return;}
     case 'panel':await panel.create(i);return;
     case 'bot':{const target=i.options.getString('target',true),command=i.options.getString('command',true).trim();
      if(command==='panel'||command==='gui'){await panel.create(i,target);return;}
@@ -39,8 +39,8 @@ async function startDiscord(manager){const token=process.env.DISCORD_TOKEN;if(!t
      }result=await manager.execute(target,command);break;}
 
     case 'auth':{const id=i.options.getInteger('target',true);manager.login(id);result=manager.authStatus(id);break;}
-    case 'admin':{const action=i.options.getSubcommand();if(action==='list'){const discord=(manager.store.data.discordAdmins||[]).map(a=>`${a.name} / Discord ${a.id}`),game=manager.store.data.admins.map(a=>`${a.name} / XUID ${a.xuid}`);result=[...discord,...game].join('\n')||'登録なし';break;}
-     const user=i.options.getUser('user'),mcid=i.options.getString('mcid');if(user){if(mcid)throw Error('DiscordユーザーとMCIDは別々に登録してください');require('./access').update(manager.store,i.user.id,action,user,OWNER);manager.web?.pump();result=`${user.username} のDiscord管理者権限を${action==='add'?'登録しました。/panelとWebを利用できます':'解除しました'}`;break;}
+    case 'admin':{const action=i.options.getSubcommand();if(action==='list'){const discord=require('./access').rows(manager.store).map(a=>`${a.name} / Discord ${a.id}`),game=manager.store.data.admins.map(a=>`${a.name} / XUID ${a.xuid}`);result=[...discord,...game].join('\n')||'登録なし';break;}
+     const user=i.options.getUser('user'),mcid=i.options.getString('mcid');if(user){if(mcid)throw Error('DiscordユーザーとMCIDは別々に登録してください');await require('./shared-access').change(i,manager,panel,action,user,OWNER);return;}
      const name=String(mcid||'').trim();if(!name)throw Error('user または mcid を指定してください');if(action==='remove'){manager.store.data.admins=manager.store.data.admins.filter(a=>norm(a.name)!==norm(name));manager.store.save();result=`${name} のゲーム内権限を解除しました`;break;}
      const profile=[...manager.workers.values()].flatMap(w=>[...w.bot.players.values()]).find(p=>norm(p.name)===norm(name));const xuid=i.options.getString('xuid')||profile?.xuid;
      if(!xuid)throw Error('Botと同じサーバーへ参加するかXUIDを指定してください');if(profile&&profile.xuid!==xuid)throw Error('XUIDが一致しません');manager.store.adminAdd(name,xuid);result=`${name} をゲーム内管理者に登録しました`;break;}

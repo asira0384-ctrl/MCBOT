@@ -47,16 +47,19 @@ class WebControl{
  requireOwner(session){if((session.discordId||session.owner)!==this.owner)throw fail(403,'この操作はAsira本人専用です');}
  persistSessions(revocations=[]){const rows=[...this.sessions].slice(-60).map(([key,s])=>({key,csrf:s.csrf,expires:s.expires,label:s.label,owner:this.owner,discordId:s.discordId||this.owner,profile:s.profile||null}));this.manager.store.data.webSessions=this.sessionRepository.save(rows,revocations);this.manager.store.save();}
  configureURL(actor,value){if(String(actor)!==this.owner)throw fail(403,'本人のみ設定できます');this.base=baseURL(value);this.manager.store.data.webBaseURL=this.base;this.manager.store.save();return this.base;}
- issueLogin(actor,label='Asira'){
+ issueLogin(actor,label='Asira',discordUser){
   if(this.closed)throw Error('再起動中です。少し待ってください');
   if(!this.enabled)throw Error('Web管理はOFFです。WEB_ENABLED=falseを解除してください');
-  if(String(actor)!==this.owner)throw fail(403,'コードログインは本人専用です。Discordでログインしてください');
+  const id=String(actor);if(!this.isAllowed(id))throw fail(403,'AsiraからWebとパネルの利用を許可されていません');
   if(!this.base)throw Error('RailwayでGenerate Domainを実行してから /web url:https://取得したドメイン を実行してください');
   const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',code=[...crypto.randomBytes(12)].map(n=>alphabet[n&31]).join('');
-  this.codes.clear();this.codes.set(digest(code),{expires:this.now()+this.loginTTL,label:String(label).slice(0,80)});
+  const saved=require('./access').rows(this.manager.store).find(row=>row.id===id),verified=discordUser&&String(discordUser.id)===id?discordUser:null,user=require('./discord-login').profile({id,username:verified?.username||saved?.username||label,global_name:verified?.globalName||saved?.name||label,avatar:verified?.avatar||saved?.avatar});
+  for(const [key,value]of this.codes)if(value.expires<=this.now()||(value.discordId||this.owner)===id)this.codes.delete(key);
+  if(this.codes.size>=200)throw fail(429,'少し待ってからWebリンクを開いてください');
+  this.codes.set(digest(code),{expires:this.now()+this.loginTTL,label:user.name,discordId:id,profile:user});
   return {url:this.base+'/#login='+code,code:code.slice(0,6)+'-'+code.slice(6),expiresInSeconds:this.loginTTL/1000};
  }
- loginMessage(actor,label){if(this.discordLogin.ready()&&this.isAllowed(String(actor)))return {content:`[DiscordでWeb管理へログイン](${this.base}/)`,allowedMentions:{parse:[]}};if(String(actor)!==this.owner)throw Error('Discordログインの設定がまだ完了していません');const login=this.issueLogin(actor,label);return {content:`[Web管理画面を開く](${login.url})\n本人専用・一度限り・2分間有効です。\n手入力する場合のコード: **${login.code}**`,allowedMentions:{parse:[]}};}
+ loginMessage(actor,label,discordUser){const login=this.issueLogin(actor,label,discordUser);return {content:`[Web管理画面を開く](${login.url})\nあなた専用・一度限り・2分間有効です。このリンクを押すと、そのままログインできます。\n手入力する場合のコード: **${login.code}**`,allowedMentions:{parse:[]}};}
  targets(value){
   const target=String(value||'');if(target==='2b2e'||target==='ign')return [...this.manager.names.keys()].filter(n=>require('./realms').selected(this.manager.store,n)===target);
   if(target!=='all'&&!/^(?:[1-9]|1[0-9]|20)$/.test(target))throw fail(400,'Bot番号またはグループを選んでください');
@@ -69,7 +72,7 @@ class WebControl{
    return {id,name,reconnection:this.manager.connectionKeeper?.snapshot(id)||null,server:realm,connected:!!b?.connected,dead:!!b?.dead,phase:b?.connectionPhase||'未接続',mode:w?.mode||'offline',health:b?.health??null,absorption:Math.max(0,Number(b?.absorption)||0),chatDelivery:b?require('./chat-delivery').snapshot(b):null,chatQueue:b?.chatQueue?.snapshot?.()||{pending:0,waitMs:0},onlinePlayers:b?[...(b.players?.values()||[])].map(p=>p.name):[],mining:w?.miningStatus?.()||w?.miner?.snapshot()||null,
     endpoint:{host:b?.config?.host||(ign?this.env.IGN_HOST:this.env.MC_HOST)|| (ign?'IGN未設定':'2b2e.org'),port:b?.config?.port||Number((ign?this.env.IGN_PORT:this.env.MC_PORT)||19132)},
     position:p?{x:p.x,y:p.y,z:p.z}:null,dimension:b?.dimensionId??0,config:{...defaults,...state.runtime,...(ign?{anticrystal:false}:{})},
-    messaging:require('./messaging').snapshot(this.manager,id,b),options:{respawn:state.respawn,autoSupply:state.autoSupply,chat:state.chat,floor:state.floor,ceiling:state.ceiling,area:state.area,scaffold:state.scaffold,miningFilter:state.miningFilter||[]},
+    messaging:require('./messaging').snapshot(this.manager,id,b),options:{respawn:state.respawn,autoSupply:state.autoSupply,chat:state.chat,floor:state.floor,ceiling:state.ceiling,area:state.area,scaffold:state.scaffold,scaffoldEnabled:state.scaffoldEnabled!==false,maxDrop:state.maxDrop??64,miningFilter:state.miningFilter||[]},
     inventorySync:{revision:b?.inventoryRevision||0,at:b?.lastInventoryAt||null,pending:b?.pendingStackRequest?{action:b.pendingStackRequest.action,at:b.pendingStackRequest.at}:null,manual:b?.manualInventoryOperation||null,last:b?.lastStackResponse||null},inventory:Array.from({length:36},(_,n)=>item(b?.items?.[n],n)),armor:Array.from({length:4},(_,n)=>item(b?.armor?.[n],n)),offhand:item(b?.offhand?.[0],-1),
     bps:r?.telemetry?.bps||0,verticalBps:r?.telemetry?.verticalBps||0,restock:r?.restock||null,nearby:w?.runtime?.telemetry?require('./tactics').nearby(w.runtime):[],accounts:state.accountHistory||[name],authentication:this.manager.authentication?.(id)||null,authCacheSaved:this.manager.accounts?.snapshot(id,name).saved||false,ignActions:r?.ignActions||state.ignActions||null,followingPlayer:r?.followingPlayer||{...state.follow,points:0},runtime:r?{selfDefense:r.selfDefense,autoLog:r.autoLog,rollbackRecovery:r.rollbackRecovery,paused:r.paused,operation:r.operation,movement:r.movement,target:r.target,combatWaiting:r.combatWaiting,attacksSent:r.attacksSent,totemsUsed:r.totemsUsed,consumption:r.consumption,lastItemUse:r.lastItemUse,crystalCombat:r.crystalCombat,featureErrors:r.featureErrors,lastError:r.lastError}:null,
     packetsReceived:Object.values(b?.packetCounts||{}).reduce((a,n)=>a+Number(n||0),0),corrections:b?.positionCorrections||0,logs:(this.manager.logs.get(id)||[]).slice(-30).map(redact)};
@@ -101,11 +104,11 @@ class WebControl{
   this.attempts.set(ip,{count:previous&&previous.until>now?previous.count+1:1,until:previous&&previous.until>now?previous.until:now+60000});
   const {code}=await body(req),normalized=cleanCode(code),entry=this.codes.get(digest(normalized));
   if(!/^[A-HJ-NP-Z2-9]{12}$/.test(normalized)||!entry||entry.expires<=now)throw fail(401,'リンクが使用済みか期限切れです。Discordの /web から開き直してください');
+  if(!this.isAllowed(entry.discordId||this.owner)){this.codes.delete(digest(normalized));throw fail(403,'Webとパネルの利用許可が解除されています');}
   this.codes.delete(digest(normalized));this.attempts.delete(ip);
   for(const [key,value]of this.sessions)if(value.expires<=now)this.sessions.delete(key);
   if(this.sessions.size>=60)this.sessions.delete(this.sessions.keys().next().value);
-  const token=random(),session={csrf:random(),expires:now+this.sessionTTL,label:entry.label,owner:this.owner};this.sessions.set(digest(token),session);this.persistSessions();
-  res.setHeader('Set-Cookie',this.cookie(req,token,this.sessionTTL/1000));this.json(res,200,{ok:true,csrf:session.csrf,owner:session.label,expires:session.expires});
+  const user=entry.profile||{id:entry.discordId||this.owner,name:entry.label,username:entry.label,avatar:null},session=this.createSession(req,res,user);this.json(res,200,{ok:true,csrf:session.csrf,owner:session.label,profile:this.publicProfile(session),isOwner:session.discordId===this.owner,expires:session.expires});
  }
  async once(req,session,run){
   const id=String(req.headers['x-request-id']||'');if(!/^[a-zA-Z0-9-]{8,80}$/.test(id))throw fail(400,'操作IDがありません。画面を再読み込みしてください');

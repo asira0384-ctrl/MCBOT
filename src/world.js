@@ -27,7 +27,7 @@ class World {
   else { // Limit requests to nearby height layers, then ask higher layers on demand.
    const y=Math.floor((this.bot.entity?.position.y||64)/16);this.request(p.x,p.z,y-2,y+2);
   }
-  this.invalidate();this.trim();
+  this.invalidate();this.trim();if(count>=0)this.bot.emit('terrainColumn',{x:p.x,z:p.z,top:319});
  }
  alignLegacy(column,sections){if(this.bot.dimensionId!==0||!sections.length||sections.some(s=>s.subChunkVersion!==8))return;const p=this.bot.entity?.position;if(!p||(p.x>>4)!==column.x||(p.z>>4)!==column.z)return;
   const supported=shift=>{for(let y=Math.floor(p.y);y>=Math.floor(p.y)-8;y--){const at=n=>{const q={x:Math.floor(p.x)&15,y:n-shift,z:Math.floor(p.z)&15,l:0},section=column.getSection(q),entry=section?.blocks[0]?section.getPaletteEntry(0,q.x,q.y&15,q.z):null;return entry?.unresolvedRuntimeId!==undefined?{name:'unknown',boundingBox:'empty'}:column.getBlock(q);};const floor=at(y-1),feet=at(y),head=at(y+1);if(floor.boundingBox==='block'&&feet.name==='air'&&head.name==='air')return true;}return false;};
@@ -37,8 +37,8 @@ class World {
   if(req.length)this.bot.client.queue('subchunk_request',{dimension:this.bot.dimensionId,origin:{x,y:0,z},requests:req});
  }
  async subchunk(p){for(const e of p.entries||[]){const x=p.origin.x+e.dx,y=p.origin.y+e.dy,z=p.origin.z+e.dz;
-  if(e.result==='success'||e.result===1){if(p.cache_enabled)throw Error('キャッシュ済みサブチャンクは非対応です');const c=this.column(x,z),section=new this.Section(this.registry,c.Block,{y,subChunkVersion:9});section.decode(require('prismarine-chunk/src/bedrock/common/constants').StorageType.Runtime,e.payload);const sy=section.y>127?section.y-256:section.y;c.setSection(sy,section);this.known.add(`${x},${sy},${z}`);this.acceptRefresh(x,sy,z);}
-  else if(e.result==='success_all_air'||e.result===6){const c=this.column(x,z);c.setSection(y,new this.Section(this.registry,c.Block,{y,subChunkVersion:9}));this.known.add(`${x},${y},${z}`);this.acceptRefresh(x,y,z);}
+  if(e.result==='success'||e.result===1){if(p.cache_enabled)throw Error('キャッシュ済みサブチャンクは非対応です');const c=this.column(x,z),section=new this.Section(this.registry,c.Block,{y,subChunkVersion:9});section.decode(require('prismarine-chunk/src/bedrock/common/constants').StorageType.Runtime,e.payload);const sy=section.y>127?section.y-256:section.y;c.setSection(sy,section);this.known.add(`${x},${sy},${z}`);this.acceptRefresh(x,sy,z);this.invalidate();this.bot.emit('terrainColumn',{x,z,top:sy*16+15});}
+  else if(e.result==='success_all_air'||e.result===6){const c=this.column(x,z);c.setSection(y,new this.Section(this.registry,c.Block,{y,subChunkVersion:9}));this.known.add(`${x},${y},${z}`);this.acceptRefresh(x,y,z);this.invalidate();this.bot.emit('terrainColumn',{x,z,top:y*16+15});}
  }this.invalidate();this.trim();}
  acceptRefresh(x,y,z){const k=`${x},${y},${z}`,refresh=this.refreshing.get(k);if(!refresh)return;for(const id of this.overrides.keys()){const [bx,by,bz]=id.split(',').map(Number);if((bx>>4)===x&&(by>>4)===y&&(bz>>4)===z&&(this.overrideRevisions.get(id)||0)<=refresh.revision){this.overrides.delete(id);this.overrideRevisions.delete(id);}}this.refreshing.delete(k);}
  update(p){if(p.layer!==undefined&&p.layer!==0)return;this.overrides.set(key(p.position),p.block_runtime_id);this.blocks.delete(key(p.position));this.revision++;this.overrideRevisions.set(key(p.position),this.revision);this.bot.emit('worldUpdate',p.position);}
