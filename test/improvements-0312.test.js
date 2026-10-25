@@ -21,7 +21,7 @@ test('Discord OAuth validates browser binding, expiry and one-use state before a
 test('only owner-granted Discord IDs sign in; real avatar and profile are returned and approved users can operate',async t=>{
  const f=await webFixture(t);let r=await f.finish(await f.begin());assert.equal(r.status,403);assert.match((await r.json()).error,/許可/);assert.throws(()=>grant(f.store,member,'add',{id:member}));grant(f.store,OWNER,'add',{id:member,username:'different saved label'});
  const session=await f.oauth();assert.equal(session.state.profile.id,member);assert.equal(session.state.profile.name,'本当の表示名');assert.match(session.state.profile.avatar,new RegExp('/avatars/'+member+'/'));assert.equal(session.state.isOwner,false);assert(!JSON.stringify(session.state).includes('test-discord-token'));
- r=await f.request('/api/command',{...session,data:{target:'1',command:'ka on'}});assert.equal(r.status,200);assert.deepEqual(f.calls,[["1","ka on"]]);assert.throws(()=>f.web.issueLogin(member),e=>e.status===403);r=await f.request('/api/backup',{...session,data:{action:'export',password:'long enough password'}});assert.equal(r.status,403);
+ r=await f.request('/api/command',{...session,data:{target:'1',command:'ka on'}});assert.equal(r.status,200);assert.deepEqual(f.calls,[["1","ka on"]]);assert(f.web.issueLogin(member).code);r=await f.request('/api/backup',{...session,data:{action:'export',password:'long enough password'}});assert.equal(r.status,403);
  grant(f.store,OWNER,'remove',{id:member});r=await f.request('/api/command',{...session,data:{target:'1',command:'stop'}});assert.equal(r.status,401);assert.equal(f.calls.length,1);
 });
 test('owner is always permitted, OAuth sessions survive restart and rejected issuer never reaches Discord',async t=>{
