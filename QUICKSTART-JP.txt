@@ -1,10 +1,10 @@
-AsiraClearBot v0.3.17 / Minecraft統合版
+AsiraClearBot v0.3.19 / Minecraft統合版
 
 更新
 1. ZIPを展開し、AsiraClearBotフォルダの中身を既存GitHubのルートへ全て上書き。
    package.json・src・web・vendor・scripts・Dockerfileが同じ階層にある状態にします。
 2. Railwayの新しいデプロイの成功を確認。Variablesと既存のdataを引き継ぎます。
-3. WebをCtrl+F5で再読み込みし、起動ログとWebの表示がv0.3.17か確認。
+3. WebをCtrl+F5で再読み込みし、起動ログとWebの表示がv0.3.19か確認。
 
 保存
 RailwayのMCBOTサービスにVolumeを接続し、Mount Path=/data、DATA_DIR=/data。
@@ -13,13 +13,13 @@ DATA_DIRだけを設定してもVolumeは作成されません。
 別サービスへ移す時は、設定画面の暗号化バックアップと復元を使います。
 
 操作
-・Discordの /web からWebへ。Discordログインの設定はUPDATE-v0.3.12-JA.md。
+・Discordの /web → 自分専用のリンクを押すだけでWebへ。追加のOAuth設定不要。
 ・単体Botを選び、正確なゲーマータグを保存して「ログイン・接続」。
 ・認証コードをコピーし、Microsoft公式ページでBot用アカウントにサインイン。
 ・認証後は自動で接続開始。保存認証が有効なら次回のコード入力は不要です。
 ・アカウント追加: 概要 → ＋アカウント追加（最大20）。IDをVariablesに書く必要はありません。
 ・グリーター対象ID: チャット → グリーター → 設定を開く。ON・対象ID・文章を保存。
-・採掘: 採掘 → 範囲・Y・ブロックを保存 → 整地開始。上から1チャンクずつ。
+・採掘: 採掘 → 範囲・Y・ブロックを保存 → 整地開始。範囲全体の高い段から1チャンクずつ。
 ・再認証: 対象Botを切断 → ログイン画面 → このアカウントを再認証。
 ・Discord管理者: Asiraから /admin add user:@相手 → panelとWebを利用可能。
 ・AutoLog: Bot → 装備 → 体力・AutoLog設定。戦闘タブにもショートカット。
@@ -28,6 +28,7 @@ DATA_DIRだけを設定してもVolumeは作成されません。
 ・IGNへ移す前にIGN_HOST・IGN_PORTを設定。IGNではAntiCrystalは使いません。
 ・IGNのWorld・Kit・TPA・Back: 移動タブ。AutoWorldは /world cpe を送ります。
 ・FeetTrap: 自分の周りにホールを作る/近くのホールへ入る。IGNでは近距離PvP時に自動。
+・足場を置かない: 整地 → 足場と補給 → 足場を置かない。Botごとに保存。
 ・足場回収: 整地 → 足場と補給 → 置いた足場を回収。採掘完了後にも自動で確認。
 ・停止: Discord /bot target:all command:stop
 ・一括ON/OFF: グループ選択 → 各機能の「⋯」。
@@ -36,5 +37,7 @@ DATA_DIRだけを設定してもVolumeは作成されません。
 ・手動の「切断」は自動再接続も止めます。
 ・同じドメイン・同じブラウザの通常モードを使ってください。Cookie削除等では再ログイン。
 
-詳しい更新内容・コマンドはUPDATE-v0.3.17-JA.md、検証範囲はVALIDATION-v0.3.17.md。
-404件の自動テスト成功。実サーバー・Railway・実アカウントの動作確認は行っていません。
+詳しい更新内容・コマンドはUPDATE-v0.3.19-JA.md、検証範囲はVALIDATION-v0.3.19.md。
+429件の自動テスト成功。実サーバー・Railway・実アカウントの動作確認は行っていません。
+
+他の人へ共有: Asiraが /admin add user:@相手 → 相手が共有ボタンを押す。Web・panel両方許可。
