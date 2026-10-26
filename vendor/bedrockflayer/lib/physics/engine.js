@@ -48,7 +48,10 @@ function physicsPlugin(bot) {
     // Respect authoritative knockback and currents for our own actor.
     bot.client.on('set_entity_motion', packet => {
         if (String(packet.runtime_entity_id) === String(bot._runtimeEntityId) && packet.velocity && bot.entity) {
-            bot.entity.velocity = new Vec3(packet.velocity.x, packet.velocity.y, packet.velocity.z)
+            const config=bot.motion?.runtime?.config||{}
+            const horizontal=config.velocity?Math.max(0,Math.min(100,config.velocityHorizontal??0))/100:1
+            const vertical=config.velocity?Math.max(0,Math.min(100,config.velocityVertical??0))/100:1
+            bot.entity.velocity = new Vec3(packet.velocity.x*horizontal, packet.velocity.y*vertical, packet.velocity.z*horizontal)
         }
     })
 
