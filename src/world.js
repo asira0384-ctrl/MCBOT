@@ -37,8 +37,8 @@ class World {
   if(req.length)this.bot.client.queue('subchunk_request',{dimension:this.bot.dimensionId,origin:{x,y:0,z},requests:req});
  }
  async subchunk(p){for(const e of p.entries||[]){const x=p.origin.x+e.dx,y=p.origin.y+e.dy,z=p.origin.z+e.dz;
-  if(e.result==='success'||e.result===1){if(p.cache_enabled)throw Error('キャッシュ済みサブチャンクは非対応です');const c=this.column(x,z),section=new this.Section(this.registry,c.Block,{y,subChunkVersion:9});section.decode(require('prismarine-chunk/src/bedrock/common/constants').StorageType.Runtime,e.payload);const sy=section.y>127?section.y-256:section.y;c.setSection(sy,section);this.known.add(`${x},${sy},${z}`);this.acceptRefresh(x,sy,z);this.invalidate();this.bot.emit('terrainColumn',{x,z,top:sy*16+15});}
-  else if(e.result==='success_all_air'||e.result===6){const c=this.column(x,z);c.setSection(y,new this.Section(this.registry,c.Block,{y,subChunkVersion:9}));this.known.add(`${x},${y},${z}`);this.acceptRefresh(x,y,z);this.invalidate();this.bot.emit('terrainColumn',{x,z,top:y*16+15});}
+  if(e.result==='success'||e.result===1){if(p.cache_enabled)throw Error('キャッシュ済みサブチャンクは非対応です');const c=this.column(x,z),section=new this.Section(this.registry,c.Block,{y,subChunkVersion:9});section.decode(require('prismarine-chunk/src/bedrock/common/constants').StorageType.Runtime,e.payload);const sy=section.y>127?section.y-256:section.y;c.setSection(sy,section);this.known.add(`${x},${sy},${z}`);this.acceptRefresh(x,sy,z);this.invalidate();this.bot.emit('terrainColumn',{x,z,top:sy*16+15,section:sy});}
+  else if(e.result==='success_all_air'||e.result===6){const c=this.column(x,z);c.setSection(y,new this.Section(this.registry,c.Block,{y,subChunkVersion:9}));this.known.add(`${x},${y},${z}`);this.acceptRefresh(x,y,z);this.invalidate();this.bot.emit('terrainColumn',{x,z,top:y*16+15,section:y});}
  }this.invalidate();this.trim();}
  acceptRefresh(x,y,z){const k=`${x},${y},${z}`,refresh=this.refreshing.get(k);if(!refresh)return;for(const id of this.overrides.keys()){const [bx,by,bz]=id.split(',').map(Number);if((bx>>4)===x&&(by>>4)===y&&(bz>>4)===z&&(this.overrideRevisions.get(id)||0)<=refresh.revision){this.overrides.delete(id);this.overrideRevisions.delete(id);}}this.refreshing.delete(k);}
  update(p){if(p.layer!==undefined&&p.layer!==0)return;this.overrides.set(key(p.position),p.block_runtime_id);this.blocks.delete(key(p.position));this.revision++;this.overrideRevisions.set(key(p.position),this.revision);this.bot.emit('worldUpdate',p.position);}
@@ -52,8 +52,8 @@ class World {
   b.isAir=['air','cave_air','void_air'].includes(b.name);b.isLiquid=/^(flowing_)?(water|lava)$/.test(b.name);b.solid=b.boundingBox==='block'&&!b.isAir;b.isClimbable=['ladder','vine','scaffolding'].includes(b.name);if(this.blocks.size>=32768)this.blocks.clear();this.blocks.set(id,b);return b;
  }
  unknown(p,runtimeId){return {name:'unknown',runtimeId,position:p,boundingBox:'block',solid:true,isAir:false,isLiquid:false,diggable:false,hardness:-1};}
- trim(){const p=this.bot.entity?.position;if(!p)return;for(const k of this.columns.keys()){const[x,z]=k.split(',').map(Number);if(Math.abs(x-(p.x>>4))>6||Math.abs(z-(p.z>>4))>6){this.columns.delete(k);for(let y=-4;y<20;y++)this.known.delete(`${x},${y},${z}`);}}
-  for(const k of this.refreshing.keys()){const[x,,z]=k.split(',').map(Number);if(Math.abs(x-(p.x>>4))>6||Math.abs(z-(p.z>>4))>6)this.refreshing.delete(k);}
+ trim(){const p=this.bot.entity?.position;if(!p)return;for(const k of this.columns.keys()){const[x,z]=k.split(',').map(Number);if(Math.abs(x-(p.x>>4))>(this.bot.config?.viewDistance||6)||Math.abs(z-(p.z>>4))>(this.bot.config?.viewDistance||6)){this.columns.delete(k);for(let y=-4;y<20;y++)this.known.delete(`${x},${y},${z}`);}}
+  for(const k of this.refreshing.keys()){const[x,,z]=k.split(',').map(Number);if(Math.abs(x-(p.x>>4))>(this.bot.config?.viewDistance||6)||Math.abs(z-(p.z>>4))>(this.bot.config?.viewDistance||6))this.refreshing.delete(k);}
   for(const k of this.overrides.keys()){const[x,,z]=k.split(',').map(Number);if(Math.abs(x-p.x)>112||Math.abs(z-p.z)>112){this.overrides.delete(k);this.overrideRevisions.delete(k);}}for(const k of this.blocks.keys()){const[x,,z]=k.split(',').map(Number);if(Math.abs(x-p.x)>112||Math.abs(z-p.z)>112)this.blocks.delete(k);}}
 }
 module.exports={World};

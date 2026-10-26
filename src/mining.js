@@ -9,12 +9,12 @@ function filter(value,registry){
 }
 function wanted(worker,block){return !worker.state.miningFilter?.length||worker.state.miningFilter.includes(block.name);}
 function sameWorld(a,b){return a.bot.dimensionId===b.bot.dimensionId&&String(a.bot.config?.host||'').toLowerCase()===String(b.bot.config?.host||'').toLowerCase()&&Number(a.bot.config?.port||19132)===Number(b.bot.config?.port||19132);}
-function sameJob(a,b){return sameWorld(a,b)&&JSON.stringify(a.state.area)===JSON.stringify(b.state.area)&&a.state.floor===b.state.floor&&a.state.ceiling===b.state.ceiling&&JSON.stringify(a.state.miningFilter||[])===JSON.stringify(b.state.miningFilter||[]);}
+function sameJob(a,b){return sameWorld(a,b)&&JSON.stringify(a.state.miningChunks||[])===JSON.stringify(b.state.miningChunks||[])&&JSON.stringify(a.state.area)===JSON.stringify(b.state.area)&&a.state.floor===b.state.floor&&a.state.ceiling===b.state.ceiling&&JSON.stringify(a.state.miningFilter||[])===JSON.stringify(b.state.miningFilter||[]);}
 function stands(worker,target,{allowScaffold=true}={}){
  const b=worker.bot,p=b.entity.position,t=target.position,eyeReach=b.motion?.runtime?.config.blockReach||5,spots=[],navigation=require('./navigation'),geometry=require('./geometry');
  const stock=allowScaffold&&worker.state.scaffoldEnabled!==false&&b.list?.().some(i=>i.name===worker.state.scaffold||['cobblestone','stone','dirt','obsidian','slime','slime_block'].includes(i.name));
- for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++)for(let dz=-3;dz<=3;dz++){
-  const q=t.offset(dx,dy,dz),center=q.offset(.5,0,.5),eye=center.offset(0,1.62,0),under=b.blockAt(q.offset(0,-1,0));if(eye.distanceTo(t.offset(.5,.5,.5))>eyeReach-.1||!navigation.pass(b,q))continue;
+ for(let dy=-5;dy<=3;dy++)for(let dx=-3;dx<=3;dx++)for(let dz=-3;dz<=3;dz++){
+  const q=t.offset(dx,dy,dz);if(q.y<Math.min(Math.floor(p.y),t.y))continue;const center=q.offset(.5,0,.5),eye=center.offset(0,1.62,0),under=b.blockAt(q.offset(0,-1,0));if(eye.distanceTo(t.offset(.5,.5,.5))>eyeReach-.1||!navigation.pass(b,q))continue;
   if(!under||under.name==='unknown'||hazard(under)||!under.solid&&(!stock||!air(under)))continue;
   if(!geometry.rayClear(b,eye,t.offset(.5,.5,.5),{ignore:[t]}))continue;
   spots.push({position:center,score:p.distanceTo(center)+(under.solid?0:9)});
@@ -25,12 +25,12 @@ class ChunkMining{
  constructor(worker){this.worker=worker;this.bot=worker.bot;this.onUpdate=p=>{for(const c of this.allChunks||[])if(p.x>=c.x1&&p.x<=c.x2&&p.z>=c.z1&&p.z<=c.z2&&p.y>this.worker.state.floor&&p.y<=this.top()){c.layer=Math.max(c.layer??this.top(),Math.floor(p.y));c.dirty=true;this.done=false;this.layer=Math.max(this.layer??this.top(),Math.floor(p.y));}};this.onTerrain=({x,z,top})=>{const c=this.allChunks.find(c=>c.x===x&&c.z===z);if(c){c.layer=Math.max(c.layer,Math.min(this.top(),top));c.dirty=true;this.done=false;}};this.bot.on('worldUpdate',this.onUpdate);this.bot.on('terrainColumn',this.onTerrain);this.reset();}
  top(){return Math.min(this.worker.state.ceiling,this.bot.dimensionId===1?127:this.bot.dimensionId===2?255:319);}
  reset(){this.signature='';this.chunks=[];this.allChunks=[];this.index=0;this.chunk=null;this.layer=null;this.state='未開始';this.unknown=0;this.done=false;this.assisting=false;this.exploreGoal=null;}
- prepare(){const w=this.worker,a=w.state.area,signature=JSON.stringify([a,w.state.floor,w.state.ceiling,w.state.miningFilter,w.bot.dimensionId,[...(w.manager.workers?.values()||[])].filter(o=>o.running&&o.bot.connected&&!o.bot.dead&&sameJob(w,o)).map(o=>o.id)]);if(signature===this.signature)return;this.signature=signature;this.chunks=[];this.allChunks=[];this.index=0;this.layer=null;this.done=false;
-  for(let z=a.z1>>4;z<=a.z2>>4;z++)for(let x=a.x1>>4;x<=a.x2>>4;x++){const c={x,z,x1:Math.max(a.x1,x*16),z1:Math.max(a.z1,z*16),x2:Math.min(a.x2,x*16+15),z2:Math.min(a.z2,z*16+15),layer:this.top(),dirty:true};this.allChunks.push(c);if(w.manager.assigned(w,c.x1,c.z1))this.chunks.push(c);}
+ prepare(){const w=this.worker,a=w.state.area,signature=JSON.stringify([a,w.state.miningChunks,w.state.floor,w.state.ceiling,w.state.miningFilter,w.bot.dimensionId,[...(w.manager.workers?.values()||[])].filter(o=>o.running&&o.bot.connected&&!o.bot.dead&&sameJob(w,o)).map(o=>o.id)]);if(signature===this.signature)return;this.signature=signature;this.chunks=[];this.allChunks=[];this.index=0;this.layer=null;this.done=false;
+  const coords=w.state.miningChunks?.length?w.state.miningChunks:(()=>{const out=[];for(let z=a.z1>>4;z<=a.z2>>4;z++)for(let x=a.x1>>4;x<=a.x2>>4;x++)out.push([x,z]);return out;})();for(const [x,z] of coords){const c={x,z,x1:Math.max(a.x1,x*16),z1:Math.max(a.z1,z*16),x2:Math.min(a.x2,x*16+15),z2:Math.min(a.z2,z*16+15),layer:this.top(),dirty:true};this.allChunks.push(c);if(w.manager.assigned(w,c.x1,c.z1))this.chunks.push(c);}
   const p=this.bot.entity.position;this.chunks.sort((a,b)=>Math.hypot((a.x1+a.x2)/2-p.x,(a.z1+a.z2)/2-p.z)-Math.hypot((b.x1+b.x2)/2-p.x,(b.z1+b.z2)/2-p.z)||a.z-b.z||a.x-b.x);
  }
  layerBlocks(c,y){const out=[],w=this.worker;let unknown=0;for(let z=c.z1;z<=c.z2;z++)for(let x=c.x1;x<=c.x2;x++){
-  const block=this.bot.blockAt(new Vec3(x,y,z));if(!block||block.name==='unknown'){unknown++;continue;}
+  const point=new Vec3(x,y,z);let block=this.bot.blockAt(point);if(!block||block.name==='unknown'){for(const peer of w.manager.workers.values()){if(peer===w||!peer.running||!peer.bot.connected||!sameJob(w,peer))continue;const seen=peer.bot.blockAt(point);if(seen&&seen.name!=='unknown'){block=seen;break;}}}if(!block||block.name==='unknown'){unknown++;continue;}
   if(air(block)||hazard(block)||!block.diggable||block.hardness<0||(w.owned(block.position)||this.otherOwned?.has(key(block.position)))||!wanted(w,block))continue;out.push(block);
  }return {blocks:out,unknown};}
  scan(){this.prepare();const w=this.worker,b=this.bot;this.otherOwned=new Set([...w.manager.workers.values()].filter(other=>other!==w&&sameWorld(w,other)).flatMap(other=>Object.values(other.state?.owned||{}).filter(o=>o.dimension===b.dimensionId).map(o=>key(o.p))));this.unknown=0;this.supportBlocks=[];this.waitingBlocked=false;this.surveying=false;let budget=8192;
@@ -43,13 +43,14 @@ class ChunkMining{
   }
   this.layer=Math.max(w.state.floor,...this.allChunks.map(c=>c.layer));
   if(this.layer<=w.state.floor){this.done=true;this.state='範囲全体の指定ブロックを上から確認済み';return null;}
+  const hasOtherTop=this.allChunks.some(c=>c.layer===this.layer&&this.layerBlocks(c,this.layer).blocks.some(block=>!w.underPlayer(block.position)));
   const preferred=this.chunks.filter(c=>c.layer===this.layer),borrowed=this.allChunks.filter(c=>c.layer===this.layer&&!preferred.includes(c)),feet=b.entity.position;
   borrowed.sort((a,c)=>Math.hypot((a.x1+a.x2)/2-feet.x,(a.z1+a.z2)/2-feet.z)-Math.hypot((c.x1+c.x2)/2-feet.x,(c.z1+c.z2)/2-feet.z));
   const active=[...preferred,...borrowed];if(this.chunk&&active.includes(this.chunk))active.splice(active.indexOf(this.chunk),1),active.unshift(this.chunk);
   const reserved=new Set([...w.manager.workers.values()].filter(other=>other!==w&&other.running&&other.bot.connected&&sameWorld(w,other)&&other.approachPlan&&other.miningTarget&&(other.failed.get(key(other.miningTarget.position))||0)<=Date.now()).map(other=>key(other.miningTarget.position)));let waitingTerrain=null;
   for(const c of active){const found=this.layerBlocks(c,this.layer);if(!found.blocks.length&&!found.unknown){c.dirty=true;continue;}
    if(found.unknown){b.worldMirror?.request(c.x,c.z,(w.state.floor+1)>>4,this.top()>>4);waitingTerrain??=c;continue;}
-   const targets=[];for(const block of found.blocks){if(w.underPlayer(block.position)&&!w.canDropThrough?.(block)){this.supportBlocks.push({...block.position});continue;}if((w.failed.get(key(block.position))||0)>Date.now()||w.manager.claims.has(`${b.dimensionId}:${key(block.position)}`)||reserved.has(key(block.position)))continue;targets.push(block);}
+   const targets=[];for(const block of found.blocks){if(w.underPlayer(block.position)&&(hasOtherTop||!w.canDropThrough?.(block))){this.supportBlocks.push({...block.position});continue;}if((w.failed.get(key(block.position))||0)>Date.now()||w.manager.claims.has(`${b.dimensionId}:${key(block.position)}`)||reserved.has(key(block.position)))continue;targets.push(block);}
    if(targets.length){this.chunk=c;this.index=this.allChunks.indexOf(c);this.assisting=!this.chunks.includes(c);const usable=new Map(targets.map(t=>[t,!!(b.reach?.(t)&&b.visible?.(t))]));targets.sort((a,c)=>Number(usable.get(c))-Number(usable.get(a))||feet.distanceTo(a.position)-feet.distanceTo(c.position));this.state=`上から採掘${this.assisting?'・空いたBotで応援':''} / Y${this.layer} / チャンク ${this.index+1}/${this.allChunks.length} (${c.x},${c.z})`;return targets[0];}
   }
   if(active.some(c=>c.dirty))return this.scan();if(waitingTerrain){this.chunk=waitingTerrain;this.unknown=this.layerBlocks(waitingTerrain,this.layer).unknown;this.state=`チャンク ${waitingTerrain.x},${waitingTerrain.z} / Y${this.layer}の地形受信待ち`;return null;}this.waitingBlocked=true;this.state=`Y${this.layer}の足元・他Bot・経路の再試行待ち（下段には進みません）`;return null;

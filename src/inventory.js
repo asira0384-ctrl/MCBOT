@@ -24,7 +24,7 @@ async function openInventory(bot,signal){signal??=bot.operationSignal;
   // Request the screen, then ask legacy peers for actual contents if no open echo arrives.
   timer=setTimeout(()=>fail(Error('インベントリを開くサーバー応答がありません')),bot.inventoryTimeoutMs||5000);
   if(bot.serverAuthoritativeInventory===false||bot.inventoryMode==='legacy')syncTimer=setTimeout(()=>{try{requestSync(bot);}catch(e){fail(e);}},0);
-  try{const send=()=>bot.client.queue('interact',{action_id:'open_inventory',target_entity_id:0n,has_position:false});send();retryTimer=setTimeout(()=>{if(bot.inventoryOpenState.phase==='opening'&&!signal?.aborted&&bot.connected){try{send();requestSync(bot);}catch(e){fail(e);}}},Math.max(200,Math.min(600,(bot.rttMs||100)*2)));}catch(e){fail(e);}
+  try{const send=()=>bot.client.queue('interact',{action_id:'open_inventory',target_entity_id:0n,has_position:false});send();if(bot.urgentOffhandPending)bot.client._tick?.();retryTimer=setTimeout(()=>{if(bot.inventoryOpenState.phase==='opening'&&!signal?.aborted&&bot.connected){try{send();requestSync(bot);}catch(e){fail(e);}}},Math.max(200,Math.min(600,(bot.rttMs||100)*2)));}catch(e){fail(e);}
  });
  try{await bot.inventoryOpening;}finally{bot.inventoryOpening=null;}
 }
@@ -55,7 +55,7 @@ async function transact(bot,action,changes,signal){signal??=bot.operationSignal;
     if(!matches(bot,list)&&!list.every(c=>proof.get(`${c.type}:${c.slot}`)?.count===(c.item?.count||0))){fail(Error('変更したスロットのサーバー確認がありません'));return;}
     applyResponse(bot,list,r);done(r);
    };
-   timer=setTimeout(()=>fail(Error('アイテム移動のサーバー確認がありません')),bot.inventoryTimeoutMs||7000);
+   timer=setTimeout(()=>fail(Error('アイテム移動のサーバー確認がありません')),bot.inventoryTimeoutMs||(bot.urgentOffhandPending?1800:7000));
    bot.client.on('item_stack_response',onResponse);bot.on('inventorySnapshot',onSnapshot);bot.on('end',ended);signal?.addEventListener('abort',aborted,{once:true});
    // Legacy success may deliberately exclude the source from slot echoes.
    // Ask for a full authoritative snapshot without closing/reopening or resending the swap.
@@ -67,7 +67,7 @@ async function transact(bot,action,changes,signal){signal??=bot.operationSignal;
     if(legacy){const actions=list.map((c,i)=>{const wid=windowId(bot,c.type);if(wid===undefined)throw Error('コンテナの番号を確認できません');return {source_type:'container',window_id:wid,flags:undefined,slot:c.slot,old_item:before[i]||emptyItem(),new_item:c.item||emptyItem()};});
      if(action.type_id==='drop')actions.push({source_type:'world_interaction',window_id:undefined,flags:0,slot:0,old_item:emptyItem(),new_item:{...before[0],count:action.count}});
      bot.client.queue('inventory_transaction',{transaction:{legacy:{legacy_request_id:0},transaction_type:'normal',actions}});
-    }else bot.client.queue('item_stack_request',request(id,[action]));
+    }else bot.client.queue('item_stack_request',request(id,[action]));if(bot.urgentOffhandPending)bot.client._tick?.();
    }catch(e){fail(e);}
   });
   bot.lastInventoryAt=Date.now();bot.lastStackResponse={id,status:'ok',mode:type,at:Date.now(),durationMs:Date.now()-(bot.pendingStackRequest?.at||Date.now()),confirmedBy:response.verifiedSnapshot?'inventory_snapshot':'item_stack_response'};
