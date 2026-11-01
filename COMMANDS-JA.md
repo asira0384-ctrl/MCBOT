@@ -1,6 +1,6 @@
-# v0.3.21 のコマンド
+# v0.3.22 のコマンド
 
-最新版の操作は [UPDATE-v0.3.21-JA.md](UPDATE-v0.3.21-JA.md)。AutoLogは「装備 → 体力・AutoLog設定」、テーマは「設定」。接続先がIGNのBotは番号に関係なくautoworld・autotp等を使用できます。
+最新版の操作は [UPDATE-v0.3.22-JA.md](UPDATE-v0.3.22-JA.md)。AutoLogは「装備 → 体力・AutoLog設定」、テーマは「設定」。接続先がIGNのBotは番号に関係なくautoworld・autotp等を使用できます。
 
 `/admin add user:@相手`を1回実行するとpanel/Webの両方を許可し、共有ボタンを出します（Asira本人だけが登録・解除）。相手はボタン、または `/panel`・`/web` から開始できます。Webの専用リンクを押せばログインでき、追加のOAuth設定は不要です。最大20体に対応。グループは`all`・`ign`・`2b2e`。
 
@@ -42,7 +42,7 @@ KAの初期間隔75ms、CA設置50ms・起爆25msへ変更しました。食事�
 
 ゲーム内では `!pos`、`!pos 1`、`!pos all`、`!coord`、`!position` を誰でも使用できます。座標以外の操作管理者はDiscordから登録します。
 
-## v0.3.21 追加コマンド
+## v0.3.22 追加コマンド
 
 以下は `/bot target:1 command:…` のcommand欄です。`all`・`ign`・`2b2e`にも対応します。
 
@@ -59,3 +59,14 @@ KAの初期間隔75ms、CA設置50ms・起爆25msへ変更しました。食事�
 | `viewdistance 8` | 地形受信距離の要求（2〜8チャンク） |
 
 チャンク座標はブロック座標÷16の切り捨てです。例: X=-1はチャンクX=-1。床・上限・採掘対象は既存の `floor`・`ceiling`・`mineblocks` で設定します。`area` を新たに指定するとチャンク選択を解除します。文面別ログと離れた複数チャンクの選択はWebで操作できます。ログ種類は `connection / mining / movement / health / gear / supply / greetings / system` です。
+
+## v0.3.22 グリーター送信担当
+
+| command | 動作 |
+| --- | --- |
+| `greeter delivery all` | 対象Botの全員が各1回ずつ挨拶 |
+| `greeter delivery rotate` | 従来どおり1体ずつ選択 |
+| `greeter on` / `greeter off` | 対象IDを保持したままON/OFF |
+| `greeter test` | 選択したBotごとにテスト送信を要求 |
+
+例: `/bot target:all command:greeter delivery all`。対象ID・文章の登録はWebのチャット設定から行えます。2b2eとIGNの通知は混ぜません。送信制限やゲーム内ログのOFF設定は維持します。
