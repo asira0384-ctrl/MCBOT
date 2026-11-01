@@ -121,11 +121,16 @@ class WebControl{
  async command(data){
   const ids=this.targets(data.target),command=String(data.command||'').trim();if(!command||command.length>1000||/[\x00-\x1f]/.test(command))throw fail(400,'コマンドの内容が不正です');
   const name=command.split(/\s/)[0].toLowerCase();if(['admin','owner','web'].includes(name))throw fail(403,'管理者の登録はDiscordから行ってください');
-  if(!ids.length)throw fail(400,'先にWebでアカウントを追加してください');const results=[];for(const [index,id]of ids.entries()){
-   if(this.closed)throw fail(503,'終了処理中のため残りの操作を中止しました');
-   try{if(name==='anticrystal'&&command.split(/\s+/)[1]!=='off'&&this.manager.realm?.(id)==='ign'&&ids.length>1){results.push({id,ok:true,result:'IGNではAntiをOFFのまま維持します'});continue;}if(['autokit','autotp','autoback','autoworld','kit','tpa','back','world'].includes(name)&&this.manager.realm?.(id)!=='ign'){results.push({id,ok:true,result:'IGN専用操作のため省略'});continue;}if(name==='connect'&&this.manager.requestConnection){this.manager.requestConnection(id);results.push({id,ok:true,result:'ログイン・接続を開始しました。認証画面で進行状況を確認してください'});}else if(name==='connect'&&this.manager.accounts&&!this.manager.workers.get(id)?.bot.connected&&!this.manager.accounts.snapshot(id,this.manager.names.get(id)).saved)results.push({id,ok:true,result:'先に単体Botを選んで「Microsoft認証」を押してください。未認証のままサーバーには接続しません'});else results.push({id,ok:true,result:await this.manager.execute(String(id),command,'web')});}catch(e){results.push({id,ok:false,result:String(e.message)});}
-   if(name==='connect'&&index<ids.length-1)await new Promise(resolve=>setTimeout(resolve,1500));
-  }
+  if(!ids.length)throw fail(400,'先にWebでアカウントを追加してください');const results=await Promise.all(ids.map(async(id,index)=>{
+   if(name==='connect'&&index)await new Promise(resolve=>setTimeout(resolve,index*1500));
+   if(this.closed)return {id,ok:false,result:'終了処理中のため操作を中止しました'};
+   try{if(name==='anticrystal'&&command.split(/\s+/)[1]!=='off'&&this.manager.realm?.(id)==='ign'&&ids.length>1)return {id,ok:true,result:'IGNではAntiをOFFのまま維持します'};
+    if(['autokit','autotp','autoback','autoworld','kit','tpa','back','world'].includes(name)&&this.manager.realm?.(id)!=='ign')return {id,ok:true,result:'IGN専用操作のため省略'};
+    if(name==='connect'&&this.manager.requestConnection){this.manager.requestConnection(id);return {id,ok:true,result:'ログイン・接続を開始しました。認証画面で進行状況を確認してください'};}
+    if(name==='connect'&&this.manager.accounts&&!this.manager.workers.get(id)?.bot.connected&&!this.manager.accounts.snapshot(id,this.manager.names.get(id)).saved)return {id,ok:true,result:'先に単体Botを選んで「Microsoft認証」を押してください。未認証のままサーバーには接続しません'};
+    return {id,ok:true,result:await this.manager.execute(String(id),command,'web')};
+   }catch(error){return {id,ok:false,result:String(error.message)};}
+  }));
   this.record(ids,name+' / '+(results.every(r=>r.ok)?'受付完了':'一部未完了'));return {ok:results.every(r=>r.ok),result:results.map(r=>`Bot${r.id}: ${r.result}`).join('\n').slice(0,16000),results};
  }
  async handle(req,res){
@@ -173,7 +178,7 @@ class WebControl{
    if(pathname==='/api/appearance'){const data=await body(req,12*1024*1024),appearance=await this.once(req,session,()=>require('./appearance').update(this.manager.store,session.discordId||session.owner,data));this.json(res,200,{ok:true,appearance});return;}
    if(pathname==='/api/backup'){this.requireOwner(session);const data=await body(req,36*1024*1024),result=await this.once(req,session,()=>{const backup=require('./backup');if(data.action==='export')return {ok:true,backup:backup.exported(this.manager,data.password)};if(data.action==='restore'){backup.restored(this.manager,data.password,data.backup);this.record([],'暗号化バックアップを復元');return {ok:true,result:'アカウント・設定・壁紙・音声を復元しました'};}throw fail(400,'バックアップ操作を選んでください');});this.json(res,200,result);return;}
    if(pathname==='/api/command'){const data=await body(req);const result=await this.once(req,session,()=>this.command(data));this.json(res,200,result);return;}
-   if(pathname==='/api/messaging'){const data=await body(req,128*1024),result=await this.once(req,session,()=>{const ids=this.targets(data.target),settings=require('./messaging').configure(this.manager,ids,data.section,data.settings||{});this.record(ids,'チャット設定: '+data.section);return {ok:true,settings,result:'選択したBotへ設定を保存しました。重複する自動通知は1体が担当します'};});this.json(res,200,result);this.requestPump();return;}
+   if(pathname==='/api/messaging'){const data=await body(req,128*1024),result=await this.once(req,session,()=>{const ids=this.targets(data.target),settings=require('./messaging').configure(this.manager,ids,data.section,data.settings||{});this.record(ids,'チャット設定: '+data.section);return {ok:true,settings,result:'選択したBotへ設定を保存しました。'+(data.section==='greeting'&&settings.delivery==='all'?'グリーターは各Botが1回ずつ送信します':'自動通知は1体ずつ担当します')};});this.json(res,200,result);this.requestPump();return;}
    if(pathname==='/api/chat'){
     const data=await body(req),result=await this.once(req,session,async()=>{const ids=this.targets(data.target);if(!['public','whisper'].includes(data.type))throw fail(400,'送信先を選んでください');const results=[];for(const id of ids){try{results.push({id,ok:true,result:data.type==='public'?this.manager.say(String(id),data.message):this.manager.whisper(String(id),data.recipient,data.message)});}catch(e){results.push({id,ok:false,result:e.message});}}this.record(ids,data.type==='public'?'公開チャット':'tell');return {ok:results.every(r=>r.ok),result:results.map(r=>`Bot${r.id}: ${r.result}`).join('\n')};});this.json(res,200,result);return;
    }
