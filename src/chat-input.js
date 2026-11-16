@@ -12,7 +12,7 @@ function parseLine(text){
 }
 // Parse AI questions separately; never reinterpret another player's quoted command.
 function aiChat(packet){
- const direct=publicChat(packet),cmd=/^!ai(?:g)?(?=$|\s|[ぁ-んァ-ヶ一-龠？?])/iu;
+ const direct=publicChat(packet),cmd=/^!ai(?:g)?(?=$|\s|[ぁ-んァ-ヶ一-龠？?@])/iu;
  if(direct&&cmd.test(direct.message)&&(!direct.name.startsWith('[')||packet.source_name))return direct;
  const raw=textOf(packet);const match=raw.match(/^(?:\[[^\]\r\n]{1,22}\]\s*)*(?:[<〈《]([^<>〈〉《》\r\n]{1,64})[>〉》]|([^:：»›❯➤|\r\n]{1,64}?)\s*(?:[:：»›❯➤|]))\s*(!ai.*)$/iu);
  if(!match||!cmd.test(match[3]))return null;
