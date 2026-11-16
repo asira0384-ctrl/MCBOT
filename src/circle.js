@@ -3,7 +3,7 @@ const {norm,solid}=require('./util'),{pass}=require('./navigation');
 const TAU=2*Math.PI;
 function configure(m,d){
  if(!['2b2e','ign'].includes(d.realm)||!['start','stop'].includes(d.action))throw Error('サーバーと操作を選んでください');
- const old=m.circles?.[d.realm];if(d.action==='start'&&(!String(d.name||'').trim()||String(d.name).length>64||!Number.isFinite(d.radius)||d.radius<2||d.radius>32))throw Error('MCIDと半径（2～32）を確認してください');
+ const old=m.circles?.[d.realm];if(d.action==='start'&&(!String(d.name||'').trim()||String(d.name).length>64||!Number.isFinite(d.radius)||d.radius<.5||d.radius>32))throw Error('MCIDと半径（0.5～32）を確認してください');
  for(const w of m.workers.values())if(old&&w.runtime?.circle===old){w.runtime.circle=null;w.runtime.travel.stopFollowing();}
  m.circles??={};delete m.circles[d.realm];if(d.action==='start')m.circles[d.realm]={name:d.name.trim(),radius:d.radius,slots:new Map(),state:'位置を検出中',count:0,arrived:0,epoch:1};refresh(m,d.realm);return snapshot(m);
 }
@@ -23,7 +23,7 @@ function refresh(m,realm,now=Date.now()){
  c.slots=new Map(sorted.map((w,i)=>[w.id,{angle:rotation+i*TAU/team.length}]));
  }
  if(!c.anchor||center.distanceTo(c.anchor)>.12){if(!c.moving)c.epoch++;c.moving=true;c.anchor=center.clone();c.movedAt=now;}else if(now-c.movedAt>=650)c.moving=false;
- c.center=center.clone();const radius=Math.max(c.radius,team.length/Math.PI);
+ c.center=center.clone();const radius=c.radius;
  for(const w of team){const r=w.runtime;if(r.circle!==c){w.stop();r.stop();r.paused=false;w.state.runtimePaused=false;r.circle=c;}
  const s=c.slots.get(w.id),ideal=center.offset(radius*Math.cos(s.angle),0,radius*Math.sin(s.angle));s.goal=null;
  for(const dy of [0,1,-1,2,-2]){const q=ideal.floored().offset(0,dy,0);if(solid(w.bot.blockAt(q.offset(0,-1,0)))&&pass(w.bot,q)){s.goal=ideal.offset(0,q.y-ideal.y,0);break;}}
@@ -31,7 +31,7 @@ function refresh(m,realm,now=Date.now()){
  }c.state=c.moving?'円のまま追従中':'整列 '+c.arrived+'/'+team.length;
 }
 function drive(r){const c=r.circle;if(!c)return false;const s=c.slots.get(r.worker.id),b=r.bot,p=b.entity.position,t=r.travel;if(!s?.goal){t.stopFollowing();return true;}
- const d=s.goal.minus(p),len=Math.hypot(d.x,d.z);if(len<=.25&&Math.abs(d.y)<.5){t.stopFollowing();b.lookAt(c.center.offset(0,1.5,0),false);if(!c.moving&&s.swung!==c.epoch&&!b.handUse&&!b.actionHandBusy){b.client.queue('animate',{action_id:'swing_arm',runtime_entity_id:BigInt(b._runtimeEntityId),data:0,has_swing_source:false});s.swung=c.epoch;}return true;}
+ const d=s.goal.minus(p),len=Math.hypot(d.x,d.z);if(len<=Math.min(.22,c.radius*.12)&&Math.abs(d.y)<.5){t.stopFollowing();b.lookAt(c.center.offset(0,1.5,0),false);if(!c.moving&&s.swung!==c.epoch&&!b.handUse&&!b.actionHandBusy){b.client.queue('animate',{action_id:'swing_arm',runtime_entity_id:BigInt(b._runtimeEntityId),data:0,has_swing_source:false});s.swung=c.epoch;}return true;}
  if(len<1.4&&Math.abs(d.y)<.45&&[.33,.67,1].every(k=>{const q=p.offset(k*d.x,0,k*d.z).floored();return pass(b,q)&&solid(b.blockAt(q.offset(0,-1,0)));})){t.stopFollowing();b.desiredMoveWorld={x:d.x/len,z:d.z/len};b.desiredMoveSpeed=Math.min(.19,len);b.setControlState('forward',true);b.lookAt(s.goal.offset(0,1.5,0),false);}else t.follow(s.goal,.21,'circle',.25);return true;
 }
 module.exports={configure,snapshot,refresh,drive};

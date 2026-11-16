@@ -107,7 +107,7 @@
  onForm('enemy-form',v=>command('enemy add '+v.name.trim()));
  onForm('command-form',async v=>{await command(v.command);$('command-dialog').close();});
  $('ai-form').addEventListener('input',()=>{$('ai-form').dataset.dirty='1';});
- function circleStatus(){const f=$('circle-form'),c=app.state?.circles?.[f.elements.realm.value];$('circle-status').textContent=c?c.name+' 中心 · '+c.count+'体 · '+c.state:'停止中';}
+ function circleStatus(){const f=$('circle-form'),c=app.state?.circles?.[f.elements.realm.value];$('circle-status').textContent=c?c.name+' 中心 · 半径 '+c.radius+' ブロック · '+c.count+'体 · '+c.state:'停止中';}
  $('circle-form').elements.realm.addEventListener('change',circleStatus);
  onForm('circle-form',async v=>{await api('/api/circle',{...v,radius:Number(v.radius),action:'start'});await refresh();result('円フォーメーションを開始しました');});
  $('circle-stop').addEventListener('click',async()=>{try{await api('/api/circle',{realm:$('circle-form').elements.realm.value,action:'stop'});await refresh();result('円フォーメーションを解除しました');}catch(e){result(e.message,true);}});
