@@ -206,7 +206,7 @@ class Travel{
  }
  canDig(block){const w=this.runtime.worker;if(!w.running)return w.state.floor===null||block.position.y>w.state.floor;return w.inArea(block.position)&&require('./mining').wanted(w,block)&&block.position.y>=(w.miner?.layer??w.state.floor+1);}
  async pillar(item,signal){
-  const b=this.bot,p=b.entity.position,feet=p.floored();if(!item)throw Error('積み上げるブロックがありません');if(this.runtime.protectAnti?.())throw Error('戦闘中のAntiを維持するため積み上げを待機します');
+  const b=this.bot,p=b.entity.position,feet=p.floored();if(require('./mining').columnBusy(this.runtime.worker,feet))throw Object.assign(Error('他のBotの上昇列を避けます'),{code:'PATH_WAIT'});if(!item)throw Error('積み上げるブロックがありません');if(this.runtime.protectAnti?.())throw Error('戦闘中のAntiを維持するため積み上げを待機します');
   if(!b.entity.onGround||!solid(b.blockAt(feet.offset(0,-1,0)))||!bodyClear(b,feet.offset(.5,1,.5)))throw Object.assign(Error('積み上げ用の足場・頭上を確認中'),{code:'PATH_WAIT'});
   const center=feet.offset(.5,0,.5);if(Math.hypot(p.x-center.x,p.z-center.z)>.12){const drive=()=>{const d=center.minus(b.entity.position),length=Math.hypot(d.x,d.z)||1;b.desiredMoveWorld={x:d.x/length,z:d.z/length};b.desiredMoveSpeed=Math.min(.12,length);b.setControlState('forward',true);};try{b.on('physicsTick',drive);drive();await b.waitUntil(()=>Math.hypot(b.entity.position.x-center.x,b.entity.position.z-center.z)<.12,2000,signal);}finally{b.removeListener('physicsTick',drive);this.stopFollowing();}}
   await b.equip(item.slot,signal);this.stopFollowing();b.setControlState('jump',true);this.waiting='ジャンプして足元へ1個ずつ積み上げ';

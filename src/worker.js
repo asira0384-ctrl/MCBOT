@@ -13,7 +13,7 @@ class Worker {
   if(bot.client)this.runtime=new (require('./runtime').Runtime)(this);
  }
  notice(text){this.manager.notice(this.id,text);}
- stop(){this.startRequested=false;this.cleanupRequested=false;this.running=false;this.receiving=false;this.receivedBlock=false;this.mode='stopped';this.bot.halt();this.abort?.abort();}
+ stop(){this.approachPlan=null;this.miningTarget=null;this.startRequested=false;this.cleanupRequested=false;this.running=false;this.receiving=false;this.receivedBlock=false;this.mode='stopped';this.bot.halt();this.abort?.abort();}
  requestCleanup(){this.stop();this.cleanupRequested=true;this.mode='cleaning';if(this.runtime){this.runtime.paused=false;this.state.runtimePaused=false;this.runtime.latestFeature='cleanup';this.runtime.follower?.stop();this.runtime.travel.cancel(false);}return '自分で置いた足場を安全な順に回収します';}
  start(){if(this.state.miningDimension!==undefined&&this.state.miningDimension!==this.bot.dimensionId)throw Error('指定した採掘ディメンションへ移動してください');if(!this.state.area||!Number.isInteger(this.state.floor))throw Error('area と floor を先に指定してください');if(this.bot.terrainReady===false)throw Error('Botの足元の地形をまだ受信していません。messagesでサーバー案内を確認してください');if(!this.bot.connected||this.bot.dead)throw Error('Botが接続していません');if(this.state.supplyPending||this.state.autoBox)throw Error('補給途中の箱があります。recover / autoslot receive を実行してください');if(this.busy||this.controlBusy){this.startRequested=true;return false;}this.startRequested=false;this.cleanupRequested=false;this.miningRetryAt=0;this.miningPhase='scan';if(this.runtime){this.runtime.paused=false;this.runtime.worker.state.runtimePaused=false;this.runtime.latestFeature='mining';this.runtime.follower.stop();this.runtime.travel.cancel(false);}this.miner.reset();this.bot.naturalIdleFall=false;this.bot.passivePhysics=false;this.running=true;this.mode='running';this.missing='';return true;}
  receive(){this.stop();this.receiving=true;this.mode='receiving';this.lastReceive=0;this.receivedBlock=false;this.notice('足場ブロックを渡してください。最後の受け取りから3秒後に再開します');}
@@ -43,8 +43,8 @@ class Worker {
    await this.discard(signal);
    const target=this.chooseTarget();this.miningTarget=target?{name:target.name,position:{...target.position}}:null;if(!target){await this.explore(signal);return;}
    const reservation=`${this.bot.dimensionId}:${key(target.position)}`;if(this.manager.claims.has(reservation))return;this.manager.claims.set(reservation,this.id);
-   try{if(this.bot.reach(target)&&this.bot.visible(target)){this.miningPhase='dig';this.miningApproach=null;this.approachPlan=null;if(this.runtime)this.runtime.travel.groundPlan=null;await this.bot.dig(target,signal);if(signal.aborted)return;this.missing='';this.miningPhase='confirmed';
-      if(!this.owned(target.position)){addStat(this.state.stats,target.name);addStat(this.state.session,target.name);this.recordMined(target.name);this.manager.store.save();}
+   try{if(this.bot.reach(target,this.state.miningRange)&&this.bot.visible(target)){this.miningPhase='dig';this.miningApproach=null;this.approachPlan=null;if(this.runtime)this.runtime.travel.groundPlan=null;await this.bot.dig(target,signal,undefined,{range:this.state.miningRange});if(signal.aborted)return;this.missing='';this.miningPhase='confirmed';
+      if(!this.owned(target.position)){addStat(this.state.stats,target.name);addStat(this.state.session,target.name);this.recordMined(target.name);if(this.manager.saveMining)this.manager.saveMining();else this.manager.store.save();}
       await this.cleanup(signal);
      }else await this.approach(target,signal);
    }catch(e){if(signal.aborted)return;if(this.bot.health<12)return;this.miningPhase='retry';this.failed.set(key(target.position),Date.now()+(e.code==='PATH_WAIT'?8000:3000));this.approachPlan=null;this.missing=e.message;if(this.lastMiningNotice!==e.message||Date.now()-(this.lastMiningNoticeAt||0)>10000){this.lastMiningNotice=e.message;this.lastMiningNoticeAt=Date.now();this.manager.notice(this.id,'採掘経路を再確認: '+e.message,{game:false});}return;}finally{this.manager.claims.delete(reservation);}
@@ -58,7 +58,7 @@ class Worker {
   const p=new Vec3(held.position.x,held.position.y,held.position.z),block=this.bot.blockAt(p),reservation=`${this.bot.dimensionId}:${key(p)}`;
   // Keep the actual target as well as its stance. Otherwise the nearest-block
   // sort could switch targets after every step and undo the stable route.
-  if(plan.targetKey===reservation&&block&&!air(block)&&block.diggable&&block.name===held.name&&this.inArea(p)&&require('./mining').wanted(this,block)&&!this.owned(p)&&(!this.underPlayer(p)||this.canDropThrough(block))&&(this.failed.get(key(p))||0)<=Date.now()&&!this.manager.claims.has(reservation))return block;
+  if(plan.targetKey===reservation&&block&&!air(block)&&block.diggable&&block.name===held.name&&this.inArea(p)&&require('./mining').wanted(this,block)&&!this.owned(p)&&!this.underPlayer(p)&&(this.failed.get(key(p))||0)<=Date.now()&&!this.manager.claims.has(reservation))return block;
   return candidate;
  }
  miningStatus(){return {...this.miner.snapshot(),phase:this.miningPhase||null,target:this.miningTarget||null,approach:this.miningApproach||null,missing:this.missing||'',dig:this.bot.digState||null,recovery:this.runtime?.travel.collisionRecovery||null,scaffolds:this.scaffoldCleanup||null,retryAt:this.miningRetryAt||null};}
@@ -74,13 +74,14 @@ class Worker {
    }
    if(!best)best=detour;
    if(!best)throw Object.assign(Error(spots.length?'指定ブロックへ届く経路を再探索中。別の対象も確認します':'指定ブロックを掘れる立ち位置がありません。範囲・床・天井を確認してください'),{code:'PATH_WAIT'});
-   this.approachPlan=best;this.miningApproach={position:{...best.goal},target:{...target.position}};this.missing='';try{await travel.walk(best.goal,'dig',signal,{until:()=>b.reach(target)&&b.visible(target),minY:Math.min(Math.floor(b.entity.position.y),target.position.y)});}catch(e){this.approachPlan=null;travel.groundPlan=null;throw e;}return;
+   this.approachPlan=best;this.miningApproach={position:{...best.goal},target:{...target.position}};this.missing='';try{await travel.walk(best.goal,'dig',signal,{until:()=>b.reach(target,this.state.miningRange)&&b.visible(target),minY:Math.min(Math.floor(b.entity.position.y),target.position.y)});}catch(e){this.approachPlan=null;travel.groundPlan=null;throw e;}return;
   }const t=target.position,p=this.bot.entity.position;const spots=[];
   for(let dx=-2;dx<=2;dx++)for(let dz=-2;dz<=2;dz++)for(let dy=-1;dy<=1;dy++){const q=new Vec3(t.x+dx,Math.floor(p.y)+dy,t.z+dz);if(air(this.bot.blockAt(q))&&air(this.bot.blockAt(q.offset(0,1,0)))&&solid(this.bot.blockAt(q.offset(0,-1,0))))spots.push(q);}
-  spots.sort((a,b)=>p.distanceTo(a)-p.distanceTo(b));for(const spot of spots.slice(0,3)){try{await this.bot.go(spot,signal);if(this.bot.reach(target))return;}catch(e){if(signal.aborted||this.bot.health<12)throw e;}}
+  spots.sort((a,b)=>p.distanceTo(a)-p.distanceTo(b));for(const spot of spots.slice(0,3)){try{await this.bot.go(spot,signal);if(this.bot.reach(target,this.state.miningRange))return;}catch(e){if(signal.aborted||this.bot.health<12)throw e;}}
   await this.buildStep(t,signal);
  }
  async placeOwned(pos,item,kind,signal,options){
+  if(kind==='scaffold'&&require('./mining').columnBusy(this,pos))throw Object.assign(Error('他のBotがいるマスには積めません'),{code:'PATH_WAIT'});
   if(kind==='scaffold'&&this.state.scaffoldEnabled===false)throw Object.assign(Error('足場の自動設置はOFFです'),{code:'PATH_WAIT'});
   const b=this.bot,dimension=b.dimensionId,k=`${dimension}:${key(pos)}`,began=Date.now();if(this.manager.claims.has(k))throw Error('他のBotがこの場所を操作中です');this.manager.claims.set(k,this.id);
   try{await b.place(pos,item,signal,options);this.recordOwned(pos,kind,item.name);}finally{
@@ -109,10 +110,10 @@ class Worker {
  }
  async leaveMiningSupport(signal){
   const b=this.bot,p=b.entity.position,travel=this.runtime?.travel;if(!travel||!this.miner.supportBlocks.some(q=>Math.abs(q.x+.5-p.x)<.9&&Math.abs(q.z+.5-p.z)<.9&&p.y>=q.y&&p.y<=q.y+2))return false;
-  const navigation=require('./navigation'),base=p.floored(),goals=[];for(let dx=-3;dx<=3;dx++)for(let dz=-3;dz<=3;dz++)for(const dy of [-1,0,1]){
-   const q=base.offset(dx,dy,dz),stand=q.offset(.5,0,.5),support=q.offset(0,-1,0);if(stand.distanceTo(p)<.6||!solid(b.blockAt(support))||!navigation.pass(b,q))continue;
+  const navigation=require('./navigation'),base=p.floored(),goals=[];for(let dx=-3;dx<=3;dx++)for(let dz=-3;dz<=3;dz++)for(const dy of new Set([0,1,(navigation.dropLanding(b,base.offset(dx,0,dz),travel.dropLimit?.()??64)?.y??base.y)-base.y])){
+   const q=base.offset(dx,dy,dz),stand=q.offset(.5,0,.5),support=q.offset(0,-1,0);if(require("./mining").columnBusy(this,q)||stand.distanceTo(p)<.6||!solid(b.blockAt(support))||!navigation.pass(b,q))continue;
    if(support.y>=this.miner.layer&&this.inArea(support)&&!this.owned(support)&&require('./mining').wanted(this,b.blockAt(support)))continue;
-   const path=navigation.groundPath(b,p,stand,{limit:350,blocked:(a,c)=>travel.edgeBlocked(a,c)});if(path.length&&path.at(-1).position.offset(.5,0,.5).distanceTo(stand)<.25)goals.push({stand,cost:path.length+Math.abs(dy)*.1});
+   const path=navigation.groundPath(b,p,stand,{limit:350,maxDrop:travel.dropLimit?.()??64,blocked:(a,c)=>travel.edgeBlocked(a,c)});if(path.length&&path.at(-1).position.offset(.5,0,.5).distanceTo(stand)<.25)goals.push({stand,cost:path.length+Math.abs(dy)*.1});
   }
   goals.sort((a,c)=>a.cost-c.cost);if(!goals.length){this.missing='自分の足元を残しています。隣の低い足場・範囲外の安全な地面を確認中';return false;}
   this.miningPhase='reposition';this.missing='自分の足元を掘るため安全な地面へ移動';try{await travel.walk(goals[0].stand,'walk',signal,{allowScaffold:false});}catch(e){if(signal.aborted)throw e;this.missing=e.message;}return true;

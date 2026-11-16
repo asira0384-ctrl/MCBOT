@@ -16,7 +16,7 @@ function cancel(bot){const p=bot.mining,side=bot.digState?.face??1,old=bot.digSt
 async function dig(bot,block,signal,preferredTool,options={}){
  if(signal?.aborted)throw Error('停止しました');if(bot.handUse||bot.actionHandBusy)throw require('./item-use').busy();
  block=bot.blockAt(block.position);if(!block||block.name==='unknown')throw Error('採掘するブロックの地形が未受信です');if(air(block))return;
- if(!bot.reach(block)||!bot.visible(block))throw Error('ブロックに手が届きません');if(!block.diggable||block.hardness<0)throw Error('破壊できないブロックです');
+ if(!bot.reach(block,options.range)||!bot.visible(block))throw Error('ブロックに手が届きません');if(!block.diggable||block.hardness<0)throw Error('破壊できないブロックです');
  const tool=preferredTool||bot.miningTool?.(block)||bot.tool();if(!tool)throw Error('採掘する道具がありません');const profile=require('./mining-speed').estimate(bot,block,tool);if(!Number.isFinite(profile.ms))throw Error('採掘時間を確認できないブロックです');if(!profile.harvestable)throw Error(`${block.name}に適した採掘道具を補給してください`);
  const lease=hand.claim(bot,'mining'),position={x:block.position.x,y:block.position.y,z:block.position.z},side=face(bot,block),old=legacy(bot),generation=bot.worldGeneration,dimension=bot.dimensionId;
  const state=bot.digState={phase:'selecting',name:block.name,position,face:side,mode:old?'legacy':'server',at:Date.now(),confirmed:false};let timer,finished=false,started=false,failure;
@@ -24,7 +24,7 @@ async function dig(bot,block,signal,preferredTool,options={}){
   bot.straightTimerActive=false;await bot.equip(tool.slot,signal);if(bot.inventoryOpen||bot.window)bot.closeContainer();await hand.settled(bot,signal);
   if(signal?.aborted||bot.dead||!bot.connected)throw Error('停止しました');
   bot.clearControlStates();bot.desiredMoveWorld=null;bot.desiredMoveSpeed=undefined;bot.lookAt(block.position.offset(.5,.5,.5),false);
-  if(!bot.reach(block)||!bot.visible(block))throw Error('採掘位置が変わりました。接近し直します');
+  if(!bot.reach(block,options.range)||!bot.visible(block))throw Error('採掘位置が変わりました。接近し直します');
   bot.pendingBreakActions=[];bot.pendingMiningRequest=null;bot.breakAction=null;bot.mining=position;started=true;
   const held=bot.items[bot.quickBarSlot];if(bot.name(held)!==tool.name)throw Error('手に持ったピッケルを確認できません');
   const breakMs=Math.max(50,bot.breakTime(block,{...tool,raw:held})),begin=Date.now();state.breakMs=breakMs;state.profile=profile;state.phase='breaking';state.startedAt=begin;
@@ -34,7 +34,7 @@ async function dig(bot,block,signal,preferredTool,options={}){
    try{
     if(signal?.aborted||bot.dead||!bot.connected||bot.worldGeneration!==generation||bot.dimensionId!==dimension)throw Error('停止・切断・世界が変わりました');
     if(bot.handUse||bot.name(bot.items[bot.quickBarSlot])!==tool.name)throw Error('採掘中に手のアイテムが変わりました');
-    if(!bot.reach(block))throw Error('採掘中にブロックから離れました');
+    if(!bot.reach(block,options.range))throw Error('採掘中にブロックから離れました');
     if(air(bot.blockAt(block.position)))return;
     const elapsed=Date.now()-begin;
     state.elapsedMs=elapsed;state.remainingMs=Math.max(0,breakMs-elapsed);

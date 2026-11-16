@@ -12,13 +12,13 @@ async function step(worker,signal,{finish=false}={}){
  if(!all.length){worker.state.scaffoldCleanupPending=false;return result('complete','置いた足場の回収完了');}
  if(b.handUse||b.actionHandBusy||b.manualInventoryBusy||travel?.flight||worker.runtime?.protectAnti?.())return result('waiting','飲食・手の操作・飛行・戦闘が終わってから足場を回収します');
  const available=leaves(worker).filter(o=>{const p=new Vec3(o.p.x,o.p.y,o.p.z),owner=worker.manager.claims?.get(`${b.dimensionId}:${key(p)}`);return !(worker.running&&worker.miner?.layer>p.y&&worker.miner?.layer-p.y<=6)&&!occupied(worker,p)&&!usedByPath(worker,p)&&(owner===undefined||owner===worker.id)&&(worker.scaffoldFailures.get(key(p))||0)<=now;});
- const target=available.find(o=>{const block=b.blockAt(new Vec3(o.p.x,o.p.y,o.p.z));return block?.name===o.name&&b.reach(block)&&b.visible(block);});
+ const target=available.find(o=>{const block=b.blockAt(new Vec3(o.p.x,o.p.y,o.p.z));return Math.floor(b.entity.position.y)<=o.p.y+1&&block?.name===o.name&&b.reach(block)&&b.visible(block);});
  if(target){const q=new Vec3(target.p.x,target.p.y,target.p.z),claim=`${b.dimensionId}:${key(q)}`;worker.manager.claims??=new Map();worker.manager.claims.set(claim,worker.id);
   try{worker.miningPhase='cleanup';await b.dig(b.blockAt(q),signal);worker.removeOwned(q);return result('removing','不要になった自分の足場を回収中',true);}catch(e){if(signal?.aborted)throw e;worker.scaffoldFailures.set(key(q),now+3000);return result('retry','足場の回収を再確認: '+e.message);}finally{worker.manager.claims.delete(claim);}
  }
- if(!finish||!travel)return result('waiting','足元・他プレイヤー・上の足場を支えている足場は移動後に回収します');
+ if(!travel||!finish&&!all.some(o=>occupied(worker,new Vec3(o.p.x,o.p.y,o.p.z))&&o.p.y>=(worker.miner?.layer??Infinity)))return result('waiting','足元・他プレイヤー・上の足場を支えている足場は移動後に回収します');
  // Move onto received permanent ground before removing our last support.
- const base=b.entity.position.floored(),goals=[];for(let dx=-5;dx<=5;dx++)for(let dz=-5;dz<=5;dz++)for(let dy=-3;dy<=1;dy++){
+ const base=b.entity.position.floored(),goals=[];for(let dx=-5;dx<=5;dx++)for(let dz=-5;dz<=5;dz++)for(const dy of new Set([-3,-2,-1,0,1,(require('./navigation').dropLanding(b,base.offset(dx,0,dz),travel.dropLimit?.()??64)?.y??base.y)-base.y])){
   const q=base.offset(dx,dy,dz),point=q.offset(.5,0,.5);if(point.distanceTo(b.entity.position)<.5||!permanent(worker,point)||!require('./navigation').pass(b,q))continue;
   const nextTarget=available[0]||all[0],tp=new Vec3(nextTarget.p.x,nextTarget.p.y,nextTarget.p.z);goals.push({point,score:point.distanceTo(b.entity.position)+point.distanceTo(tp)*.6});
  }
