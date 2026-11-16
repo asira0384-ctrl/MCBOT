@@ -1,8 +1,8 @@
-# Asira Clear Bot v0.3.22
+# Asira Clear Bot v0.3.23
 
 Minecraft統合版のBotをDiscordとWebから操作する、既存MCBOTサービス用の更新版です。最大20アカウントを登録できます。
 
-[更新ガイド](UPDATE-v0.3.22-JA.md) · [初回設定](START-HERE-JA.md) · [Web操作](WEB-GUIDE-JA.md) · [コマンド](COMMANDS-JA.md) · [検証記録](VALIDATION-v0.3.22.md)
+[更新ガイド](UPDATE-v0.3.23-JA.md) · [初回設定](START-HERE-JA.md) · [Web操作](WEB-GUIDE-JA.md) · [コマンド](COMMANDS-JA.md) · [検証記録](VALIDATION-v0.3.23.md)
 
 ## 今回の変更
 
@@ -17,7 +17,7 @@ Minecraft統合版のBotをDiscordとWebから操作する、既存MCBOTサー�
 
 ## 更新
 
-ZIPを解凍し、`AsiraClearBot` フォルダの中身を既存GitHubへ上書きします。`src`・`web`・`vendor`・`scripts`・両packageファイル・Dockerfileを含めてください。Railwayのデプロイ成功後、WebをCtrl+F5で再読み込みし、右上の `v0.3.22` を確認します。既存のVariables・保存データは維持してください。
+ZIPを解凍し、`AsiraClearBot` フォルダの中身を既存GitHubへ上書きします。`src`・`web`・`vendor`・`scripts`・両packageファイル・Dockerfileを含めてください。Railwayのデプロイ成功後、WebをCtrl+F5で再読み込みし、右上の `v0.3.23` を確認します。既存のVariables・保存データは維持してください。
 
 この版を入れた後、一度「接続」で接続してください。以後は接続希望も保存し、再起動時に保存認証で再接続します。「切断」・認証のキャンセル・AutoLogによる切断は自動再接続の対象から外します。AutoLogの既存の安全確認による再入場は引き続き使用できます。
 

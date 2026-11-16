@@ -70,3 +70,5 @@ KAの初期間隔75ms、CA設置50ms・起爆25msへ変更しました。食事�
 | `greeter test` | 選択したBotごとにテスト送信を要求 |
 
 例: `/bot target:all command:greeter delivery all`。対象ID・文章の登録はWebのチャット設定から行えます。2b2eとIGNの通知は混ぜません。送信制限やゲーム内ログのOFF設定は維持します。
+
+!ai・管理者の !aig・採掘レンジの例は [v0.3.23 の操作](UPDATE-v0.3.23-JA.md) を参照してください。
