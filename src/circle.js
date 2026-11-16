@@ -22,21 +22,22 @@ function refresh(m,realm,now=Date.now()){
  let x=0,z=0;sorted.forEach((w,i)=>{const p=w.bot.entity.position,t=i*TAU/team.length,dx=p.x-center.x,dz=p.z-center.z;x+=dx*Math.cos(t)+dz*Math.sin(t);z+=dz*Math.cos(t)-dx*Math.sin(t);});const rotation=Math.atan2(z,x);
  c.slots=new Map(sorted.map((w,i)=>[w.id,{angle:rotation+i*TAU/team.length}]));
  }
- if(!c.anchor||center.distanceTo(c.anchor)>.12){if(!c.moving)c.epoch++;c.moving=true;c.anchor=center.clone();c.movedAt=now;}else if(now-c.movedAt>=650)c.moving=false;
+ if(!c.anchor||center.distanceTo(c.anchor)>.12){if(!c.moving)c.epoch++;c.moving=true;c.anchor=center.clone();c.movedAt=now;}else if(now-c.movedAt>=220)c.moving=false;
  c.center=center.clone();const radius=c.radius;
  for(const w of team){const r=w.runtime;if(r.circle!==c){w.stop();r.stop();r.paused=false;w.state.runtimePaused=false;r.circle=c;}
  const s=c.slots.get(w.id),ideal=center.offset(radius*Math.cos(s.angle),0,radius*Math.sin(s.angle));s.goal=null;
- for(const dy of [0,1,-1,2,-2]){const q=ideal.floored().offset(0,dy,0);if(solid(w.bot.blockAt(q.offset(0,-1,0)))&&pass(w.bot,q)){s.goal=ideal.offset(0,q.y-ideal.y,0);break;}}
+ for(const delta of [0,.12,-.12,.26,-.26]){const spot=delta?center.offset(radius*Math.cos(s.angle+delta),0,radius*Math.sin(s.angle+delta)):ideal;for(const dy of [0,1,-1,2,-2,3,-3]){const q=spot.floored().offset(0,dy,0);if(solid(w.bot.blockAt(q.offset(0,-1,0)))&&pass(w.bot,q)){s.goal=spot.offset(0,q.y-spot.y,0);break;}}if(s.goal)break;}
+ if(!s.goal&&w.bot.entity.position.distanceTo(center)>radius+4)s.goal=ideal;
  if(s.goal&&w.bot.entity.position.distanceTo(s.goal)<.32)c.arrived++;
  }c.state=c.moving?'円のまま追従中':'整列 '+c.arrived+'/'+team.length;
 }
 function drive(r,now=Date.now()){const c=r.circle;if(!c)return false;const s=c.slots.get(r.worker.id),b=r.bot,p=b.entity.position,t=r.travel;if(!s?.goal){if(s){s.holding=false;s.rest=null;s.faceAt=null;}t.stopFollowing();return true;}
  const d=s.goal.minus(p),len=Math.hypot(d.x,d.z);const enter=Math.max(.10,Math.min(.24,c.radius*.15)),threshold=s.holding?enter+.25:enter;
- if(len<=threshold&&Math.abs(d.y)<.5){s.holding=true;t.stopFollowing();
+ if(len<=threshold&&Math.abs(d.y)<.5){s.holding=true;t.stopFollowing();b.lookAt(c.center.offset(0,1.5,0),false);
  const v=b.entity.velocity;if(c.moving||b.entity.onGround===false||v&&Math.hypot(v.x,v.z)>.018||!s.rest||p.distanceTo(s.rest)>.018){s.rest=p.clone();s.restAt=now;s.faceAt=null;return true;}
- if(now-s.restAt<450)return true;b.lookAt(c.center.offset(0,1.5,0),false);s.faceAt??=now;
- if(now-s.faceAt>=300&&s.swung!==c.epoch&&!b.handUse&&!b.actionHandBusy){b.client.queue('animate',{action_id:'swing_arm',runtime_entity_id:BigInt(b._runtimeEntityId),data:0,has_swing_source:false});s.swung=c.epoch;}return true;}
+ if(now-s.restAt<100)return true;b.lookAt(c.center.offset(0,1.5,0),false);s.faceAt??=now;
+ if(now-s.faceAt>=50&&s.swung!==c.epoch&&!b.handUse&&!b.actionHandBusy){b.client.queue('animate',{action_id:'swing_arm',runtime_entity_id:BigInt(b._runtimeEntityId),data:0,has_swing_source:false});s.swung=c.epoch;}return true;}
  s.holding=false;s.rest=null;s.faceAt=null;
- if(len<1.4&&Math.abs(d.y)<.45&&[.33,.67,1].every(k=>{const q=p.offset(k*d.x,0,k*d.z).floored();return pass(b,q)&&solid(b.blockAt(q.offset(0,-1,0)));})){t.stopFollowing();b.desiredMoveWorld={x:d.x/len,z:d.z/len};b.desiredMoveSpeed=Math.min(.19,len);b.setControlState('forward',true);b.lookAt(s.goal.offset(0,1.5,0),false);}else t.follow(s.goal,.21,'circle',.25);return true;
+ if(len<1.4&&Math.abs(d.y)<.45&&[.33,.67,1].every(k=>{const q=p.offset(k*d.x,0,k*d.z).floored();return pass(b,q)&&solid(b.blockAt(q.offset(0,-1,0)));})){t.stopFollowing();b.desiredMoveWorld={x:d.x/len,z:d.z/len};b.desiredMoveSpeed=Math.min(.19,len);b.setControlState('forward',true);b.lookAt(s.goal.offset(0,1.5,0),false);}else if(!t.follow(s.goal,.21,'circle',.25)&&t.following&&now-(s.replanAt||0)>1000){t.following.plannedAt=0;s.replanAt=now;}return true;
 }
 module.exports={configure,snapshot,refresh,drive};
