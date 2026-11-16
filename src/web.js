@@ -35,6 +35,8 @@ class WebControl{
    ['/assets/app.css',{type:'text/css; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'app.css'))}],
    ['/assets/ui-state.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'ui-state.js'))}],
    ['/assets/map.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'map.js'))}],
+   ['/assets/classic.png',{type:'image/png',buffer:fs.readFileSync(path.join(directory,'classic.png'))}],
+   ['/assets/desk.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'desk.js'))}],
    ['/assets/app.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'app.js'))}],
    ['/favicon.svg',{type:'image/svg+xml',buffer:fs.readFileSync(path.join(directory,'favicon.svg'))}]
   ]);
@@ -70,7 +72,7 @@ class WebControl{
   const names=this.manager.names,bots=[...names].map(([id,name])=>{
    const w=this.manager.workers.get(id),b=w?.bot,state=this.manager.store.bot(id),r=w?.runtime?.snapshot?.(),p=b?.entity?.position,realm=b?.config?.realm||require('./realms').selected(this.manager.store,id),ign=realm==='ign';
    const item=(raw,slot)=>{if(!raw?.count)raw=null;return {slot,name:raw?(b?.name?.(raw)||raw.name||'unknown'):'',count:raw?.count||0,damage:raw?(b?.damage?.(raw)||0):0,token:itemToken(raw),selected:slot===b?.quickBarSlot};};
-   return {id,name,reconnection:this.manager.connectionKeeper?.snapshot(id)||null,server:realm,connected:!!b?.connected,dead:!!b?.dead,phase:b?.connectionPhase||'未接続',mode:w?.mode||'offline',health:b?.health??null,absorption:Math.max(0,Number(b?.absorption)||0),chatDelivery:b?require('./chat-delivery').snapshot(b):null,chatQueue:b?.chatQueue?.snapshot?.()||{pending:0,waitMs:0},onlinePlayers:b?[...(b.players?.values()||[])].map(p=>p.name):[],mining:w?.miningStatus?.()||w?.miner?.snapshot()||null,
+   return {id,name,face:b?.hudFace||'',reconnection:this.manager.connectionKeeper?.snapshot(id)||null,server:realm,connected:!!b?.connected,dead:!!b?.dead,phase:b?.connectionPhase||'未接続',mode:w?.mode||'offline',health:b?.health??null,absorption:Math.max(0,Number(b?.absorption)||0),chatDelivery:b?require('./chat-delivery').snapshot(b):null,chatQueue:b?.chatQueue?.snapshot?.()||{pending:0,waitMs:0},onlinePlayers:b?[...(b.players?.values()||[])].map(p=>p.name):[],mining:w?.miningStatus?.()||w?.miner?.snapshot()||null,
     endpoint:{host:b?.config?.host||(ign?this.env.IGN_HOST:this.env.MC_HOST)|| (ign?'IGN未設定':'2b2e.org'),port:b?.config?.port||Number((ign?this.env.IGN_PORT:this.env.MC_PORT)||19132)},
     position:p?{x:p.x,y:p.y,z:p.z}:null,dimension:b?.dimensionId??0,config:{...defaults,...state.runtime,...(ign?{anticrystal:false}:{})},
     messaging:require('./messaging').snapshot(this.manager,id,b),options:{respawn:state.respawn,autoSupply:state.autoSupply,chat:state.chat,floor:state.floor,ceiling:state.ceiling,area:state.area,scaffold:state.scaffold,miningRange:state.miningRange??5,scaffoldEnabled:state.scaffoldEnabled!==false,maxDrop:state.maxDrop??64,miningFilter:state.miningFilter||[],miningChunks:state.miningChunks||[],gameLogs:require('./game-logs').settings(state),gameLogMessages:this.manager.noticeCatalog?.get(id)||[]},

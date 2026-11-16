@@ -10,13 +10,14 @@ function imported(d){
 function attach(m,id,b){
  const c=b.client,cache=new Map(),names=new Map();let timer,last='',idx=0;
  const cfg=()=>m.store.bot(id).cosmetic||{};
- function send(s){if(!s||!b.connected||b.ended||!c.profile?.uuid)return false;c.queue('player_skin',{uuid:c.profile.uuid,skin:s,skin_name:s.skin_id,old_skin_name:last,is_verified:false});last=s.skin_id;return true;}
+ const updateFace=s=>{const f=require('./skin-face').face(s?.skin_data||s);if(f)b.hudFace=f;};
+ function send(s){if(!s||!b.connected||b.ended||!c.profile?.uuid)return false;c.queue('player_skin',{uuid:c.profile.uuid,skin:s,skin_name:s.skin_id,old_skin_name:last,is_verified:false});updateFace(s);last=s.skin_id;return true;}
  function apply(){const v=cfg();return send(v.target?cache.get(norm(v.target)):v.image?imported(v.image):null);}
  function tick(){if(!b.connected||b.dead||b.ended)return;idx=(idx+1+Math.floor(Math.random()*(emotes.length-1)))%emotes.length;c.queue('emote',{entity_id:BigInt(b._runtimeEntityId),emote_id:emotes[idx],emote_length_ticks:0,xuid:String(c.profile?.xuid||''),platform_id:'',flags:0});}
  function restart(){clearInterval(timer);if(cfg().seconds&&b.connected&&!b.ended){tick();timer=setInterval(()=>{try{tick();}catch(e){clearInterval(timer);m.trace(id,e.message);}},cfg().seconds*1000);timer.unref();}}
  function remember(n,s){if(!n||!s?.skin_data?.data?.length||norm(n)===norm(b.username))return;cache.set(norm(n),s);if(norm(n)===norm(cfg().target))send(s);}
- c.on('player_list',p=>{const r=p.records;for(const e of Array.isArray(r)?r:r?.records||[]){if((e.type||r.type)==='remove'){cache.delete(names.get(e.uuid));names.delete(e.uuid);}else{names.set(e.uuid,norm(e.username));remember(e.username,e.skin_data||e.skin);}}});
- c.on('player_skin',p=>remember(names.get(p.uuid),p.skin));b.on('spawn',()=>{apply();restart();});b.on('end',()=>{clearInterval(timer);cache.clear();names.clear();});b.cosmetics={apply,restart};
+ c.on('player_list',p=>{const r=p.records;for(const e of Array.isArray(r)?r:r?.records||[]){if((e.type||r.type)==='remove'){cache.delete(names.get(e.uuid));names.delete(e.uuid);}else{names.set(e.uuid,norm(e.username));if(String(e.uuid)===c.profile?.uuid||norm(e.username)===norm(c.profile?.name||b.username))updateFace(e.skin_data||e.skin);else remember(e.username,e.skin_data||e.skin);}}});
+ c.on('player_skin',p=>String(p.uuid)===c.profile?.uuid?updateFace(p.skin):remember(names.get(p.uuid),p.skin));b.on('spawn',()=>{if(!b.hudFace){try{const s=JSON.parse(Buffer.from(c.clientUserChain.split('.')[1],'base64url'));updateFace({width:s.SkinImageWidth,height:s.SkinImageHeight,data:s.SkinData});}catch{}}apply();restart();});b.on('end',()=>{clearInterval(timer);cache.clear();names.clear();});b.cosmetics={apply,restart};
 }
 function set(m,id,cmd,value){const v=m.store.bot(id).cosmetic??={};const b=m.workers.get(id)?.bot;
  if(cmd==='autoemote'){const n=value==='off'?0:Number(value);if(value!=='off'&&(!Number.isInteger(n)||n<1||n>3600))throw Error('1〜3600秒 または off');v.seconds=n;m.store.save();b?.cosmetics?.restart();return n?n+'秒ごとにエモート':'エモート停止';}
