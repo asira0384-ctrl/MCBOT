@@ -4,8 +4,8 @@ const TAU=2*Math.PI;
 function configure(m,d){
  if(!['2b2e','ign'].includes(d.realm)||!['start','stop'].includes(d.action))throw Error('サーバーと操作を選んでください');
  const old=m.circles?.[d.realm];if(d.action==='start'&&(!String(d.name||'').trim()||String(d.name).length>64||!Number.isFinite(d.radius)||d.radius<.5||d.radius>32))throw Error('MCIDと半径（0.5～32）を確認してください');
- for(const w of m.workers.values())if(old&&w.runtime?.circle===old){w.runtime.circle=null;w.runtime.travel.stopFollowing();}
- m.circles??={};delete m.circles[d.realm];if(d.action==='start')m.circles[d.realm]={name:d.name.trim(),radius:d.radius,slots:new Map(),state:'位置を検出中',count:0,arrived:0,epoch:1};refresh(m,d.realm);return snapshot(m);
+ for(const w of m.workers.values())if(old&&w.runtime?.circle===old){w.runtime.circle=null;w.runtime.travel.stopFollowing();if(d.action==='stop')w.runtime.stop();}
+ m.circles??={};delete m.circles[d.realm];if(d.action==='start')m.circles[d.realm]={name:d.name.trim(),radius:d.radius,excluded:new Set(),slots:new Map(),state:'位置を検出中',count:0,arrived:0,epoch:1};refresh(m,d.realm);return snapshot(m);
 }
 function snapshot(m){return Object.fromEntries(Object.entries(m.circles||{}).map(([k,c])=>[k,{name:c.name,radius:c.radius,count:c.count,arrived:c.arrived,state:c.state}]));}
 function refresh(m,realm,now=Date.now()){
@@ -13,7 +13,7 @@ function refresh(m,realm,now=Date.now()){
  const all=[...m.workers.values()].filter(w=>m.realm(w.id)===realm&&w.bot.connected&&!w.bot.dead&&!w.bot.ended&&w.bot.entity?.position&&w.runtime);
  let center,dim,host,port,seen=-1;const match=n=>norm(n||'')===norm(c.name);
  for(const w of all){const b=w.bot;const own=match(b.username);const a=own?{position:b.entity.position,dimension:b.dimensionId,seen:Infinity}:[...(b.actors?.values()||[])].filter(a=>a.player&&match(a.name)&&a.dimension===b.dimensionId).sort((a,b)=>b.seen-a.seen)[0];if(a&&(a.seen??0)>seen){seen=a.seen??0;center=a.position;dim=b.dimensionId;host=b.config.host;port=b.config.port;}}
- const team=center?all.filter(w=>!match(w.bot.username)&&w.bot.dimensionId===dim&&w.bot.config.host===host&&w.bot.config.port===port):[];
+ const team=center?all.filter(w=>!c.excluded.has(w.id)&&!match(w.bot.username)&&w.bot.dimensionId===dim&&w.bot.config.host===host&&w.bot.config.port===port):[];
  for(const w of m.workers.values())if(w.runtime?.circle===c&&!team.includes(w)){w.runtime.circle=null;w.runtime.travel.stopFollowing();}
  c.count=team.length;c.arrived=0;if(!center||!team.length){c.state=center?'参加Bot待ち':'対象の位置を受信するまで待機';c.signature=null;return;}
  const sig=[dim,host,port,...team.map(w=>w.id).sort((a,b)=>a-b)].join(':');
@@ -30,8 +30,13 @@ function refresh(m,realm,now=Date.now()){
  if(s.goal&&w.bot.entity.position.distanceTo(s.goal)<.32)c.arrived++;
  }c.state=c.moving?'円のまま追従中':'整列 '+c.arrived+'/'+team.length;
 }
-function drive(r){const c=r.circle;if(!c)return false;const s=c.slots.get(r.worker.id),b=r.bot,p=b.entity.position,t=r.travel;if(!s?.goal){t.stopFollowing();return true;}
- const d=s.goal.minus(p),len=Math.hypot(d.x,d.z);if(len<=Math.min(.22,c.radius*.12)&&Math.abs(d.y)<.5){t.stopFollowing();b.lookAt(c.center.offset(0,1.5,0),false);if(!c.moving&&s.swung!==c.epoch&&!b.handUse&&!b.actionHandBusy){b.client.queue('animate',{action_id:'swing_arm',runtime_entity_id:BigInt(b._runtimeEntityId),data:0,has_swing_source:false});s.swung=c.epoch;}return true;}
+function drive(r,now=Date.now()){const c=r.circle;if(!c)return false;const s=c.slots.get(r.worker.id),b=r.bot,p=b.entity.position,t=r.travel;if(!s?.goal){if(s){s.holding=false;s.rest=null;s.faceAt=null;}t.stopFollowing();return true;}
+ const d=s.goal.minus(p),len=Math.hypot(d.x,d.z);const enter=Math.max(.10,Math.min(.24,c.radius*.15)),threshold=s.holding?enter+.25:enter;
+ if(len<=threshold&&Math.abs(d.y)<.5){s.holding=true;t.stopFollowing();
+ const v=b.entity.velocity;if(c.moving||b.entity.onGround===false||v&&Math.hypot(v.x,v.z)>.018||!s.rest||p.distanceTo(s.rest)>.018){s.rest=p.clone();s.restAt=now;s.faceAt=null;return true;}
+ if(now-s.restAt<450)return true;b.lookAt(c.center.offset(0,1.5,0),false);s.faceAt??=now;
+ if(now-s.faceAt>=300&&s.swung!==c.epoch&&!b.handUse&&!b.actionHandBusy){b.client.queue('animate',{action_id:'swing_arm',runtime_entity_id:BigInt(b._runtimeEntityId),data:0,has_swing_source:false});s.swung=c.epoch;}return true;}
+ s.holding=false;s.rest=null;s.faceAt=null;
  if(len<1.4&&Math.abs(d.y)<.45&&[.33,.67,1].every(k=>{const q=p.offset(k*d.x,0,k*d.z).floored();return pass(b,q)&&solid(b.blockAt(q.offset(0,-1,0)));})){t.stopFollowing();b.desiredMoveWorld={x:d.x/len,z:d.z/len};b.desiredMoveSpeed=Math.min(.19,len);b.setControlState('forward',true);b.lookAt(s.goal.offset(0,1.5,0),false);}else t.follow(s.goal,.21,'circle',.25);return true;
 }
 module.exports={configure,snapshot,refresh,drive};
