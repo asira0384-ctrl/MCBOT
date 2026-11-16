@@ -9,6 +9,18 @@ async function weather(city){
  const d=(await get('https://api.open-meteo.com/v1/forecast?latitude='+loc.latitude+'&longitude='+loc.longitude+'&timezone=auto&forecast_days=1&daily=weather_code,temperature_2m_max,temperature_2m_min')).daily;
  const c=d.weather_code[0];return loc.name+'の今日の予報は'+(c===0?'晴れ':c<=2?'晴れ時々曇り':c===3?'曇り':c<50?'霧':c>=95?'雷雨':(c>=71&&c<=77)||c>=85?'雪':'雨')+'、最低'+d.temperature_2m_min[0]+'℃・最高'+d.temperature_2m_max[0]+'℃やで。';
 }
+function settings(store){
+ const c=store.data.gameAI||{};return {mode:c.mode||'list',allow:c.allow||[],notes:c.notes||[],city:c.city||process.env.AI_WEATHER_CITY||'Tokyo',model:c.model||process.env.AI_MODEL||'gpt-4o-mini',keySource:store.data.webAISecret?'Web':process.env.OPENAI_API_KEY?'Railway':'未設定'};
+}
+function configure(store,d){
+ const bad=()=>{throw Object.assign(Error('AI設定の入力内容・件数・文字数を確認してください'),{status:400});};
+ const lines=(v,count,len)=>{if(typeof v!=='string')bad();const rows=v.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);if(rows.length>count||rows.some(s=>s.length>len))bad();return rows;};
+ if(!['all','list'].includes(d.mode)||typeof d.city!=='string'||!d.city.trim()||d.city.length>80||!/^[-a-zA-Z0-9._:]{1,100}$/.test(d.model)||typeof d.key!=='string'||(d.key&&!/^sk-[A-Za-z0-9_-]{12,480}$/.test(d.key))||(d.key&&d.clearKey))bad();
+ const next={mode:d.mode,allow:[...new Set(lines(d.allow,200,64).map(s=>norm(s.replace(/^@/,''))))],notes:lines(d.notes,30,500),city:d.city.trim(),model:d.model};
+ const old=store.data.gameAI,secret=store.data.webAISecret;
+ try{store.data.gameAI=next;if(d.key)store.data.webAISecret=d.key;else if(d.clearKey===true)delete store.data.webAISecret;store.save();}catch(e){store.data.gameAI=old;store.data.webAISecret=secret;throw e;}
+ return settings(store);
+}
 async function handle(m,w,p,chat){
  const match=/^!(aig|ai)(?:\s+(.+))?$/iu.exec(chat.message);if(!match)return false;
  const cfg=m.store.data.gameAI??={mode:'list',allow:[],notes:[]};
@@ -28,11 +40,11 @@ async function handle(m,w,p,chat){
  else {say('公開 / 限定 / 許可 @MCID / 解除 @MCID / 記憶 内容 / 採掘 x1 z1 x2 z2 / 攻撃許可 @MCID');return true;}
  m.store.save();say('保存したで。');return true;
  }
- if(/天気|予報/.test(q)){const city=q.match(/(?:天気|予報)\s+([^？?]+)$/)?.[1]||q.match(/^(.+?)の(?:今日の)?天気/)?.[1];say(await weather(city&&city!=='今日'?city:process.env.AI_WEATHER_CITY||'Tokyo'));return true;}
+ if(/天気|予報/.test(q)){const city=q.match(/(?:天気|予報)\s+([^？?]+)$/)?.[1]||q.match(/^(.+?)の(?:今日の)?天気/)?.[1];say(await weather(city&&city!=='今日'?city:cfg.city||process.env.AI_WEATHER_CITY||'Tokyo'));return true;}
  const status=w.running?'採掘中。'+(w.miner?.state||'')+(w.missing?' / '+w.missing:''):'状態は '+w.mode+'。'+(w.runtime?.travel?.waiting||'');
  if(/何して|なにして|何をして|なにをして|状態/.test(q)){say(status);return true;}
- if(!process.env.OPENAI_API_KEY){say('今の状態と天気は答えられるで。自由質問は管理者がAPIキーを設定してな。');return true;}
- const r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',signal:AbortSignal.timeout(12000),headers:{Authorization:'Bearer '+process.env.OPENAI_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({model:process.env.AI_MODEL||'gpt-4o-mini',messages:[{role:'system',content:'MinecraftのBotとして日本語で簡潔に回答。操作は実行できない。現在の状態: '+status+' 管理者メモ: '+cfg.notes.join(' / ')},{role:'user',content:q}]})});if(!r.ok)throw Error();say((await r.json()).choices[0].message.content);
+ const apiKey=m.store.data.webAISecret||process.env.OPENAI_API_KEY;if(!apiKey){say('今の状態と天気は答えられるで。自由質問は管理者がAPIキーを設定してな。');return true;}
+ const r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',signal:AbortSignal.timeout(12000),headers:{Authorization:'Bearer '+apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:cfg.model||process.env.AI_MODEL||'gpt-4o-mini',messages:[{role:'system',content:'MinecraftのBotとして日本語で簡潔に回答。操作は実行できない。現在の状態: '+status+' 管理者メモ: '+cfg.notes.join(' / ')},{role:'user',content:q}]})});if(!r.ok)throw Error();say((await r.json()).choices[0].message.content);
  }catch{say(training?'設定または実行に失敗したで。対象と採掘設定を確認してな。':'今は情報を取得できんかった。少し待ってな。');}return true;
 }
-module.exports={handle,reply};
+module.exports={handle,reply,settings,configure};

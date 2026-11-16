@@ -74,12 +74,14 @@ class Runtime{
  aimAtEnemy(enemy){return [1,1.6,.5].map(y=>enemy.position.offset(0,y,0)).find(point=>lineOfSight(this.bot,point))||null;}
  canSeeEnemy(enemy){return !!this.aimAtEnemy(enemy);}
  combatSword(){return this.bot.list().filter(i=>i.slot<9&&i.name.endsWith('_sword')).sort((a,b)=>equipment.rank(this.bot,b)-equipment.rank(this.bot,a))[0]||equipment.best(this.bot,'_sword');}
- canFight(){return !!(this.config.killaura||this.config.crystalaura||this.config.pistoncrystal||this.config.feettrap);}
+ canFight(){return !this.circle&&!!(this.config.killaura||this.config.crystalaura||this.config.pistoncrystal||this.config.feettrap);}
  chooseTarget(range=this.config.jetpack?48:this.config.chaseRange){return require('./tactics').target(this,range);}
  followingOwnsMovement(){return !!(this.follower?.config.enabled&&!['killaura','crystalaura','pistoncrystal','pvp'].includes(this.latestFeature));}
  motionTick(){
   const b=this.bot;this.telemetry.sample();this.travel.recoverAnti?.(!this.paused);
+  if(this.manager?.circles){const ring=require('./circle');ring.refresh(this.manager,this.manager.realm(this.worker.id));}
   if(!b.connected||b.ended||b.dead||this.paused||this.safety.active||!b.entity)return;
+  if(this.circle&&!this.restock.running){require('./circle').drive(this);return;}
   if(this.restock.running){this.travel.stopFollowing();return;}if(this.worker.running||this.worker.startRequested||this.worker.cleanupRequested&&!this.travel.walking)return;
   if(this.travel.walking){this.travel.driveStep(this.travel.walking);return;}
   const enemy=this.canFight()&&!this.travel.route?this.chooseTarget():null;
@@ -139,7 +141,7 @@ class Runtime{
    ].sort((a,c)=>(this.featureOrder?.[c[0]]||0)-(this.featureOrder?.[a[0]]||0));
    for(const [,label,run]of tasks)if(!b.manualInventoryBusy&&!b.handUse&&!b.urgentFoodPending&&!(this.paOwnsHand()&&label!=='オフハンド装着'))await this.maintenance(label,run,signal);
    if(!this.paused&&!this.receiving&&w.state.autoSupply&&Date.now()-(this.lastSupplyScan||0)>3000){this.lastSupplyScan=Date.now();this.restock.scan();}
-   if(this.paused)return;
+   if(this.paused||this.circle)return;
    if(this.config.anticrystal&&!b.handUse&&!this.travel.route&&!this.travel.flight&&!this.travel.embed&&Date.now()>(this.burrowBlockedUntil||0))this.travel.bury(this.config.burrowDepth);
    
    const enemy=this.canFight()&&!low?this.chooseTarget():null;this.target=enemy;if(enemy)this.engagedAt=Date.now();this.combatWaiting=low?'敵から離れながら回復を優先':enemy?`敵: ${enemy.name}`:this.config.attackAll?'30ブロック以内に攻撃対象がいません':'登録した敵・援護対象が検知範囲にいません';
