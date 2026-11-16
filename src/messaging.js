@@ -9,7 +9,7 @@ function configure(manager,ids,section,value){
  if(section!=='announcement'){next.targets=targets(value.targets);if(next.enabled&&!next.targets.length)throw Error('対象のIDを入力してください');}
  if(section==='greeting'){const delivery=value.delivery||'rotate';if(!['rotate','all'].includes(delivery))throw Error('グリーターの送信担当を選んでください');next.delivery=delivery;for(const key of ['join','leave','chat'])next[key]=messages(value[key]);}
  else{next.messages=messages(value.messages);if(next.enabled&&!next.messages.length)throw Error('メッセージを1種類以上入力してください');}
- if(section==='announcement'){const seconds=Number(value.intervalSeconds??300);if(!Number.isInteger(seconds)||seconds<300||seconds>86400)throw Error('定期案内の間隔は300〜86400秒です');next.intervalSeconds=seconds;next.nextAt=Date.now()+seconds*1000;}
+ if(section==='replies'){next.contains=messages(value.contains||[]);next.delivery=value.delivery==='all'?'all':'rotate';}if(section==='announcement'){const seconds=Number(value.intervalSeconds??300);if(!Number.isInteger(seconds)||seconds<300||seconds>86400)throw Error('定期案内の間隔は300〜86400秒です');next.intervalSeconds=seconds;next.nextAt=Date.now()+seconds*1000;}
  for(const id of ids)manager.store.bot(id)[section]=structuredClone(next);manager.store.save();for(const id of ids)manager.changed?.(id,'messaging');return next;
 }
 function snapshot(manager,id,bot){return Object.fromEntries(['greeting','replies','announcement'].map(s=>[s,config(manager,id,s,bot)]));}
