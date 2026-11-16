@@ -135,7 +135,7 @@
  $('auth-fresh').addEventListener('click',()=>loginMinecraft(app.authTarget,true));
  $('auth-report').addEventListener('click',()=>downloadReport(app.authTarget));
  $('refresh-view').addEventListener('click',async()=>{const target=app.target,button=$('refresh-view');button.disabled=true;try{const response=await fetch('/api/view?target='+encodeURIComponent(target),{credentials:'same-origin'});if(!response.ok){const value=await response.json();throw Error(value.error);}const image=await response.blob();if(app.target!==target)return;if(app.viewURL)URL.revokeObjectURL(app.viewURL);app.viewURL=URL.createObjectURL(image);$('view-image').src=app.viewURL;$('view-image').hidden=false;$('view-placeholder').hidden=true;$('view-caption').textContent=clock(Number(response.headers.get('X-View-Captured-At'))||Date.now())+' に生成 / 受信地形のみ。UI・プレイヤーは表示しません。';}catch(e){toast(e.message,true);}finally{button.disabled=!selected()[0]?.connected;}});
- $('open-autolog-settings').addEventListener('click',()=>{switchTab('gear');$('health-settings-title').scrollIntoView({behavior:'smooth',block:'center'});$('health-settings-title').focus({preventScroll:true});});
+ $('open-autolog-settings').addEventListener('click',()=>{openFeature(entries.find(e=>e.node.contains($('health-settings-title'))));$('health-settings-title').scrollIntoView({behavior:'smooth',block:'center'});$('health-settings-title').focus({preventScroll:true});});
  $('open-command').addEventListener('click',()=>$('command-dialog').showModal());document.querySelectorAll('[data-close-dialog]').forEach(button=>button.addEventListener('click',()=>button.closest('dialog').close()));
  $('chat-type').addEventListener('change',event=>{$('recipient-label').hidden=event.target.value!=='whisper';$('chat-form').elements.namedItem('recipient').required=event.target.value==='whisper';});
  $('pause-log').addEventListener('click',()=>{app.pausedLog=!app.pausedLog;$('pause-log').textContent=app.pausedLog?'更新を再開':'更新を一時停止';renderLogs();});$('log-filter').addEventListener('input',renderLogs);
@@ -222,17 +222,24 @@
  // Group configuration cards without replacing their live controls or permission gates.
  $('tab-gear').append($('restock-card'));
  $('tab-settings').append($('account-details'));
- for(const tab of ['combat','travel','mining','misc','chat']){
-  for(const card of document.querySelectorAll('#tab-'+tab+' .card')){
-   if(card.closest('details')||card.id==='ai-card')continue;
-   const title=card.querySelector('h2,h3');if(!title)continue;
-   const d=document.createElement('details'),sum=document.createElement('summary');d.className='feature-page';sum.textContent=title.textContent+'　＋';d.append(sum);
-   while(card.firstChild)d.append(card.firstChild);card.append(d);
-  }
- }
- for(const [key,label,initial]of [['surface','背景','#101a1d'],['ink','文字','#eef7f4'],['inactive','OFFの機能','#324446']]){
+ for(const [key,label,initial]of [['surface','背景','#1b1523'],['ink','文字','#eef7f4'],['inactive','OFFの機能','#49384f']]){
   const row=el('label','',label),input=document.createElement('input');input.type='color';input.value=localStorage.getItem('asira-ui-'+key)||initial;const apply=()=>document.documentElement.style.setProperty('--module-'+key,input.value);apply();input.oninput=()=>{apply();localStorage.setItem('asira-ui-'+key,input.value);};row.append(input);$('module-palette').append(row);
  }
+ const board=$('click-board'),room=$('click-room'),stage=$('click-stage'),entries=[];
+ let restore=()=>{};
+ function home(){restore();restore=()=>{};if(!room.hidden)room.hidden=true;if(board.hidden)board.hidden=false;for(const e of entries){const hide=e.node.hidden||e.gates.some(g=>g.hidden);if(e.button.hidden!==hide)e.button.hidden=hide;const t=e.node.querySelector('[aria-checked]');if(t)e.button.dataset.on=t.getAttribute('aria-checked');}}
+ function openFeature(e){restore();const mark=document.createComment('module');e.node.before(mark);stage.append(e.node);if(e.node.tagName==='DETAILS')e.node.open=true;const expanded=[...e.node.querySelectorAll('details:not(.module-menu)')];expanded.forEach(d=>d.open=true);restore=()=>{mark.replaceWith(e.node);};board.hidden=true;room.hidden=false;$('click-title').textContent=e.title;$('click-path').textContent=e.group;app.tab=e.tab;if(e.tab==='logs')renderLogs();$('click-back').focus();window.scrollTo(0,0);}
+ const groups=new Map();
+ function add(group,title,node,tab){if(!node)return;let col=groups.get(group);if(!col){col=el('section','click-column');col.append(el('h2','',group));board.append(col);groups.set(group,col);}const button=el('button','click-item',title);col.append(button);const gates=[];for(let p=node.parentElement;p&&!p.classList.contains('tab-content')&&p!==document.body;p=p.parentElement)if(p.id)gates.push(p);const e={group,title,node,button,tab,gates};entries.push(e);button.onclick=()=>openFeature(e);}
+ for(const [tab,group] of [['combat','Combat'],['travel','Movement'],['map','Render'],['gear','Player'],['misc','Misc'],['overview','Bot'],['mining','Nuke / Build'],['chat','Chat'],['nearby','Playerlist'],['logs','Log'],['settings','Settings']]){
+ const section=$('tab-'+tab);for(const card of section.querySelectorAll('.card')){if(card.parentElement.closest('.card'))continue;
+ const rows=card.querySelectorAll('.toggle-row');if(rows.length){for(const row of rows)add(group,row.querySelector('strong').textContent,row,tab);if(!card.querySelector('button:not(.toggle-row button)'))continue;}
+ const title=card.querySelector('h2,h3,summary')?.textContent||card.id;if(title)add(group,title,card,tab);}
+ }
+ add('Bot','接続・停止',document.querySelector('.control-bar'),'overview');add('Bot','ステータス · HP / BPS',document.querySelector('.metrics'),'overview');
+ $('click-back').onclick=home;document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!room.hidden&&!document.querySelector('dialog[open]'))home();});
+ new MutationObserver(()=>{if(!board.hidden)home();}).observe(document.querySelector('.page'),{subtree:true,attributes:true,attributeFilter:['aria-checked','hidden']});
+ home();
  window.AsiraControl={app,api,selected,command,refresh,result,saveAppearance};
  const code=new URLSearchParams(location.hash.slice(1)).get('login');if(code){history.replaceState(null,'',location.pathname);login(code);}else restoreSession();
 })();
