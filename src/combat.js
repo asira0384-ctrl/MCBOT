@@ -96,13 +96,13 @@ class CrystalCombat{
    const ownCrystal=boost.crystalId?b.actors.get(boost.crystalId):[...b.actors.values()].find(a=>/end(?:er)?_crystal/.test(a.name)&&a.position.distanceTo(boost.position)<.85);
    if(ownCrystal?.position&&now-(boost.lastAttack||0)>100&&!b.handUse&&!b.actionHandBusy){boost.crystalId=String(ownCrystal.id);boost.attackedAt??=now;boost.lastAttack=now;this.rotate(b,ownCrystal.position.offset(0,.5,0),false);b.attack(ownCrystal);this.state='Jetpack: 自分のCrystalを再起爆';}
    if(boost.knockbackAt&&!b.actors.has(boost.crystalId)&&now-boost.knockbackAt<1000&&(!r.travel.embed||boost.knockback?.y>0)){
-    if(!r.travel.flight||r.travel.flight.gap){r.travel.flight={goal:enemy.position.clone(),jetpack:true,combat:!!enemy.player,expires:boost.knockbackAt+1000,knockbackAt:boost.knockbackAt,speed:1.4};if(r.travel.embed&&boost.knockback?.y>0){const original=r.travel.embed.original;r.travel.embed=null;r.travel.antiRecovery=null;r.travel.antiAnchor=null;r.travel.floorEscape={at:Date.now(),velocity:Math.min(1.5,boost.knockback.y),floor:original,expires:boost.knockbackAt+1000};}}
+    if(!r.travel.flight||r.travel.flight.gap){r.travel.flight={goal:enemy.position.clone(),jetpack:true,combat:!!enemy.player,expires:boost.knockbackAt+1000,knockbackAt:boost.knockbackAt,speed:r.config.jetpackSpeed??1.4};if(r.travel.embed&&boost.knockback?.y>0){const original=r.travel.embed.original;r.travel.embed=null;r.travel.antiRecovery=null;r.travel.antiAnchor=null;r.travel.floorEscape={at:Date.now(),velocity:Math.min(1.5,boost.knockback.y),floor:original,expires:boost.knockbackAt+1000};}}
     this.state='Jetpack: 爆風確認・最長1秒';return true;
    }
    if(now-boost.at<1800){this.state='Jetpack: 起爆・ノックバック確認待ち';return false;}
    this.boost=null;this.boostRetryAt=now+2000;return false;
   }
-  if(now<(this.boostRetryAt||0)||b.handUse||b.health+(b.absorption||0)<(r.config.jetpackMinHearts??6)*2||!b.name(b.offhand?.[0]).includes('totem')){this.state='Jetpack: Totem・体力・クールダウン確認待ち';return false;}
+  if(now<(this.boostRetryAt||0)||b.handUse||b.health+(b.absorption||0)<(r.config.jetpackHealth??12)||!b.name(b.offhand?.[0]).includes('totem')){this.state='Jetpack: Totem・体力・クールダウン確認待ち';return false;}
   const item=b.find('end_crystal');if(!item){this.state='Jetpack: Crystal不足';return false;}
   const p=b.entity.position.floored(),options=[];
   for(let x=-3;x<=3;x++)for(let z=-3;z<=3;z++)for(const y of [-1,0]){
