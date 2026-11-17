@@ -2,6 +2,9 @@
 const fail=m=>Object.assign(Error(m),{status:400});
 function endpoint(d){const host=String(d.host||'').trim(),port=Number(d.port);if(!host||host.length>253||!(/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i.test(host)||require('node:net').isIP(host))||!Number.isInteger(port)||port<1||port>65535)throw fail('IP/ホスト名とport（1〜65535）を確認してください');return {host,port};}
 async function apply(web,s,d){const m=web.manager,ids=()=>web.targets(d.target);switch(d.action){
+case 'relation':{if(!['friend','enemy'].includes(d.kind)||!['add','remove'].includes(d.operation))throw fail('リスト操作を選択してください');const name=require('./chat-output').name(d.name);return {result:await m.execute(String(m.names.keys().next().value),d.kind+' '+d.operation+' '+name,'web')};}
+case 'instant':{if(!['kit','world','back'].includes(d.kind))throw fail('操作を選択してください');let value=String(d.value||'').trim();if(value.length>80||/[\x00-\x1f]/.test(value))throw fail('入力を確認してください');return await web.command({target:d.target,command:d.kind+(value?' '+value:'')});}
+
 case 'players':return {players:[...new Set([...m.workers.values()].flatMap(w=>[...(w.bot.players?.values()||[])].map(p=>p.name)))].sort()};
 case 'add':return {account:require('./account-slots').add(m,d.name,d.realm)};
 case 'rename':{const list=ids();if(list.length!==1)throw fail('Botを1体選択してください');return {result:await m.execute(String(list[0]),'account set '+require('./account-slots').validateName(d.name),'web')};}

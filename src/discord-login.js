@@ -10,7 +10,7 @@ class DiscordLogin{
  ready(){return !!((this.web.env.DISCORD_CLIENT_ID||this.web.oauthClientId)&&this.web.env.DISCORD_CLIENT_SECRET&&this.web.base);}
  redirect(){return this.web.base+'/oauth/discord/callback';}
  start(req,res){if(!this.ready())throw Object.assign(Error('Discordログインの設定が必要です。DISCORD_CLIENT_SECRETと公開URLを設定し、Discord側に表示されたコールバックURLを登録してください'),{status:503});for(const [key,v]of this.states)if(v.expires<this.web.now())this.states.delete(key);if(this.states.size>=100)throw Object.assign(Error('少し待ってログインしてください'),{status:429});
-  const state=crypto.randomBytes(32).toString('base64url'),binding=crypto.randomBytes(32).toString('base64url');this.states.set(state,{returnTo:new URL(req.url,'http://localhost').searchParams.get('returnTo')==='/nocturne'?'/nocturne':'/',binding,expires:this.web.now()+300000});
+  const nativeId=new URL(req.url,'http://localhost').searchParams.get('native'),nativeFlow=nativeId&&require('./native-auth').flows(this.web).has(nativeId);const state=crypto.randomBytes(32).toString('base64url'),binding=crypto.randomBytes(32).toString('base64url');this.states.set(state,{returnTo:nativeFlow?'/native-approve?id='+nativeId:new URL(req.url,'http://localhost').searchParams.get('returnTo')==='/nocturne'?'/nocturne':'/',binding,expires:this.web.now()+300000});
   res.setHeader('Set-Cookie',`asira_oauth=${binding}; Path=/oauth/discord; HttpOnly; SameSite=Lax; Max-Age=300${this.web.base.startsWith('https:')?'; Secure':''}`);
   const url=new URL('https://discord.com/oauth2/authorize');url.search=new URLSearchParams({client_id:this.web.env.DISCORD_CLIENT_ID||this.web.oauthClientId,response_type:'code',redirect_uri:this.redirect(),scope:'identify',state}).toString();res.writeHead(302,{Location:url.href});res.end();
  }

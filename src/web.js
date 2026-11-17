@@ -32,6 +32,7 @@ class WebControl{
   this.discordLogin=new(require('./discord-login').DiscordLogin)(this,options.fetch);this.codes=new Map();this.sessions=new Map();this.attempts=new Map();this.events=new Set();this.closed=false;this.audit=[];this.requests=new Map();this.viewAt=new Map();
   const directory=path.join(__dirname,'..','web');this.assets=new Map([
    ['/nocturne',{type:'text/html; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'nocturne.html'))}],
+   ['/assets/native-approve.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'native-approve.js'))}],
    ['/assets/nocturne.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'nocturne.js'))}],
    ['/assets/nocturne.css',{type:'text/css; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'nocturne.css'))}],
    ['/',{type:'text/html; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'nocturne.html'))}],
@@ -147,12 +148,18 @@ class WebControl{
    if(req.method==='GET'&&['/assets/items.png','/assets/items.json'].includes(pathname)){const file=path.join(__dirname,'..','web',pathname.endsWith('.png')?'items.png':'items.json');if(!fs.existsSync(file))throw fail(404,'アイテム画像が未配置です');res.writeHead(200,{'Content-Type':pathname.endsWith('.png')?'image/png':'application/json; charset=utf-8'});res.end(fs.readFileSync(file));return;}
    if(req.method==='GET'&&this.assets.has(pathname)){const asset=this.assets.get(pathname);res.writeHead(200,{'Content-Type':asset.type});res.end(asset.buffer);return;}
    if(this.closed)throw Object.assign(fail(503,'サーバー更新中です。保存したログインで再接続します'),{code:'RESTARTING'});
+   if(pathname==='/api/native/start'&&req.method==='POST'){this.checkOrigin(req);await body(req,1024);this.json(res,200,require('./native-auth').start(this,req));return;}
+   if(pathname==='/api/native/poll'&&req.method==='POST'){this.checkOrigin(req);const d=await body(req,2048);this.json(res,200,require('./native-auth').poll(this,req,res,d));return;}
    if(pathname==='/api/login-info'&&req.method==='GET'){this.json(res,200,{discordReady:this.discordLogin.ready(),callbackURL:this.base?this.discordLogin.redirect():null});return;}
    if(pathname==='/api/oauth/start'&&req.method==='GET'){this.discordLogin.start(req,res);return;}
    if(pathname==='/oauth/discord/callback'&&req.method==='GET'){await this.discordLogin.callback(req,res,url);return;}
    if(pathname==='/api/login'&&req.method==='POST'){await this.login(req,res);return;}
-   if(!pathname.startsWith('/api/'))throw fail(404,'ページがありません');
+   if(pathname!=='/native-approve'&&!pathname.startsWith('/api/'))throw fail(404,'ページがありません');
    const session=this.authenticate(req);
+   if(pathname==='/native-approve'&&req.method==='GET'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/assets/nocturne.css"></head><body><section class="gatecard"><h1>Asira Native</h1><p id="who">Discord identity verified</p><p>Allow the desktop app you just opened to sign in?</p><button id="allow" class="plain">Allow desktop sign-in</button><p id="result"></p></section><script src="/assets/native-approve.js" defer></script></body></html>');return;}
+   if(pathname==='/api/native/identity'&&req.method==='GET'){this.json(res,200,{profile:this.publicProfile(session),csrf:session.csrf});return;}
+   if(pathname==='/api/native/approve'&&req.method==='POST'){this.mutate(req,session);this.json(res,200,require('./native-auth').approve(this,session,await body(req,2048)));return;}
+
    if(pathname==='/api/desktop/access'){
     const auth=require('./desktop-auth');
     if(req.method==='GET'){this.json(res,200,auth.status(this,session));return;}
@@ -164,6 +171,7 @@ class WebControl{
     require('./desktop-auth').lock(this,session);
     const route=pathname.slice('/api/desktop/'.length);
     if(route==='control'&&req.method==='POST'){this.mutate(req,session);const d=await body(req,65536),r=await this.once(req,session,()=>require('./desktop-extra').apply(this,session,d));this.json(res,200,{ok:true,...r});this.requestPump();return;}
+    if(route==='catalog'&&req.method==='GET'){this.json(res,200,{catalog:require('./desktop-modules').catalog});return;}
     if(route==='state'&&req.method==='GET'){this.renew(req,res,session);this.json(res,200,{...this.snapshot(),desktopModules:require('./desktop-modules').snapshot(this.manager),csrf:session.csrf,profile:this.publicProfile(session),isOwner:(session.discordId||session.owner)===this.owner});return;}
     if(route==='module'&&req.method==='POST'){this.mutate(req,session);const data=await body(req,65536);const result=await this.once(req,session,()=>require('./desktop-modules').apply(this,session,data));this.json(res,200,{...result,desktopModules:require('./desktop-modules').snapshot(this.manager)});this.requestPump();return;}
     if(!['map','maps','circle','inventory','equip','command','auth','logout','game-ai','ai-debug','restock','chat','accounts','account'].includes(route))throw fail(404,'デスクトップ操作がありません');
