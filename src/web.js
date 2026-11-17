@@ -34,7 +34,7 @@ class WebControl{
    ['/nocturne',{type:'text/html; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'nocturne.html'))}],
    ['/assets/nocturne.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'nocturne.js'))}],
    ['/assets/nocturne.css',{type:'text/css; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'nocturne.css'))}],
-   ['/',{type:'text/html; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'index.html'))}],
+   ['/',{type:'text/html; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'nocturne.html'))}],
    ['/assets/app.css',{type:'text/css; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'app.css'))}],
    ['/assets/ui-state.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'ui-state.js'))}],
    ['/assets/map.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'map.js'))}],
@@ -76,7 +76,7 @@ class WebControl{
    const w=this.manager.workers.get(id),b=w?.bot,state=this.manager.store.bot(id),r=w?.runtime?.snapshot?.(),p=b?.entity?.position,realm=b?.config?.realm||require('./realms').selected(this.manager.store,id),ign=realm==='ign';
    const item=(raw,slot)=>{if(!raw?.count)raw=null;return {slot,name:raw?(b?.name?.(raw)||raw.name||'unknown'):'',count:raw?.count||0,damage:raw?(b?.damage?.(raw)||0):0,token:itemToken(raw),selected:slot===b?.quickBarSlot};};
    return {id,name,face:b?.hudFace||'',reconnection:this.manager.connectionKeeper?.snapshot(id)||null,server:realm,connected:!!b?.connected,dead:!!b?.dead,phase:b?.connectionPhase||'未接続',mode:w?.mode||'offline',health:b?.health??null,absorption:Math.max(0,Number(b?.absorption)||0),chatDelivery:b?require('./chat-delivery').snapshot(b):null,chatQueue:b?.chatQueue?.snapshot?.()||{pending:0,waitMs:0},onlinePlayers:b?[...(b.players?.values()||[])].map(p=>p.name):[],mining:w?.miningStatus?.()||w?.miner?.snapshot()||null,
-    endpoint:{host:b?.config?.host||(ign?this.env.IGN_HOST:this.env.MC_HOST)|| (ign?'IGN未設定':'2b2e.org'),port:b?.config?.port||Number((ign?this.env.IGN_PORT:this.env.MC_PORT)||19132)},
+    endpoint:{host:b?.config?.host||state.customEndpoint?.host||(ign?this.env.IGN_HOST:this.env.MC_HOST)|| (ign?'IGN未設定':'2b2e.org'),port:b?.config?.port||state.customEndpoint?.port||Number((ign?this.env.IGN_PORT:this.env.MC_PORT)||19132)},
     position:p?{x:p.x,y:p.y,z:p.z}:null,dimension:b?.dimensionId??0,config:{...defaults,...state.runtime,...(ign?{anticrystal:false}:{})},
     messaging:require('./messaging').snapshot(this.manager,id,b),options:{respawn:state.respawn,autoSupply:state.autoSupply,chat:state.chat,floor:state.floor,ceiling:state.ceiling,area:state.area,scaffold:state.scaffold,miningRange:state.miningRange??5,scaffoldEnabled:state.scaffoldEnabled!==false,maxDrop:state.maxDrop??64,miningFilter:state.miningFilter||[],miningChunks:state.miningChunks||[],gameLogs:require('./game-logs').settings(state),gameLogMessages:this.manager.noticeCatalog?.get(id)||[]},
     inventorySync:{revision:b?.inventoryRevision||0,at:b?.lastInventoryAt||null,pending:b?.pendingStackRequest?{action:b.pendingStackRequest.action,at:b.pendingStackRequest.at}:null,manual:b?.manualInventoryOperation||null,last:b?.lastStackResponse||null},inventory:Array.from({length:36},(_,n)=>item(b?.items?.[n],n)),armor:Array.from({length:4},(_,n)=>item(b?.armor?.[n],n)),offhand:item(b?.offhand?.[0],-1),
@@ -159,11 +159,13 @@ class WebControl{
     if(req.method!=='POST')throw fail(405,'GETまたはPOSTで操作してください');
     this.mutate(req,session);const data=await body(req,4096);this.json(res,200,await this.once(req,session,()=>auth.password(this,session,data)));return;
    }
+   if(!pathname.startsWith('/api/desktop/')&&pathname!=='/api/logout')require('./desktop-auth').lock(this,session);
    if(pathname.startsWith('/api/desktop/')){
     require('./desktop-auth').lock(this,session);
     const route=pathname.slice('/api/desktop/'.length);
+    if(route==='control'&&req.method==='POST'){this.mutate(req,session);const d=await body(req,65536),r=await this.once(req,session,()=>require('./desktop-extra').apply(this,session,d));this.json(res,200,{ok:true,...r});this.requestPump();return;}
     if(route==='state'&&req.method==='GET'){this.renew(req,res,session);this.json(res,200,{...this.snapshot(),desktopModules:require('./desktop-modules').snapshot(this.manager),csrf:session.csrf,profile:this.publicProfile(session),isOwner:(session.discordId||session.owner)===this.owner});return;}
-    if(route==='module'&&req.method==='POST'){this.mutate(req,session);const data=await body(req,65536);const result=await this.once(req,session,()=>require('./desktop-modules').apply(this,session,data));this.json(res,200,result);this.requestPump();return;}
+    if(route==='module'&&req.method==='POST'){this.mutate(req,session);const data=await body(req,65536);const result=await this.once(req,session,()=>require('./desktop-modules').apply(this,session,data));this.json(res,200,{...result,desktopModules:require('./desktop-modules').snapshot(this.manager)});this.requestPump();return;}
     if(!['map','maps','circle','inventory','equip','command','auth','logout','game-ai','ai-debug','restock','chat','accounts','account'].includes(route))throw fail(404,'デスクトップ操作がありません');
     pathname='/api/'+route;
    }
