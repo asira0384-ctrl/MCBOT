@@ -107,12 +107,12 @@
  onForm('enemy-form',v=>command('enemy add '+v.name.trim()));
  onForm('command-form',async v=>{await command(v.command);$('command-dialog').close();});
  $('ai-form').addEventListener('input',()=>{$('ai-form').dataset.dirty='1';});
- function circleStatus(){'use strict';$('fleet-tools').hidden=!app.isOwner;$('tp-status').textContent=app.state?.tpJobs?.[$('fleet-tp').elements.realm.value]||'停止中';const f=$('circle-form'),c=app.state?.circles?.[f.elements.realm.value];$('circle-status').textContent=c?c.name+' 中心 · 半径 '+c.radius+' ブロック · '+c.count+'体 · '+c.state:'停止中';}
+ function circleStatus(){'use strict';$('fleet-tools').hidden=!app.isOwner;$('tp-status').textContent=app.state?.tpJobs?.[$('fleet-tp').elements.realm.value]||'停止中';const f=$('circle-form'),c=app.state?.circles?.[f.elements.realm.value];$('circle-status').textContent=c?(c.centerMode==='Coordinates'?[c.x,c.y,c.z].join(', '):c.name)+' 中心 · '+(c.orbit?'周回中':'円配置')+' · 半径 '+c.radius+' ブロック · '+c.count+'体 · '+c.state:'停止中';}
  $('circle-form').elements.realm.addEventListener('change',circleStatus);
  onForm('fleet-tp',async v=>{await api('/api/fleet-tp',{...v,action:'start'});await refresh();});
  $('tp-stop').onclick=async()=>{try{await api('/api/fleet-tp',{realm:$('fleet-tp').elements.realm.value,action:'stop'});await refresh();}catch(e){result(e.message,true);}};
  onForm('mc-command',async v=>{await api('/api/custom-command',{target:app.target,command:v.command.trim()});result('ゲームコマンドを送信しました');});
- onForm('circle-form',async v=>{await api('/api/circle',{...v,radius:Number(v.radius),action:'start'});await refresh();result('円フォーメーションを開始しました');});
+ onForm('circle-form',async v=>{await api('/api/circle',{...v,radius:Number(v.radius),x:Number(v.x),y:Number(v.y),z:Number(v.z),orbit:v.motion==='orbit',jump:v.jump==='true',speed:Number(v.speed),action:'start'});await refresh();result('円フォーメーションを開始しました');});
  $('circle-stop').addEventListener('click',async()=>{try{await api('/api/circle',{realm:$('circle-form').elements.realm.value,action:'stop'});await refresh();result('円フォーメーションを解除しました');}catch(e){result(e.message,true);}});
  $('ai-debug-load').addEventListener('click',async()=>{try{const {rows}=await api('/api/ai-debug');$('ai-debug-rows').textContent=rows.slice().reverse().map(r=>new Date(r.at).toLocaleTimeString()+' Bot'+r.id+' '+r.stage+'：'+r.reason).join('\n')||'記録なし：デバッグをONにして保存し、同じサーバーで !ai 状態 を送ってください。';}catch(e){result(e.message,true);}});
  onForm('ai-form',async v=>{const form=$('ai-form');const data=await api('/api/game-ai',{...v,debug:!!v.debug,clearKey:!!v.clearKey});form.elements.namedItem('key').value='';form.elements.namedItem('clearKey').checked=false;delete form.dataset.dirty;$('ai-key-status').textContent='使用するキー：'+data.settings.keySource;result('全BotのAI設定を保存しました');});

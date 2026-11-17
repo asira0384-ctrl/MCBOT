@@ -31,6 +31,7 @@ class WebControl{
   this.base=baseURL(options.baseURL||this.env.WEB_BASE_URL||manager.store.data.webBaseURL||(this.env.RAILWAY_PUBLIC_DOMAIN?'https://'+this.env.RAILWAY_PUBLIC_DOMAIN:''));
   this.discordLogin=new(require('./discord-login').DiscordLogin)(this,options.fetch);this.codes=new Map();this.sessions=new Map();this.attempts=new Map();this.events=new Set();this.closed=false;this.audit=[];this.requests=new Map();this.viewAt=new Map();
   const directory=path.join(__dirname,'..','web');this.assets=new Map([
+   ['/nocturne',{type:'text/html; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'nocturne.html'))}],
    ['/',{type:'text/html; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'index.html'))}],
    ['/assets/app.css',{type:'text/css; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'app.css'))}],
    ['/assets/ui-state.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'ui-state.js'))}],
