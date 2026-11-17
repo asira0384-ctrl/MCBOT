@@ -1,6 +1,7 @@
 'use strict';
 const {Client,GatewayIntentBits,REST,Routes,SlashCommandBuilder,MessageFlags}=require('discord.js');const {OWNER}=require('./store');const {norm}=require('./util');
 const commands=[
+ ...require("./desktop-commands").build(),
  ...require("./orbit-commands").build(),
  ...require('./coordinates').aliases.map(name=>new SlashCommandBuilder().setName(name).setDescription('Botの座標を確認（誰でも利用可能）').addStringOption(o=>o.setName('target').setDescription('Bot番号 / all（省略時1）'))),
  new SlashCommandBuilder().setName('say').setDescription('Botから公開チャットへ送信（管理者専用）').addStringOption(o=>o.setName('target').setDescription('Bot番号 / all').setRequired(true)).addStringOption(o=>o.setName('message').setDescription('送信するメッセージ').setMaxLength(220).setRequired(true)),
@@ -29,6 +30,7 @@ async function startDiscord(manager){const token=process.env.DISCORD_TOKEN;if(!t
  client.on('interactionCreate',async i=>{if(i.isAutocomplete?.()){try{if(!require('./access').operator(manager.store,i.user.id,OWNER)){await i.respond([]);return;}const focused=i.options.getFocused(true),target=i.options.getString('target')||'all',rows=require('./player-candidates').autocomplete(manager,target,focused.name,focused.value);await i.respond(rows);}catch{await i.respond([]).catch(()=>{});}return;}if(!i.isChatInputCommand()){try{await panel.handle(i);}catch(e){console.error('管理パネル:',e.message);}return;}if(await require('./coordinates').discordCoordinates(i,manager))return;if(!require('./access').operator(manager.store,i.user.id,OWNER)&&!(i.commandName==='web'&&manager.web?.isAllowed(i.user.id))){await i.reply({content:'このBotに設定された管理者のみ使用できます。',flags:MessageFlags.Ephemeral});return;}await i.deferReply({flags:MessageFlags.Ephemeral});
   try{let result;if(['admin','webaccess'].includes(i.commandName)&&i.user.id!==OWNER)throw Error('管理者・Web許可の登録はAsira本人だけが行えます');
    switch(i.commandName){
+    case 'desktop':result=require('./desktop-commands').run(manager,i);break;
     case 'orbit':case 'circle':result=require('./orbit-commands').run(manager,i);break;
     case 'webaccess':{const action=i.options.getSubcommand(),user=action==='list'?null:i.options.getUser('user',true);if(action!=='list'){await require('./shared-access').change(i,manager,panel,action,user,OWNER);return;}const list=require('./access').rows(manager.store);result=list.map(v=>`${v.name} / ${v.id}`).join('\n')||'Asira本人のみ利用できます';break;}
      case 'say':result=manager.say(i.options.getString('target',true),i.options.getString('message',true));break;

@@ -32,6 +32,8 @@ class WebControl{
   this.discordLogin=new(require('./discord-login').DiscordLogin)(this,options.fetch);this.codes=new Map();this.sessions=new Map();this.attempts=new Map();this.events=new Set();this.closed=false;this.audit=[];this.requests=new Map();this.viewAt=new Map();
   const directory=path.join(__dirname,'..','web');this.assets=new Map([
    ['/nocturne',{type:'text/html; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'nocturne.html'))}],
+   ['/assets/nocturne.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'nocturne.js'))}],
+   ['/assets/nocturne.css',{type:'text/css; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'nocturne.css'))}],
    ['/',{type:'text/html; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'index.html'))}],
    ['/assets/app.css',{type:'text/css; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'app.css'))}],
    ['/assets/ui-state.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'ui-state.js'))}],
@@ -96,7 +98,7 @@ class WebControl{
  checkOrigin(req){if(req.headers.origin&&req.headers.origin!==this.origin(req))throw fail(403,'別のサイトからの操作は受け付けません');}
  headers(res){
   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Frame-Options','DENY');
-  res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://cdn.discordapp.com; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'");
+  res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://cdn.discordapp.com; media-src 'self' blob: data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'");
  }
  cookie(req,value,seconds){const secure=this.origin(req).startsWith('https:');return `${COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${seconds}; Expires=${new Date(this.now()+seconds*1000).toUTCString()}${secure?'; Secure':''}`;}
  json(res,status,value){if(res.writableEnded)return;res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value,(_,v)=>typeof v==='bigint'?String(v):v));}
@@ -139,7 +141,7 @@ class WebControl{
  async handle(req,res){
   this.headers(res);
   try{
-   const url=new URL(req.url,'http://localhost'),pathname=url.pathname;
+   const url=new URL(req.url,'http://localhost');let pathname=url.pathname;
    if(pathname==='/health'){const ready=!this.closed&&this.ready();this.json(res,ready?200:503,{ok:!!ready});return;}
    if(!this.enabled)throw fail(404,'Web管理はOFFです');
    if(req.method==='GET'&&['/assets/items.png','/assets/items.json'].includes(pathname)){const file=path.join(__dirname,'..','web',pathname.endsWith('.png')?'items.png':'items.json');if(!fs.existsSync(file))throw fail(404,'アイテム画像が未配置です');res.writeHead(200,{'Content-Type':pathname.endsWith('.png')?'image/png':'application/json; charset=utf-8'});res.end(fs.readFileSync(file));return;}
@@ -151,6 +153,20 @@ class WebControl{
    if(pathname==='/api/login'&&req.method==='POST'){await this.login(req,res);return;}
    if(!pathname.startsWith('/api/'))throw fail(404,'ページがありません');
    const session=this.authenticate(req);
+   if(pathname==='/api/desktop/access'){
+    const auth=require('./desktop-auth');
+    if(req.method==='GET'){this.json(res,200,auth.status(this,session));return;}
+    if(req.method!=='POST')throw fail(405,'GETまたはPOSTで操作してください');
+    this.mutate(req,session);const data=await body(req,4096);this.json(res,200,await this.once(req,session,()=>auth.password(this,session,data)));return;
+   }
+   if(pathname.startsWith('/api/desktop/')){
+    require('./desktop-auth').lock(this,session);
+    const route=pathname.slice('/api/desktop/'.length);
+    if(route==='state'&&req.method==='GET'){this.renew(req,res,session);this.json(res,200,{...this.snapshot(),desktopModules:require('./desktop-modules').snapshot(this.manager),csrf:session.csrf,profile:this.publicProfile(session),isOwner:(session.discordId||session.owner)===this.owner});return;}
+    if(route==='module'&&req.method==='POST'){this.mutate(req,session);const data=await body(req,65536);const result=await this.once(req,session,()=>require('./desktop-modules').apply(this,session,data));this.json(res,200,result);this.requestPump();return;}
+    if(!['map','maps','circle','inventory','equip','command','auth','logout','game-ai','ai-debug','restock','chat','accounts','account'].includes(route))throw fail(404,'デスクトップ操作がありません');
+    pathname='/api/'+route;
+   }
    if(req.method==='GET'){
     if(pathname==='/api/maps'){this.json(res,200,{worlds:this.manager.atlas?.worlds()||[]});return;}
     if(pathname==='/api/map'){if(!this.manager.atlas)throw fail(503,'地図記録は準備中です');this.json(res,200,this.manager.atlas.view(Object.fromEntries(url.searchParams)));return;}
