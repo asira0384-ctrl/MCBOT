@@ -1,0 +1,19 @@
+{
+  "format": "asira-nocturne-config",
+  "version": 1,
+  "values": {
+    "ClickGUI": {
+      "Font": "Segoe UI",
+      "Panel Alpha": 80,
+      "Accent": "#ad94d9",
+      "Shader": false
+    },
+    "Weather": {
+      "Mode": "Snow",
+      "Density": 65,
+      "Speed": 1
+    }
+  },
+  "positions": {},
+  "hud": {}
+}
