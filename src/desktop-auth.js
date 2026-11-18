@@ -8,7 +8,7 @@ function lock(w,s){if(!w.isAllowed(user(s)))throw fail(403,'Discord Botの利用
 async function password(w,s,d){
  const id=user(s);if(!w.isAllowed(id))throw fail(403,'利用許可がありません');const key=s.key;
  if(busy.has(id))throw fail(429,'パスワードを確認中です');
- if(typeof d.password!=='string'||d.password.length<10||d.password.length>128)throw fail(400,'パスワードは10〜128文字です');
+ if(typeof d.password!=='string'||d.password.length<8||d.password.length>128)throw fail(400,'パスワードは8〜128文字です');
  const saved=w.manager.store.data.desktopPasswords?.[id],old=attempts.get(id),now=w.now();
  if(old&&old.until>now&&old.count>=5)throw fail(429,'試行回数の上限です。5分後に再試行してください');
  if(!['setup','unlock'].includes(d.action)||d.action==='setup'&&saved||d.action==='unlock'&&!saved)throw fail(409,'認証画面を更新してください');

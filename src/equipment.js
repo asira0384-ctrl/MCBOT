@@ -13,9 +13,9 @@ async function urgentOffhand(bot,signal){
  await bot.openInventory(signal);await bot.swapContainer('hotbar_and_inventory',held.slot,'offhand',0,signal);return true;
 }
 async function autoSlotsNow(bot,signal,options){
- if(bot.handUse||bot.urgentFoodPending)return false;
+ if(bot.handUse||bot.urgentFoodPending||bot.urgentOffhandPending)return false;
  const needs=()=>slotChoices(bot,options).some(([dest,item])=>item.slot!==dest);if(!needs())return true;
- await bot.openInventory(signal);try{for(let dest=0;dest<9;dest++){if(bot.manualInventoryBusy||bot.handUse||bot.urgentFoodPending)return false;await urgentOffhand(bot,signal);if(signal?.aborted)throw Error('停止しました');const choice=slotChoices(bot,options).find(([d])=>d===dest)?.[1];if(choice&&choice.slot!==dest&&![dest,choice.slot].some(slot=>require('./item-use').protects(bot,'inventory',slot)||require('./hand').protects(bot,'inventory',slot)))await bot.swap(choice.slot,dest,signal);}}finally{bot.closeContainer();}
+ await bot.openInventory(signal);try{for(let dest=0;dest<9;dest++){if(bot.manualInventoryBusy||bot.handUse||bot.urgentFoodPending||bot.urgentOffhandPending)return false;await urgentOffhand(bot,signal);if(signal?.aborted)throw Error('停止しました');const choice=slotChoices(bot,options).find(([d])=>d===dest)?.[1];if(choice&&choice.slot!==dest&&![dest,choice.slot].some(slot=>require('./item-use').protects(bot,'inventory',slot)||require('./hand').protects(bot,'inventory',slot)))await bot.swap(choice.slot,dest,signal);}}finally{bot.closeContainer();}
  if(!bot.handUse&&!bot.actionHandBusy&&bot.name(bot.items[0]).endsWith('_sword'))bot.select(0);else if(!bot.handUse&&!bot.actionHandBusy&&bot.tool()?.slot<9)bot.select(bot.tool().slot);
  if(slotChoices(bot,options).some(([dest,item])=>item.slot!==dest))return false;return true;
 }
@@ -32,17 +32,17 @@ async function nativeArmor(bot,item,index,signal){
  }catch(error){if(signal?.aborted||bot.dead||bot.ended)throw error;return false;}finally{hand.release(bot,lease);if(!bot.handUse&&selected<9&&bot.items[selected])bot.select(selected);}
 }
 async function wearNow(bot,{armor=true,totem=true,elytra=false},signal){
- if(bot.handUse||bot.urgentFoodPending)return false;
+ if(bot.handUse||bot.urgentFoodPending||bot.urgentOffhandPending)return false;
  let changed=false;const replaceOffhand=()=>{const held=totem?(bot.find('totem')||bot.find('totem_of_undying')||(!/totem/.test(bot.name(bot.offhand[0]))?bot.find('shield'):null)):null;return held&&bot.name(bot.offhand[0])!==held.name?held:null;};
  const held=replaceOffhand();if(held&&!require('./hand').protects(bot,'inventory',held.slot)&&!require('./item-use').protects(bot,'inventory',held.slot)){await bot.openInventory(signal);try{const fresh=replaceOffhand();if(fresh){await bot.swapContainer('hotbar_and_inventory',fresh.slot,'offhand',0,signal);changed=true;}}finally{bot.closeContainer();}}
  if(!armor||bot.handUse||bot.actionHandBusy)return changed;
  for(const [index,suffix]of ['_helmet','_chestplate','_leggings','_boots'].entries()){
-  if(bot.handUse||bot.urgentFoodPending)return changed;
+  if(bot.handUse||bot.urgentFoodPending||bot.urgentOffhandPending)return changed;
   if(totem||bot.motion?.runtime?.config.autototem)changed=await wearNow(bot,{armor:false,totem:true},signal)||changed;
   if(signal?.aborted)throw Error('停止しました');const candidate=()=>index===1&&elytra?bot.find('elytra'):best(bot,suffix);let item=candidate(),current=bot.armor[index];
   if(!item||current&&!(index===1&&elytra&&bot.name(current)!=='elytra')&&(index===1&&elytra||rank(bot,item)<=rank(bot,{raw:current})))continue;
   if(await nativeArmor(bot,item,index,signal)){changed=true;continue;}
-  if(bot.handUse||bot.urgentFoodPending)return changed;item=candidate();if(!item)continue;await bot.openInventory(signal);try{await bot.swapContainer('hotbar_and_inventory',item.slot,'armor',index,signal);changed=true;}finally{bot.closeContainer();}
+  if(bot.handUse||bot.urgentFoodPending||bot.urgentOffhandPending)return changed;item=candidate();if(!item)continue;await bot.openInventory(signal);try{await bot.swapContainer('hotbar_and_inventory',item.slot,'armor',index,signal);changed=true;}finally{bot.closeContainer();}
  }return changed;
 }
 module.exports={best,rank,wanted,slotChoices,autoSlots,wear,strengthPotion,equipSlot,urgentOffhand};
