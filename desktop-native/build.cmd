@@ -1,6 +1,5 @@
 @echo off
 cd /d "%~dp0"
-REM Apply the native source fix before rebuilding the EXE.
 node "..\src\hotfix.js" --native
 if errorlevel 1 exit /b 1
 zig rc /fo resources.res resources.rc
