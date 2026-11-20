@@ -224,8 +224,14 @@ void panelBackground(Graphics&g,const Panel&p){`);
  }return text;`);
  // The old form repaints every 25ms over a focused native EDIT control, causing blinking.
  // Preserve module timers but do not repaint the form during text editing.
- change('it=dirty.erase(it);}else++it;InvalidateRect(w,0,FALSE);return 0;}\ncase WM_APP+1:commitEdit();',
-        'it=dirty.erase(it);}else++it;if(!editWnd)InvalidateRect(w,0,FALSE);return 0;}\ncase WM_APP+1:');
+ // The old and partially-patched versions differ around WM_APP+1.
+ // Apply both changes independently so GitHub Actions also builds when the
+ // previous flicker fix was already committed.
+ if(output.includes('it=dirty.erase(it);}else++it;InvalidateRect(w,0,FALSE);return 0;}'))
+  change('it=dirty.erase(it);}else++it;InvalidateRect(w,0,FALSE);return 0;}',
+         'it=dirty.erase(it);}else++it;if(!editWnd)InvalidateRect(w,0,FALSE);return 0;}');
+ if(output.includes('case WM_APP+1:commitEdit();if(ready)'))
+  change('case WM_APP+1:commitEdit();if(ready)', 'case WM_APP+1:if(ready)');
  // The async state update must never force-save and remove a focused input control.
  change('if(ready){std::lock_guard<std::recursive_mutex>l(dataMutex);loadValues();buildPanels();responsivePanels(true);}InvalidateRect(w,0,FALSE);return 0;',
         'if(ready){std::lock_guard<std::recursive_mutex>l(dataMutex);loadValues();if(!editWnd){buildPanels();responsivePanels(true);}}if(!editWnd)InvalidateRect(w,0,FALSE);return 0;');
