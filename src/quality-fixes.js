@@ -195,6 +195,25 @@ void panelBackground(Graphics&g,const Panel&p){`);
         'else {invoke(h);if(h.type=="module")responsivePanels();}break;}InvalidateRect(w,0,FALSE);return 0;}');
  change('toggleOpen("AccountEdit");}break;}InvalidateRect(w,0,FALSE);return 0;}',
         'toggleOpen("AccountEdit");}responsivePanels();break;}InvalidateRect(w,0,FALSE);return 0;}');
+ // Keep the original native GUI while modernizing its login screen and endpoint.
+ change('std::string target="all",csrf,base="https://mcbot-production-b2fb.up.railway.app",flowId,flowSecret;',
+        'std::string target="all",csrf,base="https://mcbot-asira.up.railway.app",flowId,flowSecret;');
+ // Older Last.json files silently override the executable default: migrate only the obsolete domain.
+ change('base=prefs.value("server",base);',
+        'base=prefs.value("server",base);if(base.find("mcbot-production-b2fb.up.railway.app")!=std::string::npos)base="https://mcbot-asira.up.railway.app";');
+ // Reject bad URLs *before* doing a network request and give a meaningful explanation.
+ change('while(base.size()&&base.back()==\'/\')base.pop_back();}if(base.find(\'?\')',
+        'while(base.size()&&base.back()==\'/\')base.pop_back();if(base.rfind("ttps://",0)==0)base="h"+base;if(base.rfind("https://",0)!=0&&base.rfind("http://localhost",0)!=0&&base.rfind("http://127.0.0.1",0)!=0)throw std::runtime_error("Server must start with https:// (example: https://mcbot-asira.up.railway.app)");}if(base.find(\'?\')');
+ // The old form repaints every 25ms over a focused native EDIT control, causing blinking.
+ // Preserve module timers but do not repaint the form during text editing.
+ change('it=dirty.erase(it);}else++it;InvalidateRect(w,0,FALSE);return 0;}\ncase WM_APP+1:commitEdit();',
+        'it=dirty.erase(it);}else++it;if(!editWnd)InvalidateRect(w,0,FALSE);return 0;}\ncase WM_APP+1:');
+ // The async state update must never force-save and remove a focused input control.
+ change('if(ready){std::lock_guard<std::recursive_mutex>l(dataMutex);loadValues();buildPanels();responsivePanels(true);}InvalidateRect(w,0,FALSE);return 0;',
+        'if(ready){std::lock_guard<std::recursive_mutex>l(dataMutex);loadValues();if(!editWnd){buildPanels();responsivePanels(true);}}if(!editWnd)InvalidateRect(w,0,FALSE);return 0;');
+ // Keep the original functional ClickGUI and refresh only the login card styling.
+ change('box(g,x-18,y-18,456,390,theme("Panel",242),8);txt(g,"Asira Native",x,y,420,40,theme("Text"),25);',
+        'box(g,x-18,y-18,456,390,Color(250,31,25,44),10);Pen loginBorder(Color(170,129,99,163),1);g.DrawRectangle(&loginBorder,x-18,y-18,456,390);txt(g,"Asira Native",x,y,420,40,theme("Text"),25);');
  return output;
 }
 function applyNative(){
