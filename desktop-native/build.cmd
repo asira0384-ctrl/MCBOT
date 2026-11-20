@@ -1,6 +1,6 @@
 @echo off
 cd /d "%~dp0"
-node "..\src\hotfix.js" --native
+node "..\src\quality-fixes.js" --native
 if errorlevel 1 exit /b 1
 zig rc /fo resources.res resources.rc
 if errorlevel 1 exit /b 1
