@@ -200,10 +200,28 @@ void panelBackground(Graphics&g,const Panel&p){`);
         'std::string target="all",csrf,base="https://mcbot-asira.up.railway.app",flowId,flowSecret;');
  // Older Last.json files silently override the executable default: migrate only the obsolete domain.
  change('base=prefs.value("server",base);',
-        'base=prefs.value("server",base);if(base.find("mcbot-production-b2fb.up.railway.app")!=std::string::npos)base="https://mcbot-asira.up.railway.app";');
+        'base=prefs.value("server",base);if(base.find("mcbot-production-b2fb.up.railway.app")!=std::string::npos)base="https://mcbot-asira.up.railway.app";if(base.rfind("ttps://",0)==0)base="h"+base;');
  // Reject bad URLs *before* doing a network request and give a meaningful explanation.
  change('while(base.size()&&base.back()==\'/\')base.pop_back();}if(base.find(\'?\')',
-        'while(base.size()&&base.back()==\'/\')base.pop_back();if(base.rfind("ttps://",0)==0)base="h"+base;if(base.rfind("https://",0)!=0&&base.rfind("http://localhost",0)!=0&&base.rfind("http://127.0.0.1",0)!=0)throw std::runtime_error("Server must start with https:// (example: https://mcbot-asira.up.railway.app)");}if(base.find(\'?\')');
+        'while(base.size()&&base.back()==\'/\')base.pop_back();if(base.rfind("ttps://",0)==0)base="h"+base;if(base.rfind("https://",0)!=0&&base.rfind("http://localhost",0)!=0&&base.rfind("http://127.0.0.1",0)!=0)throw std::runtime_error("Server must start with https:// (example: https://mcbot-asira.up.railway.app)");values["Login"]["Server"]=base;}if(base.find(\'?\')');
+ // Preserve the actual HTTP response code and message so expired login codes,
+ // an out-of-date WEB_BASE_URL, and Railway reverse proxy failures can be diagnosed.
+ // The old code replaced every non-standard error object with the useless "Server error".
+ change('if(status>=400){try{throw std::runtime_error(J::parse(text).value("error","Server error"));}catch(const J::exception&){throw std::runtime_error("HTTP "+std::to_string(status));}}return text;',
+ `if(status>=400){
+  std::string reason;
+  try{J obj=J::parse(text);
+   if(obj.is_object()){
+    if(obj.contains("error")&&obj["error"].is_string())reason=obj["error"].get<std::string>();
+    if(reason.empty()&&obj.contains("message")&&obj["message"].is_string())reason=obj["message"].get<std::string>();
+   }
+  }catch(...){}
+  if(reason.empty()){if(text.empty())reason="Empty server response";
+    else if(text[0]=='<')reason="Railway returned HTML instead of the MCBOT API. Check the public domain port.";
+    else reason=text.substr(0,260);}
+  std::replace(reason.begin(),reason.end(),'\\n',' ');
+  throw std::runtime_error("HTTP "+std::to_string(status)+": "+reason.substr(0,260));
+ }return text;`);
  // The old form repaints every 25ms over a focused native EDIT control, causing blinking.
  // Preserve module timers but do not repaint the form during text editing.
  change('it=dirty.erase(it);}else++it;InvalidateRect(w,0,FALSE);return 0;}\ncase WM_APP+1:commitEdit();',
