@@ -196,8 +196,8 @@ void panelBackground(Graphics&g,const Panel&p){`);
  change('toggleOpen("AccountEdit");}break;}InvalidateRect(w,0,FALSE);return 0;}',
         'toggleOpen("AccountEdit");}responsivePanels();break;}InvalidateRect(w,0,FALSE);return 0;}');
  // Keep the original native GUI while modernizing its login screen and endpoint.
- change('std::string target="all",csrf,base="https://mcbot-production-b2fb.up.railway.app",flowId,flowSecret;',
-        'std::string target="all",csrf,base="https://mcbot-asira.up.railway.app",flowId,flowSecret;');
+ change('std::string target="all",csrf,sessionCookie,base="https://mcbot-production-b2fb.up.railway.app",flowId,flowSecret;',
+        'std::string target="all",csrf,sessionCookie,base="https://mcbot-asira.up.railway.app",flowId,flowSecret;');
  // Older Last.json files silently override the executable default: migrate only the obsolete domain.
  change('base=prefs.value("server",base);',
         'base=prefs.value("server",base);if(base.find("mcbot-production-b2fb.up.railway.app")!=std::string::npos)base="https://mcbot-asira.up.railway.app";if(base.rfind("ttps://",0)==0)base="h"+base;');
@@ -232,6 +232,9 @@ void panelBackground(Graphics&g,const Panel&p){`);
  // Keep the original functional ClickGUI and refresh only the login card styling.
  change('box(g,x-18,y-18,456,390,theme("Panel",242),8);txt(g,"Asira Native",x,y,420,40,theme("Text"),25);',
         'box(g,x-18,y-18,456,390,Color(250,31,25,44),10);Pen loginBorder(Color(170,129,99,163),1);g.DrawRectangle(&loginBorder,x-18,y-18,456,390);txt(g,"Asira Native",x,y,420,40,theme("Text"),25);');
+
+ // Final login UI and focused-input repaint fixes; applied after the base native patches.
+ for(const [oldText,newText] of [["else{float x=W*.5-210,y=H*.5-190;box(g,x-18,y-18,456,390,Color(250,31,25,44),10);Pen loginBorder(Color(170,129,99,163),1);g.DrawRectangle(&loginBorder,x-18,y-18,456,390);txt(g,\"Asira Native\",x,y,420,40,theme(\"Text\"),25);y+=52;","else{float x=W*.5-210,y=std::max(44.f,H*.5f-238.f);box(g,x-18,y-18,456,484,Color(250,31,25,44),10);Pen loginBorder(Color(170,129,99,163),1);g.DrawRectangle(&loginBorder,x-18,y-18,456,484);txt(g,\"Asira Native\",x,y,420,40,theme(\"Text\"),25);txt(g,\"Connect with your Railway bot and Discord account.\",x,y+44,420,24,theme(\"Off Text\"),11);y+=83;"],["for(auto&d:localDefs[\"Login\"])y=drawField(g,\"Login\",d,x,y,420);inlineButton(g,\"Discord login → browser\",x,y+8,205,\"discord\");inlineButton(g,\"Sign in with code\",x+216,y+8,204,\"code\");txt(g,\"Discord /desktop action:login also provides a code.\",x,y+46,420,40,theme(\"Off Text\"),11);","y=drawField(g,\"Login\",localDefs[\"Login\"][0],x,y,420);y+=12;txt(g,\"Discord Authentication\",x,y,420,21,theme(\"Accent\"),12);y+=23;inlineButton(g,\"Sign in with Discord - browser\",x,y,420,\"discord\");y+=40;txt(g,\"Or use the code from Discord /desktop\",x,y,420,21,theme(\"Accent\"),12);y+=22;y=drawField(g,\"Login\",localDefs[\"Login\"][1],x,y,420);inlineButton(g,\"Sign in with code\",x,y+4,420,\"code\");txt(g,\"One-time codes expire. Request a new code if sign-in fails.\",x,y+38,420,36,theme(\"Off Text\"),10);"],["case WM_APP+2:InvalidateRect(w,0,FALSE);return 0;","case WM_APP+2:if(!editWnd)InvalidateRect(w,0,FALSE);return 0;"],["SendMessage(editWnd,EM_SETSEL,0,-1);}","if(h.m==\"Login\"&&h.k==\"Server\")SendMessage(editWnd,EM_SETSEL,0,0);else SendMessage(editWnd,EM_SETSEL,0,-1);}"]])change(oldText,newText);
  return output;
 }
 function applyNative(){
