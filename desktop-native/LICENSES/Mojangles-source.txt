@@ -1,0 +1,2 @@
+Mojangles.ttf was supplied by the user as Mojangles(1).ttf for embedding in this application.
+The font bytes have not been modified. No new font license is asserted here.
