@@ -15,13 +15,18 @@ async function authFetch(fetchFn,input,init,scope,{sleep=(ms,signal)=>wait(ms,un
  // fetch users retain their original transport and error handling.
  if(!allowed.has(url.hostname)||url.protocol!=='https:'||input instanceof Request)return fetchFn(input,init);
  if(init?.body!=null&&typeof init.body!=='string'&&!(init.body instanceof URLSearchParams))return fetchFn(input,init);
- for(let attempt=0;attempt<3;attempt++){
+ // A token exchange can consume a device code or rotate a refresh token before
+ // the response reaches us. Retrying a lost response can invalidate that grant.
+ const grant=new URLSearchParams(init?.body||'').get('grant_type');
+ const tokenExchange=['login.live.com','login.microsoftonline.com'].includes(url.hostname)&&/\/(?:oauth20_token\.srf|token)$/.test(url.pathname)&&['urn:ietf:params:oauth:grant-type:device_code','authorization_code','refresh_token'].includes(grant);
+ const attempts=tokenExchange?1:3;
+ for(let attempt=0;attempt<attempts;attempt++){
   cancelled(scope,init);let reason;scope.onStage?.(serviceStage(url));
   const signals=[scope.signal,init?.signal,AbortSignal.timeout(timeoutMs)].filter(Boolean),signal=AbortSignal.any(signals);
   try{
    const response=await fetchFn(input,{...init,signal});
    scope.lastHttp=response.ok?null:{host:url.hostname,path:url.pathname,status:response.status,stage:serviceStage(url)};
-   if(![429,502,503,504].includes(response.status)||attempt===2)return response;
+   if(![429,502,503,504].includes(response.status)||attempt===attempts-1)return response;
    const retryAfter=response.headers?.get('retry-after'),seconds=Number(retryAfter);let retryMs=retryAfter?Number.isFinite(seconds)?seconds*1000:Date.parse(retryAfter)-Date.now():null;
    if(retryAfter&&(!Number.isFinite(retryMs)||retryMs>10000))return response;
    reason=`HTTP ${response.status}`;await response.body?.cancel();
@@ -29,7 +34,7 @@ async function authFetch(fetchFn,input,init,scope,{sleep=(ms,signal)=>wait(ms,un
    await sleep(Math.max(retryMs||0,attempt===0?1000:3000),scope.signal);continue;
   }catch(error){
    cancelled(scope,init);
-   if(attempt===2||!retryable(error)){error.authHost=url.hostname;error.authFailure=error.name;error.authStage=serviceStage(url);throw error;}
+   if(attempt===attempts-1||!retryable(error)){error.authHost=url.hostname;error.authFailure=error.name;error.authStage=serviceStage(url);throw error;}
    reason=codes(error).join(', ')||error.name;
   }
   scope.notify?.(`認証通信を再試行 ${attempt+1}/2: ${url.hostname} / ${reason}`);

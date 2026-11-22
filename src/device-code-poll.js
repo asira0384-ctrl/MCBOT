@@ -1,6 +1,8 @@
 'use strict';
 const {setTimeout:wait}=require('node:timers/promises');
 const interactionErrors=new Set(['invalid_grant','invalid_refresh_token','interaction_required','login_required','consent_required']);
+const deviceFlights=new WeakMap();
+function verificationUrl(code){const value=String(code||'').trim();return /^[A-Za-z0-9-]{2,40}$/.test(value)?'https://www.microsoft.com/link?otc='+encodeURIComponent(value):'https://www.microsoft.com/link';}
 function microsoftError(stage,body={},status){
  const value=typeof body.error==='string'?body.error:body.error?.code;
  const code=typeof value==='string'&&/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/.test(value)?value:'invalid_response';
@@ -8,6 +10,10 @@ function microsoftError(stage,body={},status){
  if(Number(status)>=400)error.authStatus=Number(status);
  const aadsts=String(body.error_description||'').match(/\bAADSTS[0-9]{4,12}\b/)?.[0];
  if(aadsts)error.authAADSTS=aadsts;
+ if(code==='invalid_grant'){
+  const description=String(body.error_description||'');
+  error.authGrantReason=/already (?:been )?(?:used|redeemed|consumed)/i.test(description)?'already_used':/interaction is required|user interaction|sign in again|grant.*access.*scope|consent|multi.?factor|\bMFA\b|additional authentication|security verification/i.test(description)?'interaction_required':/\b(?:device[_ ]code|code)\b.{0,100}expir|expir.{0,100}\bdevice[_ ]code\b/i.test(description)?'expired_code':/device_code.*(?:invalid|not (?:recognized|valid))|invalid.*device_code/i.test(description)?'invalid_code':'unknown';
+ }
  return error;
 }
 async function json(response,stage){
@@ -16,6 +22,7 @@ async function json(response,stage){
 // Patch this account's LiveTokenManager only; never share codes or credentials.
 function install(flow,{signal,onAccepted=()=>{},onState=()=>{},notify=()=>{},fetchFn=(...args)=>fetch(...args),sleep=ms=>wait(ms,undefined,{signal}),now=Date.now}={}){
  const msa=flow?.msa;if(!msa||typeof msa.authDeviceCode!=='function'||!msa.clientId)return;
+ if(deviceFlights.has(msa))return;
  const {Endpoints}=require('prismarine-auth/src/common/Constants');
  const scopes=Array.isArray(msa.scopes)?msa.scopes.join(' '):msa.scopes;
  const send=body=>({method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(body).toString(),signal});
@@ -35,7 +42,7 @@ function install(flow,{signal,onAccepted=()=>{},onState=()=>{},notify=()=>{},fet
    refreshPromise=(async()=>{
     active();onState('refreshing');const old=await msa.getRefreshToken();
     if(!old)throw microsoftError('Microsoft token refresh',{error:'interaction_required'});
-    const response=await fetchFn(Endpoints.live.tokenRequest,send({scope:scopes,client_id:msa.clientId,grant_type:'refresh_token',refresh_token:old.token}));
+    let response;try{response=await fetchFn(Endpoints.live.tokenRequest,send({scope:scopes,client_id:msa.clientId,grant_type:'refresh_token',refresh_token:old.token}));}catch(error){active();const failure=microsoftError('Microsoft token refresh',{error:'token_delivery_unknown'});failure.cause=error;throw failure;}
     const token=await json(response,'Microsoft token refresh');active();
     if(!response.ok||token.error)throw microsoftError('Microsoft token refresh',token,response.status);
     if(typeof token.access_token!=='string'||!token.access_token||!Number.isFinite(Number(token.expires_in))||Number(token.expires_in)<=0)throw microsoftError('Microsoft token refresh');
@@ -58,7 +65,7 @@ function install(flow,{signal,onAccepted=()=>{},onState=()=>{},notify=()=>{},fet
    }
   };
  }
- msa.authDeviceCode=async callback=>{
+ const pollDeviceCode=async callback=>{
   const check=()=>{active();if(!msa.polling)throw new URIError('Microsoft sign-in cancelled');};
   msa.polling=true;
   try{
@@ -68,7 +75,7 @@ function install(flow,{signal,onAccepted=()=>{},onState=()=>{},notify=()=>{},fet
    if(!response.ok||!code.device_code||!code.user_code)throw microsoftError('Microsoft device code',code,response.status);
    const cookies=(response.headers.getSetCookie?.()||[response.headers.get('set-cookie')].filter(Boolean)).map(c=>c.split(';')[0]).join('; ');
    const expires=now()+Number(code.expires_in||900)*1000;
-   let interval=Math.max(1000,Number(code.interval||5)*1000),networkFailures=0,polls=0;
+   let interval=Math.max(1000,Number(code.interval||5)*1000),polls=0;
    callback(code);onState('waiting',{expires});
    while(now()<expires){
     await sleep(Math.min(interval,expires-now()));check();if(now()>=expires)break;
@@ -76,10 +83,9 @@ function install(flow,{signal,onAccepted=()=>{},onState=()=>{},notify=()=>{},fet
     try{
      const request=send({client_id:msa.clientId,device_code:code.device_code,grant_type:'urn:ietf:params:oauth:grant-type:device_code'});
      if(cookies)request.headers.Cookie=cookies;
-     r=await fetchFn(Endpoints.live.tokenRequest+'?client_id='+encodeURIComponent(msa.clientId),request);networkFailures=0;
+     r=await fetchFn(Endpoints.live.tokenRequest+'?client_id='+encodeURIComponent(msa.clientId),request);
     }catch(error){
-     active();if(++networkFailures>=3){const failure=microsoftError('Microsoft device polling',{error:'network_error'});failure.cause=error;throw failure;}
-     notify('Microsoft approval: network retry '+networkFailures+'/3');continue;
+     active();const failure=microsoftError('Microsoft device polling',{error:'token_delivery_unknown'});failure.cause=error;throw failure;
     }
     check();const token=await json(r,'Microsoft device polling');polls++;
     if(token.error==='authorization_pending'){onState('pending',{polls,at:now(),expires});continue;}
@@ -98,5 +104,11 @@ function install(flow,{signal,onAccepted=()=>{},onState=()=>{},notify=()=>{},fet
    throw microsoftError('Microsoft device approval',{error:'expired_token'});
   }finally{msa.polling=false;}
  };
+ // Share one redemption loop even when two services request sign-in together.
+ msa.authDeviceCode=callback=>{
+  const running=deviceFlights.get(msa);if(running)return running;
+  const promise=pollDeviceCode(callback).finally(()=>{if(deviceFlights.get(msa)===promise)deviceFlights.delete(msa);});
+  deviceFlights.set(msa,promise);return promise;
+ };
 }
-module.exports={install,microsoftError};
+module.exports={install,microsoftError,verificationUrl};
