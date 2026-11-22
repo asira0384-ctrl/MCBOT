@@ -24,7 +24,7 @@ class Accounts{
  directory(id,name){const key=accountKey(name);if(!this.migrated.has(key)){migrate(this.store,name);this.migrated.add(key);}return authDirectory(this.store,id,name);}
  record(id,name,profile){if(!profile?.name||norm(profile.name)!==norm(name)){const dir=this.directory(id,name);if(profile?.name&&fs.existsSync(dir)){fs.renameSync(dir,dir+'.wrong-'+Date.now());this.flows.delete(id);}throw Error(`認証したアカウントが違います: ${profile?.name||'不明'} / 設定: ${name}`);}const s=this.store.bot(id);s.authAccounts??={};s.authAccounts[accountKey(name)]={name:profile.name,verifiedAt:Date.now()};this.store.save();}
  snapshot(id,name){const job=this.jobs.get(id),same=job?.name===norm(name),record=this.store.bot(id).authAccounts?.[accountKey(name)],saved=refreshSaved(this.directory(id,name));
-  return {phase:same?job.phase||null:null,state:same?(job.state==='waiting'&&job.code?.expires<=Date.now()?'expired':job.state):saved?'saved':'required',saved,profile:record?.name||null,verifiedAt:record?.verifiedAt||null,code:same&&job.code&&job.code.expires>Date.now()?{value:job.code.user_code,url:'https://www.microsoft.com/link',expires:job.code.expires}:null,error:same?job.error||null:null,storage:storageInfo(this.store.dir)};
+  return {phase:same?job.phase||null:null,state:same?(job.state==='waiting'&&job.code?.expires<=Date.now()?'expired':job.state):saved?'saved':'required',saved,profile:record?.name||null,verifiedAt:record?.verifiedAt||null,code:same&&job.code&&job.code.expires>Date.now()?{value:job.code.user_code,url:'https://www.microsoft.com/link',expires:job.code.expires}:null,error:same?job.error||null:null,approval:same?{polls:job.polls||0,lastPollAt:job.lastPollAt||null,acceptedAt:job.acceptedAt||null}:null,storage:storageInfo(this.store.dir)};
  }
  flow(id,name){const record=this.flows.get(id);return record?.name===norm(name)?record.flow:undefined;}
  reset(id,name){this.cancel(id);const directory=this.directory(id,name);if(fs.existsSync(directory)&&fs.readdirSync(directory).length)fs.renameSync(directory,directory+'.backup-'+Date.now()+'-'+crypto.randomUUID());fs.mkdirSync(directory,{recursive:true,mode:0o700});this.migrated.add(accountKey(name));this.onChange(id,'このアカウントの古い保存認証を退避しました。他のアカウントには影響しません');return this.snapshot(id,name);}
@@ -33,22 +33,23 @@ class Accounts{
   this.cancel(id);const directory=this.directory(id,name);fs.mkdirSync(directory,{recursive:true,mode:0o700});
   const controller=new AbortController(),job={name:norm(name),state:'checking',controller};this.jobs.set(id,job);
   const current=()=>this.jobs.get(id)===job&&!controller.signal.aborted;
-  const {Authflow,Titles}=require('prismarine-auth'),Flow=this.Flow||Authflow;
-  let flow;try{flow=new Flow(authUsername(name),this.Flow?directory:require('./auth-cache').factory(directory),require('./auth-cache').options(),code=>{if(!current())return;job.code={...code,expires:Date.now()+(code.expires_in||900)*1000};job.state='waiting';job.phase='Waiting for Microsoft approval';this.onChange(id,'Microsoft認証待ち。Webの認証ボタンまたは /auth でコードを確認してください');});}catch(error){job.state='failed';job.error=error.message;controller.abort();return this.snapshot(id,name);}
-  require('./device-code-poll').install(flow,{signal:controller.signal,notify:text=>{if(current())this.onChange(id,text);},onAccepted:()=>{if(!current())return;job.state='checking';job.code=null;job.phase='Microsoft approved; validating Xbox / Minecraft';this.onChange(id,job.phase);}});
+  const {Authflow}=require('prismarine-auth'),Flow=this.Flow||Authflow;
+  let flow;
+  const arm=ms=>{clearTimeout(job.timer);job.timer=setTimeout(()=>{if(!current())return;const waiting=job.state==='waiting';job.state='failed';job.error=waiting?'Microsoft approval: expired_token. This bot did not receive approval for its current code. Start Fresh Microsoft login.':(job.phase||'Microsoft/Xbox sign-in')+': timed out before account verification completed';job.phase=waiting?'Microsoft approval expired':job.phase;job.code=null;this.flows.delete(id);controller.abort();if(flow?.msa)flow.msa.polling=false;this.onChange(id,job.error);},ms);job.timer.unref?.();};arm(900000);
+  try{flow=new Flow(authUsername(name),this.Flow?directory:require('./auth-cache').factory(directory),require('./auth-cache').options(),code=>{if(!current())return;job.code={...code,expires:Date.now()+(code.expires_in||900)*1000};job.state='waiting';job.phase='Waiting for Microsoft approval';arm((code.expires_in||900)*1000+1000);this.onChange(id,'Waiting for Microsoft approval of this bot code.');});}catch(error){clearTimeout(job.timer);job.state='failed';job.error=error.message;controller.abort();return this.snapshot(id,name);}
+  require('./device-code-poll').install(flow,{signal:controller.signal,notify:text=>{if(current())this.onChange(id,text);},onState:(state,data={})=>{if(!current())return;if(state==='pending'){job.polls=data.polls;job.lastPollAt=data.at;job.phase='Waiting for Microsoft approval';}else if(state==='requesting')job.phase='Requesting Microsoft sign-in code';else if(state==='refreshing')job.phase='Refreshing saved Microsoft sign-in';else if(state==='renewing')job.phase='Saved sign-in expired; requesting a new code';},onAccepted:()=>{if(!current())return;job.state='checking';job.code=null;job.acceptedAt=Date.now();job.phase='Microsoft approved; validating Xbox profile';arm(900000);this.onChange(id,job.phase);}});
   this.flows.set(id,{name:norm(name),flow});job.flow=flow;
-  const timer=setTimeout(()=>{if(current()){controller.abort();if(flow.msa)flow.msa.polling=false;job.state='failed';job.error=(job.phase||'Microsoft/Xbox authentication')+': timed out before Bedrock verification completed';job.code=null;}},900000);timer.unref?.();
-  const scope={signal:controller.signal,closed:()=>!current(),notify:text=>this.onChange(id,text),onStage:phase=>{if(current()){job.phase=phase;this.onChange(id,phase);}}};
+  const scope={signal:controller.signal,closed:()=>!current(),notify:text=>this.onChange(id,text),onStage:phase=>{if(current()&&job.state!=='waiting'){job.phase=phase;this.onChange(id,phase);}}};
   job.promise=this.run(scope,async()=>{
    const profile=await this.verifyAccount(flow,scope);if(!current())return;
    for(const file of fs.readdirSync(directory))if(file.endsWith('-cache.json'))fs.chmodSync(path.join(directory,file),0o600);
-   if(!refreshSaved(directory))throw Error('Microsoft認証は完了しましたが保存用の認証情報を確認できません');
+   const persistentSignIn=refreshSaved(directory);
    this.record(id,name,profile);
-   job.state='ready';job.code=null;job.phase='Xbox profile verified; Minecraft connection pending';this.onChange(id,'Xbox sign-in saved. Connecting to Minecraft is a separate step.');
-  }).catch(error=>{if(!current())return;job.state='failed';job.code=null;job.error=require('./auth-diagnostics').message(error)||require('./auth-network').details(error)||error.message;this.flows.delete(id);this.onChange(id,'認証失敗: '+job.error);}).finally(()=>clearTimeout(timer));
+   job.state='ready';job.code=null;job.phase=persistentSignIn?'Xbox profile verified; Minecraft connection pending':'Xbox verified for this session; sign-in may be needed again';this.onChange(id,persistentSignIn?'Xbox sign-in saved. Connecting to Minecraft is a separate step.':'Xbox sign-in approved for this session. Microsoft did not issue a refresh token; sign-in may be needed again.');
+  }).catch(error=>{if(!current())return;job.state='failed';job.code=null;job.error=require('./auth-diagnostics').message(error)||require('./auth-network').details(error)||error.message;this.flows.delete(id);this.onChange(id,'認証失敗: '+job.error);}).finally(()=>clearTimeout(job.timer));
   return this.snapshot(id,name);
  }
- cancel(id){const job=this.jobs.get(id);if(job){job.controller.abort();if(job.flow?.msa)job.flow.msa.polling=false;}this.jobs.delete(id);this.flows.delete(id);}
+ cancel(id){const job=this.jobs.get(id);if(job){clearTimeout(job.timer);job.controller.abort();if(job.flow?.msa)job.flow.msa.polling=false;}this.jobs.delete(id);this.flows.delete(id);}
  destroy(){for(const id of this.jobs.keys())this.cancel(id);}
 }
 module.exports={accountKey,Accounts,authDirectory,authUsername,refreshSaved,storageInfo,migrate,bedrockProfile};
