@@ -32,6 +32,7 @@ class WebControl{
   this.discordLogin=new(require('./discord-login').DiscordLogin)(this,options.fetch);this.codes=new Map();this.sessions=new Map();this.attempts=new Map();this.events=new Set();this.closed=false;this.audit=[];this.requests=new Map();this.viewAt=new Map();
   const directory=path.join(__dirname,'..','web');this.assets=new Map([
    ['/nocturne',{type:'text/html; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'nocturne.html'))}],
+   ['/assets/native-approve.css',{type:'text/css; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'native-approve.css'))}],
    ['/assets/native-approve.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'native-approve.js'))}],
    ['/assets/nocturne.js',{type:'text/javascript; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'nocturne.js'))}],
    ['/assets/nocturne.css',{type:'text/css; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'nocturne.css'))}],
@@ -156,7 +157,7 @@ class WebControl{
    if(pathname==='/api/login'&&req.method==='POST')throw fail(410,'Code sign-in has been removed. Sign in with Discord.');
    if(pathname!=='/native-approve'&&!pathname.startsWith('/api/'))throw fail(404,'ページがありません');
    const session=this.authenticate(req);
-   if(pathname==='/native-approve'&&req.method==='GET'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/assets/nocturne.css"></head><body><section class="gatecard"><h1>Asira Native</h1><p id="who">Discord identity verified</p><p>Allow the desktop app you just opened to sign in?</p><button id="allow" class="plain">Allow desktop sign-in</button><p id="result"></p></section><script src="/assets/native-approve.js" defer></script></body></html>');return;}
+   if(pathname==='/native-approve'&&req.method==='GET'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/assets/native-approve.css"></head><body><main class="approval"><span class="brand">ASIRA / NATIVE ACCESS</span><section class="gatecard"><span class="badge">DISCORD VERIFIED</span><h1>Connect your desktop.</h1><p id="who">Checking your Discord account...</p><p>Allow the desktop app you just opened to sign in?</p><button id="allow" class="plain">Allow desktop sign-in</button><p id="result" role="status" aria-live="polite"></p><small>Only approve the Asira app you just opened. Return to the app after approval.</small></section></main><script src="/assets/native-approve.js" defer></script></body></html>');return;}
    if(pathname==='/api/native/identity'&&req.method==='GET'){this.json(res,200,{profile:this.publicProfile(session),csrf:session.csrf});return;}
    if(pathname==='/api/native/approve'&&req.method==='POST'){this.mutate(req,session);this.json(res,200,require('./native-auth').approve(this,session,await body(req,2048)));return;}
 
