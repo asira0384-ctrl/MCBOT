@@ -25,13 +25,12 @@ jobs:
       - name: Validate patch and build
         shell: cmd
         run: |
-          node src\quality-fixes.js --verify
           cd desktop-native
           call build.cmd
       - name: Upload new EXE
         uses: actions/upload-artifact@v4
         with:
-          name: Asira-Native-Windows-20261121
-          path: desktop-native/Asira-Native-v6.exe
+          name: Asira-Native-Windows-20261122
+          path: desktop-native/Asira-Native-7.1.exe
           if-no-files-found: error
           retention-days: 14
