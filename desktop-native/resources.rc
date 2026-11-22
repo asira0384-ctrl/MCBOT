@@ -25,3 +25,5 @@
 121 RCDATA "assets/trollhack_thunderhack_on.mp3"
 
 4 RCDATA "assets/Mojangles.ttf"
+
+5 RCDATA "assets/WebView2Loader.dll"

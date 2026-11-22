@@ -222,7 +222,10 @@ class WebControl{
     const data=await body(req),result=await this.once(req,session,async()=>{const ids=this.targets(data.target);if(ids.length!==1||typeof data.approve!=='boolean')throw fail(400,'対象と許可・見送りを選んでください');const r=this.manager.worker(ids[0]).runtime;const message=r.restock.decide(String(data.id||''),data.approve);this.record(ids,data.approve?'今回の補充を許可':'今回の補充を見送り');return {ok:true,result:message};});this.json(res,200,result);return;
    }
    if(pathname==='/api/auth'){
-    const data=await body(req),result=await this.once(req,session,async()=>{const ids=this.targets(data.target);if(ids.length!==1)throw fail(400,'認証はBotを1体選んでください');const authentication=data.fresh===true?this.manager.reauthenticate(ids[0]):this.manager.requestConnection?this.manager.requestConnection(ids[0]):this.manager.login(ids[0]);this.record(ids,'Minecraft認証');return {ok:true,authentication,message:this.manager.authStatus(ids[0])};});this.json(res,200,result);return;
+    const data=await body(req,16384),result=await this.once(req,session,async()=>{const ids=this.targets(data.target);if(ids.length!==1)throw fail(400,'認証はBotを1体選んでください');const id=ids[0],name=this.manager.names.get(id);
+     if(data.action==='browser-complete'){await this.manager.accounts.completeBrowser(id,name,data.returnURL);return {ok:true,authentication:this.manager.authentication(id)};}
+     if(data.action==='browser-cancel')return {ok:true,...this.manager.accounts.cancelBrowser(id,name,data.state)};
+     const authentication=data.method==='browser'?this.manager.reauthenticate(id,{method:'browser'}):data.fresh===true?this.manager.reauthenticate(id):this.manager.requestConnection?this.manager.requestConnection(id):this.manager.login(id);this.record(ids,'Minecraft認証');return {ok:true,authentication,message:this.manager.authStatus(id)};});this.json(res,200,result);return;
    }
    if(pathname==='/api/accounts'){const data=await body(req),result=await this.once(req,session,()=>{const account=require('./account-slots').add(this.manager,data.name,data.realm);this.record([account.id],'アカウントを追加');return {ok:true,account};});this.json(res,200,result);this.requestPump();return;}
    if(pathname==='/api/account'){

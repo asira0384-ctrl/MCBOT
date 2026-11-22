@@ -50,7 +50,7 @@ class Manager{
  notice(id,text,options={}){text=String(text).slice(0,500);this.noticeCatalog??=new Map();const catalog=this.noticeCatalog.get(id)||[];const message=`[Bot${String(id).padStart(2,'0')}] ${text}`;if(!catalog.some(row=>row.message===message)){catalog.push({message,category:options.category||require('./game-logs').category(text)});this.noticeCatalog.set(id,catalog.slice(-40));}const k=`${id}:${text}`;if(Date.now()-(this.lastNotice.get(k)||0)<60000)return;this.lastNotice.set(k,Date.now());this.onNotice(id,text);if(options.game!==false)this.workers.get(id)?.bot.chat(`[Bot${String(id).padStart(2,'0')}] ${text}`,{log:options.category||require('./game-logs').category(text)});}
  assigned(worker,x,z){const a=worker.state.area,same=[...this.workers.values()].filter(w=>w.running&&w.bot.connected&&!w.bot.dead&&w.state.area&&require('./mining').sameJob(worker,w)).sort((a,b)=>a.id-b.id);if(same.length<2)return true;const cols=(a.x2>>4)-(a.x1>>4)+1,index=((z>>4)-(a.z1>>4))*cols+(x>>4)-(a.x1>>4);return index%same.length===same.indexOf(worker);}
 
- requestConnection(id){
+ requestConnection(id,options={}){
   this.targets(String(id));if(this.shuttingDown||this.destroyed)throw Error('終了処理中です');
   if(this.realm(id)==='ign'&&!process.env.IGN_HOST?.trim()&&!this.store.bot(id).customEndpoint)throw Error('IGN_HOSTを設定してください');this.connectionKeeper?.wanted(id,true);this.connectionKeeper?.cancel(id);
   const name=this.names.get(id),w=this.workers.get(id),pending=this.connectRequests.get(id);
@@ -62,14 +62,14 @@ class Manager{
   const auth=this.accounts.snapshot(id,name);
   if(auth.saved&&auth.profile&&!['checking','waiting','expired','failed'].includes(auth.state))request.promise=Promise.resolve().then(begin);
   else{
-   this.accounts.start(id,name);const job=this.accounts.jobs.get(id);
+   this.accounts.start(id,name,options);const job=this.accounts.jobs.get(id);
    request.promise=Promise.resolve(job?.promise).then(()=>{if(!active())return;if(job?.state!=='ready')throw Error(job?.error||'Microsoft認証が完了していません');return begin();});
   }
   request.promise=request.promise.catch(error=>{if(!active())return;this.connectionResults.set(id,{state:'failed',phase:'認証・接続開始',error:require('./auth-diagnostics').message(error)||require('./auth-network').details(error)||error.message,at:Date.now()});this.notice(id,'接続開始失敗: '+error.message,{game:false});}).finally(()=>{request.finished=true;});
   return this.authentication(id);
  }
  cancelConnection(id){this.connectionKeeper?.cancel(id);const request=this.connectRequests.get(id);if(request)request.cancelled=true;this.connectRequests.delete(id);this.accounts.cancel(id);this.connectionResults.set(id,{state:'cancelled',phase:'接続をキャンセルしました',at:Date.now(),error:null});}
- reauthenticate(id){this.targets(String(id));const w=this.workers.get(id);if(w?.bot.connected&&!w.bot.ended)throw Error('接続中です。先にこのBotを切断してください');this.cancelConnection(id);if(w){w.destroy();this.workers.delete(id);}this.auth.delete(id);this.attempts.delete(id);this.connectionResults.delete(id);this.accounts.reset(id,this.names.get(id));return this.requestConnection(id);}
+ reauthenticate(id,options={}){this.targets(String(id));const w=this.workers.get(id);if(w?.bot.connected&&!w.bot.ended)throw Error('接続中です。先にこのBotを切断してください');this.cancelConnection(id);if(w){w.destroy();this.workers.delete(id);}this.auth.delete(id);this.attempts.delete(id);this.connectionResults.delete(id);this.accounts.reset(id,this.names.get(id));return this.requestConnection(id,options);}
  login(id){this.targets(String(id));const w=this.workers.get(id);if(w&&!w.bot.ended&&w.mode!=='disconnected')return this.authentication(id);return this.accounts.start(id,this.names.get(id));}
  authentication(id){this.targets(String(id));const status=this.accounts.snapshot(id,this.names.get(id)),code=this.auth.get(id),w=this.workers.get(id);
   if(w?.bot.connected)status.state='connected';else if(code&&code.expires>Date.now()){status.state='waiting';status.code={value:code.user_code,url:'https://www.microsoft.com/link',expires:code.expires};}else if(w&&!w.bot.ended&&w.mode!=='disconnected')status.state='connecting';
