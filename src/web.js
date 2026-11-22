@@ -129,7 +129,7 @@ class WebControl{
   const ids=this.targets(data.target),command=String(data.command||'').trim();if(!command||command.length>1000||/[\x00-\x1f]/.test(command))throw fail(400,'コマンドの内容が不正です');
   const name=command.split(/\s/)[0].toLowerCase();if(['admin','owner','web'].includes(name))throw fail(403,'管理者の登録はDiscordから行ってください');
   if(!ids.length)throw fail(400,'先にWebでアカウントを追加してください');const results=await Promise.all(ids.map(async(id,index)=>{
-   if(name==='connect'&&index)await new Promise(resolve=>setTimeout(resolve,index*1500));
+   if(name==='connect'&&index)await new Promise(resolve=>setTimeout(resolve,index*100));
    if(this.closed)return {id,ok:false,result:'終了処理中のため操作を中止しました'};
    try{if(name==='anticrystal'&&command.split(/\s+/)[1]!=='off'&&this.manager.realm?.(id)==='ign'&&ids.length>1)return {id,ok:true,result:'IGNではAntiをOFFのまま維持します'};
     if(['autokit','autotp','autoback','autoworld','kit','tpa','back','world'].includes(name)&&this.manager.realm?.(id)!=='ign')return {id,ok:true,result:'IGN専用操作のため省略'};
