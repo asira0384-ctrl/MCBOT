@@ -44,7 +44,7 @@ class Accounts{
    for(const file of fs.readdirSync(directory))if(file.endsWith('-cache.json'))fs.chmodSync(path.join(directory,file),0o600);
    if(!refreshSaved(directory))throw Error('Microsoft認証は完了しましたが保存用の認証情報を確認できません');
    job.state='ready';job.code=null;this.onChange(id,'Microsoft認証完了。現在の保存先へ認証情報を書き込みました（Minecraft入室は別の段階です）');
-  }).catch(error=>{if(!current())return;job.state='failed';job.code=null;job.error=require('./auth-network').details(error)||error.message;this.flows.delete(id);this.onChange(id,'認証失敗: '+job.error);}).finally(()=>clearTimeout(timer));
+  }).catch(error=>{if(!current())return;job.state='failed';job.code=null;job.error=require('./auth-diagnostics').message(error)||require('./auth-network').details(error)||error.message;this.flows.delete(id);this.onChange(id,'認証失敗: '+job.error);}).finally(()=>clearTimeout(timer));
   return this.snapshot(id,name);
  }
  cancel(id){const job=this.jobs.get(id);if(job){job.controller.abort();if(job.flow?.msa)job.flow.msa.polling=false;}this.jobs.delete(id);this.flows.delete(id);}

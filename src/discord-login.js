@@ -20,7 +20,7 @@ class DiscordLogin{
   const code=url.searchParams.get('code');if(!code||code.length>2000||url.searchParams.get('error')||url.searchParams.get('iss')&&url.searchParams.get('iss')!=='https://discord.com')throw Object.assign(Error('Discordログインを完了できませんでした'),{status:403});
   const response=await this.fetch('https://discord.com/api/oauth2/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:this.web.env.DISCORD_CLIENT_ID||this.web.oauthClientId,client_secret:this.web.env.DISCORD_CLIENT_SECRET,grant_type:'authorization_code',code,redirect_uri:this.redirect()}),signal:AbortSignal.timeout(15000)});if(!response.ok)throw Error('Discordの認証コード交換に失敗しました');const token=await response.json();if(typeof token.access_token!=='string')throw Error('Discordの認証を確認できません');
   const who=await this.fetch('https://discord.com/api/v10/users/@me',{headers:{Authorization:'Bearer '+token.access_token},signal:AbortSignal.timeout(15000)});if(!who.ok)throw Error('Discordのプロフィールを取得できません');const user=profile(await who.json());if(!permitted(this.web.manager.store,user.id,this.web.owner))throw Object.assign(Error('AsiraからWebの利用を許可されていません'),{status:403});
-  this.web.createSession(req,res,user);res.writeHead(302,{Location:pending.returnTo||'/'});res.end();
+  const verified=this.web.createSession(req,res,user);verified.discordOAuth=true;this.web.persistSessions();res.writeHead(302,{Location:pending.returnTo||'/'});res.end();
  }
 }
 module.exports={DiscordLogin,permitted,grant,profile};

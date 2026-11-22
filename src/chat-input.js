@@ -1,8 +1,8 @@
 'use strict';
 function clean(value){return String(value??'').replace(/§[0-9a-z]/giu,'').replace(/[\u200B-\u200F\u202A-\u202E\uFEFF]/gu,'').normalize('NFKC').trim();}
-function textOf(packet){let s=clean(packet.message);try{if(s.startsWith('{')){const j=JSON.parse(s);const render=n=>typeof n==='string'?n:Array.isArray(n)?n.map(render).join(''):n?.rawtext?render(n.rawtext):n?.text!=null?String(n.text):/^%?chat\.type\.text$/.test(n?.translate)&&Array.isArray(n.with)&&n.with.length===2?'<'+render(n.with[0])+'> '+render(n.with[1]):'';s=render(j)||s;}}catch{}return clean(s);}
+function textOf(packet){let s=clean(packet.message);try{if(s.startsWith('{')){const j=JSON.parse(s);if(Array.isArray(j.rawtext))s=j.rawtext.map(t=>t.text||'').join('');else if(j.text)s=j.text;}}catch{}return clean(s);}
 function publicChat(packet){const text=textOf(packet);
- if(['chat','whisper'].includes(packet.type)&&packet.source_name){const name=clean(packet.source_name),wrapped=parseLine(text);return wrapped&&wrapped.name.toLowerCase()===name.toLowerCase()?wrapped:{name,message:text};}
+ if(['chat','whisper'].includes(packet.type)&&packet.source_name){const name=clean(packet.source_name),wrapped=parseLine(text);return {name,message:wrapped&&wrapped.name.toLowerCase()===name.toLowerCase()?wrapped.message:text};}
  if(packet.type==='translation'&&Array.isArray(packet.parameters)&&packet.parameters.length===2&&/^(?:chat\.type\.text|%chat\.type\.text)$/.test(text))return {name:clean(packet.parameters[0]),message:clean(packet.parameters[1])};
  return parseLine(text);
 }

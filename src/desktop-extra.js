@@ -10,6 +10,26 @@ case 'players':return {players:[...new Set([...m.workers.values()].flatMap(w=>[.
 case 'add':return {account:require('./account-slots').add(m,d.name,d.realm)};
 case 'rename':{const list=ids();if(list.length!==1)throw fail('Botを1体選択してください');return {result:await m.execute(String(list[0]),'account set '+require('./account-slots').validateName(d.name),'web')};}
 case 'remove':{web.requireOwner(s);const list=ids();if(list.length!==1||d.confirm!==true)throw fail('削除するBotを1体選び、確認してください');const id=list[0];await m.execute(String(id),'disconnect','web');m.names.delete(id);delete m.store.data.bots[id];require('./account-slots').save(m);return {result:'アカウント枠を削除しました（認証キャッシュのファイルは削除していません）'};}
+case 'connect-route': {
+ // One atomic desktop action: apply requested server FIRST, THEN start login/connect.
+ // A saved Microsoft token is not a guarantee of Minecraft authorization.
+ if(!['ign','2b2e'].includes(d.realm))throw fail('Server must be ign or 2b2e');
+ const destination=d.custom?endpoint(d):null,chosen=ids(),results=[];
+ for(const id of chosen){
+  const state=m.store.bot(id),old=state.customEndpoint;
+  const changed=state.serverRealm!==d.realm||!!old!==!!destination||
+   !!destination&&(old?.host!==destination.host||Number(old?.port)!==destination.port);
+  try{
+   if(changed){await m.execute(String(id),'disconnect','web');state.serverRealm=d.realm;
+    if(destination)state.customEndpoint=destination;else delete state.customEndpoint;
+    m.store.save();m.changed?.(id,'server');}
+   const status=m.requestConnection(id);results.push({id,ok:true,
+    result:'Connecting '+d.realm.toUpperCase()+' / '+(status?.connection?.phase||'auth pending')});
+  }catch(error){results.push({id,ok:false,result:error.message});}
+ }
+ return {ok:results.every(row=>row.ok),results,
+  result:results.map(row=>'Bot'+row.id+': '+row.result).join('\n')};
+}
 case 'endpoint':{if(!['ign','2b2e'].includes(d.realm))throw fail('サーバーを選択してください');const dest=d.custom?endpoint(d):null;for(const id of ids()){await m.execute(String(id),'disconnect','web');const state=m.store.bot(id);state.serverRealm=d.realm;if(dest)state.customEndpoint=dest;else delete state.customEndpoint;}m.store.save();return {result:'接続先を保存しました。Connectで接続してください'};}
 case 'tpa':{if(!['request','accept','deny'].includes(d.kind))throw fail('TPA操作を選択してください');const who=require('./chat-output').name(d.player),line=(d.kind==='request'?'/tpa ':d.kind==='accept'?'/tpaccept ':'/tpdeny ')+JSON.stringify(who);const results=[];for(const id of ids())try{require('./fleet-teleport').send(m.worker(id).bot,line);results.push({id,ok:true,result:line});}catch(e){results.push({id,ok:false,result:e.message});}return {ok:results.every(r=>r.ok),results,result:results.map(r=>'Bot'+r.id+': '+r.result).join('\n')};}
 default:throw fail('操作を確認してください');

@@ -4,10 +4,10 @@
 const {randomInt}=require('node:crypto');
 const alphabet='abcdefghijklmnopqrstuvwxyz0123456789';
 function format(s,text){
- if(!s.random)return text;
- const n=Math.max(1,Math.min(16,Number(s.randomLength)||6));
+ if(!s.random&&!s.randomOnly)return text;
+ const n=Math.max(1,Math.min(s.randomOnly?180:16,Number(s.randomLength)||6));
  const tag=Array.from({length:n},()=>alphabet[randomInt(alphabet.length)]).join('');
- return text+' ['+tag+']';
+ return s.randomOnly?tag:text+' ['+tag+']';
 }
 function deliveryBlocked(bot,now){
  const q=bot.chatQueue;
@@ -38,7 +38,7 @@ function tick(runtime,now=Date.now()){
  if(deliveryBlocked(bot,now))return;
  for(const [key,privateChat] of [['desktopSpam',false],['desktopTellSpam',true]]){
   const settings=runtime.worker.state[key];
-  if(!settings?.enabled||!settings.messages?.length)continue;
+  if(!settings?.enabled||(!settings.messages?.length&&!settings.randomOnly))continue;
   if(privateChat&&bot.lastChatDelivery?.type==='whisper'&&
     bot.lastChatDelivery.recipient===settings.player&&
     bot.lastChatDelivery.status==='rejected'){
@@ -47,14 +47,14 @@ function tick(runtime,now=Date.now()){
    runtime.manager?.store?.save();
    continue;
   }
-  const groupOffset=(settings.groupIndex||0)*(settings.groupDelay??.5)*1000;
+  const groupOffset=0;
   if(now<(settings.startedAt||0)+groupOffset)continue;
   const nextKey=key+'Next',indexKey=key+'Index';
   if(now<(runtime[nextKey]||0))continue;
   const i=runtime[indexKey]||0;
-  const text=format(settings,settings.messages[i%settings.messages.length]);
+  const text=format(settings,settings.messages?.length?settings.messages[i%settings.messages.length]:'');
   // A bot's public and private spam schedules are independent.
-  const interval=Math.max(1,Number(settings.cycle||settings.interval)||5)*1000;
+  const minimum=Math.max(.1,Number(settings.interval)||1),maximum=Math.max(minimum,Number(settings.maxInterval)||minimum);const interval=(settings.randomInterval?minimum+Math.random()*(maximum-minimum):minimum)*1000;
   try{
    const message=require('./chat-suffix').apply(runtime.worker.state,text,privateChat);
    if(privateChat){

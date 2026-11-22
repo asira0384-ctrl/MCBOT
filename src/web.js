@@ -28,7 +28,7 @@ class WebControl{
  constructor(manager,options={}){
   this.manager=manager;this.owner=String(options.owner||OWNER);this.env=options.env||process.env;this.now=options.now||Date.now;this.enabled=this.env.WEB_ENABLED!=='false';this.ready=options.ready||(()=>true);
   this.loginTTL=options.loginTTL||120000;this.sessionTTL=options.sessionTTL||30*24*3600000;
-  this.base=baseURL(options.baseURL||this.env.WEB_BASE_URL||manager.store.data.webBaseURL||(this.env.RAILWAY_PUBLIC_DOMAIN?'https://'+this.env.RAILWAY_PUBLIC_DOMAIN:''));
+  this.base=baseURL('https://mcbot-asira.up.railway.app');
   this.discordLogin=new(require('./discord-login').DiscordLogin)(this,options.fetch);this.codes=new Map();this.sessions=new Map();this.attempts=new Map();this.events=new Set();this.closed=false;this.audit=[];this.requests=new Map();this.viewAt=new Map();
   const directory=path.join(__dirname,'..','web');this.assets=new Map([
    ['/nocturne',{type:'text/html; charset=utf-8',buffer:fs.readFileSync(path.join(directory,'nocturne.html'))}],
@@ -52,7 +52,7 @@ class WebControl{
  publicProfile(session){return session.profile||{id:session.discordId||this.owner,name:session.label,username:session.label,avatar:null};}
  createSession(req,res,user){for(const [key,s]of this.sessions)if(s.expires<=this.now())this.sessions.delete(key);if(this.sessions.size>=60)this.sessions.delete(this.sessions.keys().next().value);const token=random(),session={csrf:random(),expires:this.now()+this.sessionTTL,label:user.name,owner:this.owner,discordId:user.id,profile:user};this.sessions.set(digest(token),session);this.persistSessions();const old=res.getHeader('Set-Cookie');res.setHeader('Set-Cookie',[...(old?[].concat(old):[]),this.cookie(req,token,this.sessionTTL/1000)]);return session;}
  requireOwner(session){if((session.discordId||session.owner)!==this.owner)throw fail(403,'この操作はAsira本人専用です');}
- persistSessions(revocations=[]){const rows=[...this.sessions].slice(-60).map(([key,s])=>({key,csrf:s.csrf,expires:s.expires,label:s.label,owner:this.owner,discordId:s.discordId||this.owner,profile:s.profile||null}));this.manager.store.data.webSessions=this.sessionRepository.save(rows,revocations);this.manager.store.save();}
+ persistSessions(revocations=[]){const rows=[...this.sessions].slice(-60).map(([key,s])=>({key,csrf:s.csrf,expires:s.expires,label:s.label,owner:this.owner,discordId:s.discordId||this.owner,profile:s.profile||null,discordOAuth:s.discordOAuth===true}));this.manager.store.data.webSessions=this.sessionRepository.save(rows,revocations);this.manager.store.save();}
  configureURL(actor,value){if(String(actor)!==this.owner)throw fail(403,'本人のみ設定できます');this.base=baseURL(value);this.manager.store.data.webBaseURL=this.base;this.manager.store.save();return this.base;}
  issueLogin(actor,label='Asira',discordUser){
   if(this.closed)throw Error('再起動中です。少し待ってください');
@@ -69,7 +69,7 @@ class WebControl{
  loginMessage(actor,label,discordUser){const login=this.issueLogin(actor,label,discordUser);return {content:`[Web管理画面を開く](${login.url})\nあなた専用・一度限り・2分間有効です。このリンクを押すと、そのままログインできます。\n手入力する場合のコード: **${login.code}**`,allowedMentions:{parse:[]}};}
  targets(value){
   const target=String(value||'');if(target==='2b2e'||target==='ign')return [...this.manager.names.keys()].filter(n=>require('./realms').selected(this.manager.store,n)===target);
-  if(target!=='all'&&!/^(?:[1-9]|1[0-9]|20)$/.test(target))throw fail(400,'Bot番号またはグループを選んでください');
+  if(target!=='all'&&!/^(?:[1-9]|[1-4][0-9]|50)$/.test(target))throw fail(400,'Bot番号またはグループを選んでください');
   return this.manager.targets(target);
  }
  snapshot(){
@@ -153,7 +153,7 @@ class WebControl{
    if(pathname==='/api/login-info'&&req.method==='GET'){this.json(res,200,{discordReady:this.discordLogin.ready(),callbackURL:this.base?this.discordLogin.redirect():null});return;}
    if(pathname==='/api/oauth/start'&&req.method==='GET'){this.discordLogin.start(req,res);return;}
    if(pathname==='/oauth/discord/callback'&&req.method==='GET'){await this.discordLogin.callback(req,res,url);return;}
-   if(pathname==='/api/login'&&req.method==='POST'){await this.login(req,res);return;}
+   if(pathname==='/api/login'&&req.method==='POST')throw fail(410,'Code sign-in has been removed. Sign in with Discord.');
    if(pathname!=='/native-approve'&&!pathname.startsWith('/api/'))throw fail(404,'ページがありません');
    const session=this.authenticate(req);
    if(pathname==='/native-approve'&&req.method==='GET'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/assets/nocturne.css"></head><body><section class="gatecard"><h1>Asira Native</h1><p id="who">Discord identity verified</p><p>Allow the desktop app you just opened to sign in?</p><button id="allow" class="plain">Allow desktop sign-in</button><p id="result"></p></section><script src="/assets/native-approve.js" defer></script></body></html>');return;}

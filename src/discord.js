@@ -9,7 +9,7 @@ const commands=[
  new SlashCommandBuilder().setName('web').setDescription('許可済みユーザーがWeb管理へそのままログイン').addStringOption(o=>o.setName('url').setDescription('初回のみ: Railwayの公開URL（https://〜）')),
  new SlashCommandBuilder().setName('panel').setDescription('ボタンと選択メニューでBotを管理する（管理者専用）'),
  new SlashCommandBuilder().setName('bot').setDescription('Botを番号/allで操作する（管理者専用）').addStringOption(o=>o.setName('target').setDescription('1–50 / all / ign / 2b2e').setRequired(true)).addStringOption(o=>o.setName('command').setDescription('例: connect / follow / area / mineblocks').setAutocomplete(true).setRequired(true)),
- new SlashCommandBuilder().setName('auth').setDescription('Microsoft認証を開始・コードを確認（管理者専用）').addIntegerOption(o=>o.setName('target').setDescription('Bot番号').setMinValue(1).setMaxValue(20).setRequired(true)),
+ new SlashCommandBuilder().setName('auth').setDescription('Microsoft認証を開始・コードを確認（管理者専用）').addIntegerOption(o=>o.setName('target').setDescription('Bot番号').setMinValue(1).setMaxValue(50).setRequired(true)).addBooleanOption(o=>o.setName('fresh').setDescription('認証をリセットしてMicrosoftでサインインし直す')),
  new SlashCommandBuilder().setName('admin').setDescription('Discordとゲーム内の管理者を登録（Asira専用）')
  .addSubcommand(s=>s.setName('add').setDescription('DiscordユーザーまたはMCIDを登録').addUserOption(o=>o.setName('user').setDescription('panelとWebを操作するDiscord管理者')).addStringOption(o=>o.setName('mcid').setDescription('ゲーム内コマンドだけを許可するMCID')).addStringOption(o=>o.setName('xuid').setDescription('任意。接続中プレイヤー一覧から自動取得できない場合のみ')))
  .addSubcommand(s=>s.setName('remove').setDescription('登録を解除').addUserOption(o=>o.setName('user').setDescription('解除するDiscord管理者')).addStringOption(o=>o.setName('mcid').setDescription('解除するゲーマータグ')))
@@ -42,7 +42,7 @@ async function startDiscord(manager){const token=process.env.DISCORD_TOKEN;if(!t
      if(command==='view'){const ids=manager.targets(target);if(ids.length!==1)throw Error('view はBot番号を1つ指定してください');const id=ids[0],w=manager.workers.get(id);if(!w)throw Error('先にBotを接続してください');await i.editReply(require('./view').reply(w.bot,id));return;
      }result=await manager.execute(target,command);break;}
 
-    case 'auth':{const id=i.options.getInteger('target',true);manager.login(id);result=manager.authStatus(id);break;}
+    case 'auth':{const id=i.options.getInteger('target',true);if(i.options.getBoolean('fresh')===true)manager.reauthenticate(id);else manager.requestConnection(id);result=manager.authStatus(id);break;}
     case 'admin':{const action=i.options.getSubcommand();if(action==='list'){const discord=require('./access').rows(manager.store).map(a=>`${a.name} / Discord ${a.id}`),game=manager.store.data.admins.map(a=>`${a.name} / XUID ${a.xuid}`);result=[...discord,...game].join('\n')||'登録なし';break;}
      const user=i.options.getUser('user'),mcid=i.options.getString('mcid');if(user){if(mcid)throw Error('DiscordユーザーとMCIDは別々に登録してください');await require('./shared-access').change(i,manager,panel,action,user,OWNER);return;}
      const name=String(mcid||'').trim();if(!name)throw Error('user または mcid を指定してください');if(action==='remove'){manager.store.data.admins=manager.store.data.admins.filter(a=>norm(a.name)!==norm(name));manager.store.save();result=`${name} のゲーム内権限を解除しました`;break;}
