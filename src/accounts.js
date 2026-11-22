@@ -19,7 +19,7 @@ function storageInfo(dir,env=process.env){
  return {path:actual,persistent:railway?!!mounted:null,message:railway?(mounted?'再起動後も使う認証はVolume内へ保存します':`再起動後の認証保存は未確認です。今の接続とは別の注意です。Railway VolumeのMount Pathを ${actual} にしてください。`):'このPCのDATA_DIRに認証を保存'};
 }
 class Accounts{
- constructor(store,options={}){this.store=store;this.jobs=new Map();this.flows=new Map();this.migrated=new Set();this.Flow=options.Flow;this.onChange=options.onChange||(()=>{});this.run=options.run||require('./auth-network').run;}
+ constructor(store,options={}){this.store=store;this.jobs=new Map();this.flows=new Map();this.migrated=new Set();this.Flow=options.Flow;this.onChange=options.onChange||(()=>{});this.run=options.run||require('./auth-network').run;this.verifyAccount=options.verifyAccount||require('./bedrock-auth').verifyAccount;}
  username(name){return authUsername(name);}
  directory(id,name){const key=accountKey(name);if(!this.migrated.has(key)){migrate(this.store,name);this.migrated.add(key);}return authDirectory(this.store,id,name);}
  record(id,name,profile){if(!profile?.name||norm(profile.name)!==norm(name)){const dir=this.directory(id,name);if(profile?.name&&fs.existsSync(dir)){fs.renameSync(dir,dir+'.wrong-'+Date.now());this.flows.delete(id);}throw Error(`認証したアカウントが違います: ${profile?.name||'不明'} / 設定: ${name}`);}const s=this.store.bot(id);s.authAccounts??={};s.authAccounts[accountKey(name)]={name:profile.name,verifiedAt:Date.now()};this.store.save();}
@@ -38,13 +38,13 @@ class Accounts{
   require('./device-code-poll').install(flow,{signal:controller.signal,notify:text=>{if(current())this.onChange(id,text);},onAccepted:()=>{if(!current())return;job.state='checking';job.code=null;job.phase='Microsoft approved; validating Xbox / Minecraft';this.onChange(id,job.phase);}});
   this.flows.set(id,{name:norm(name),flow});job.flow=flow;
   const timer=setTimeout(()=>{if(current()){controller.abort();if(flow.msa)flow.msa.polling=false;job.state='failed';job.error=(job.phase||'Microsoft/Xbox authentication')+': timed out before Bedrock verification completed';job.code=null;}},900000);timer.unref?.();
-  job.promise=this.run({signal:controller.signal,closed:()=>!current(),notify:text=>this.onChange(id,text)},async()=>{
-   const key=crypto.generateKeyPairSync('ec',{namedCurve:'secp384r1'}).publicKey.export({format:'der',type:'spki'}).toString('base64');
-   const result=await flow.getMinecraftBedrockToken(key);if(!current())return;
-   this.record(id,name,bedrockProfile(result.chain));
+  const scope={signal:controller.signal,closed:()=>!current(),notify:text=>this.onChange(id,text),onStage:phase=>{if(current()){job.phase=phase;this.onChange(id,phase);}}};
+  job.promise=this.run(scope,async()=>{
+   const profile=await this.verifyAccount(flow,scope);if(!current())return;
    for(const file of fs.readdirSync(directory))if(file.endsWith('-cache.json'))fs.chmodSync(path.join(directory,file),0o600);
    if(!refreshSaved(directory))throw Error('Microsoft認証は完了しましたが保存用の認証情報を確認できません');
-   job.state='ready';job.code=null;this.onChange(id,'Microsoft認証完了。現在の保存先へ認証情報を書き込みました（Minecraft入室は別の段階です）');
+   this.record(id,name,profile);
+   job.state='ready';job.code=null;job.phase='Xbox profile verified; Minecraft connection pending';this.onChange(id,'Xbox sign-in saved. Connecting to Minecraft is a separate step.');
   }).catch(error=>{if(!current())return;job.state='failed';job.code=null;job.error=require('./auth-diagnostics').message(error)||require('./auth-network').details(error)||error.message;this.flows.delete(id);this.onChange(id,'認証失敗: '+job.error);}).finally(()=>clearTimeout(timer));
   return this.snapshot(id,name);
  }
