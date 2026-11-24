@@ -23,6 +23,13 @@ function adaptInput(bot,p) {
  const jumping=!!bot.controlState.jump;flags.start_jumping=jumping&&!bot.lastJump;flags.jump_pressed_raw=jumping&&!bot.lastJump;flags.jump_current_raw=jumping;bot.lastJump=jumping;
  flags.start_sprinting=!!bot.controlState.sprint&&!bot.lastSprint;flags.stop_sprinting=!bot.controlState.sprint&&bot.lastSprint;bot.lastSprint=!!bot.controlState.sprint;
  flags.start_sneaking=!!bot.controlState.sneak&&!bot.lastSneak; flags.stop_sneaking=!bot.controlState.sneak&&bot.lastSneak;bot.lastSneak=!!bot.controlState.sneak;
+ // Conditional payload and presence flags must agree on every input frame.
+ flags.block_action=Array.isArray(p.block_action)&&p.block_action.length>0;
+ if(!flags.block_action)delete p.block_action;
+ flags.item_stack_request=!!p.item_stack_request;
+ flags.item_interact=!!p.transaction;
+ flags.client_predicted_vehicle=p.vehicle_rotation!=null&&p.predicted_vehicle!=null;
+ if(!flags.client_predicted_vehicle){delete p.vehicle_rotation;delete p.predicted_vehicle;}
  const arrayFlags=bot.registry.protocol.types.packet_player_auth_input?.[1]?.find(f=>f.name==='input_data')?.type?.[0]==='array';
  const deg=180/Math.PI;
  const vector={x:-(p.move_vector?.x||0),y:-(p.move_vector?.y||0)};

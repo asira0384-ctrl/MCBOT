@@ -45,7 +45,7 @@ function dropLanding(bot,entry,maxDrop=3,clear=q=>pass(bot,q)){
 }
 function groundPath(source,start,goal,{block=null,dig=false,canDig=()=>true,stopRadius=.7,limit=900,radius,blocked=()=>false,jumpGaps=true,maxDrop=3,preferGround=true,minY=-64,allowLava=false}={}){
  start=start.floored();goal=goal.floored();radius??=Math.min(96,Math.max(14,Math.ceil(Math.hypot(goal.x-start.x,goal.z-start.z))+4));
- if(block&&preferGround){const natural=groundPath(source,start,goal,{dig,canDig,stopRadius,limit,radius,blocked,jumpGaps,maxDrop,minY,allowLava});if(natural.reached&&natural.cost<=Math.hypot(goal.x-start.x,goal.z-start.z)*1.8+Math.max(0,start.y-goal.y)*.03+4)return natural;}
+ if(block&&preferGround){const natural=groundPath(source,start,goal,{dig,canDig,stopRadius,limit,radius,blocked,jumpGaps,maxDrop,minY,allowLava});if(natural.reached)return natural;}
  const memo=new Map(),plans=new WeakMap(),passMaps=new WeakMap(),key=p=>`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
  const actual=p=>{const k=key(p);if(!memo.has(k))memo.set(k,source.blockAt(p));return memo.get(k);};
  const changes=at=>{if(!at)return new Map();if(plans.has(at))return plans.get(at);const own=at.changes?.length?new Map(changes(at.parent)):changes(at.parent);for(const [p,value]of at.changes||[])own.set(key(p),value);plans.set(at,own);return own;};
