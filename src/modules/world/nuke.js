@@ -9,7 +9,7 @@ function plan(v,registry){
  const block=v['Scaffold Block'].replace(/^minecraft:/,'');if(!/^[a-z0-9_]+$/.test(block)||!registry.blocksByName[block]||registry.blocksByName[block].boundingBox==='empty')throw Error('Scaffold Block: 足場に使うブロックIDを確認してください');
  return {area:{x1,x2,z1,z2},floor:Math.min(p['Start Y'],p['End Y'])-1,ceiling:Math.max(p['Start Y'],p['End Y']),miningChunks:[],miningFilter:filter(v.Blocks,registry),miningRange:v.Range,scaffoldEnabled:v.Scaffold,scaffold:block,maxDrop:v['Max Drop']};
 }
-function apply(m,id,v,on){const s=m.store.bot(id),w=m.workers.get(id);if(on===false){w?.stop();return 'Nuke stopped';}
+function apply(m,id,v,on){const s=m.store.bot(id),w=m.workers.get(id);if(on===false){require('../../mining-lifecycle').disable(s);w?.stop();return 'Nuke stopped';}
  const registry=w?.bot.registry||require('minecraft-data')('bedrock_1.21.2'),next=plan(v,registry);
  const changed=JSON.stringify([s.area,s.floor,s.ceiling,s.miningFilter,s.miningChunks])!==JSON.stringify([next.area,next.floor,next.ceiling,next.miningFilter,next.miningChunks]);
  const resume=on===true||!!(w?.running||w?.startRequested);if(changed)w?.stop();Object.assign(s,next);delete s.miningDimension;

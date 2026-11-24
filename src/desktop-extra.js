@@ -24,7 +24,7 @@ case 'connect-route': {
    if(changed){await m.execute(String(id),'disconnect','web');state.serverRealm=d.realm;
     if(destination)state.customEndpoint=destination;else delete state.customEndpoint;
     m.store.save();m.changed?.(id,'server');}
-   const status=m.requestConnection(id);results.push({id,ok:true,
+   m.connectionKeeper?.retry(id);const status=m.requestConnection(id);results.push({id,ok:true,
     result:'Connecting '+d.realm.toUpperCase()+' / '+(status?.connection?.phase||'auth pending')});
   }catch(error){results.push({id,ok:false,result:error.message});}
  }
