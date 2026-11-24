@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),{Vec3}=requ
 const {createSerializer,createDeserializer}=require('bedrock-protocol/src/transforms/serializer');
 const {normalize}=require('../src/subchunk-request'),{fixture}=require('./helpers/mining-world');
 const request=()=>({dimension:0,origin:{x:-3,y:0,z:2},requests:[{dx:0,dy:4,dz:0},{dx:0,dy:5,dz:0}]});
-for(const version of ['1.21.2','1.26.51'])test(`${version} preserves distinct requested section heights on the actual wire`,()=>{
+for(const version of ['1.21.2','1.26.51','1.26.60'])test(`${version} preserves distinct requested section heights on the actual wire`,()=>{
  const b={registry:require('prismarine-registry')('bedrock_'+version)},params=normalize(b,request()),buffer=createSerializer(version).createPacketBuffer({name:'subchunk_request',params}),p=createDeserializer(version).parsePacketBuffer(buffer).data.params;
  assert.deepEqual(p.origin,{x:-3,y:0,z:2});assert.deepEqual(p.requests.map(r=>r.y??r.dy),[4,5]);
  if(version==='1.26.51')assert.equal(buffer.toString('hex'),'af010002000400000500fdffffff0000000002000000');

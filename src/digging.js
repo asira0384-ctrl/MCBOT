@@ -4,6 +4,14 @@ const {useItem,request}=require('./protocol');
 const hand=require('./hand');
 
 function legacy(bot){return bot.serverBreak!==true||bot.advertisedMovement==='client'||bot.advertisedMovement===0;}
+function completion(bot,held){
+ if(legacy(bot))return 'transaction';
+ // Block authority and inventory authority are independent on non-vanilla
+ // servers. Sending an unsupported MineBlock request can disconnect the peer.
+ if(bot.serverAuthoritativeInventory!==true||bot.inventoryMode==='legacy')return 'prediction-only';
+ if(!Number.isInteger(held?.stack_id)||held.stack_id<=0||held.stack_id>2147483647)throw Error('採掘道具のサーバー確認を待っています');
+ return 'prediction-and-stack';
+}
 function face(bot,block){const d=bot.entity.position.offset(0,1.62,0).minus(block.position.offset(.5,.5,.5));const axis=['x','y','z'].sort((a,b)=>Math.abs(d[b])-Math.abs(d[a]))[0];return axis==='y'?(d.y>0?1:0):axis==='x'?(d.x>0?5:4):(d.z>0?3:2);}
 function action(bot,name,position,side,old){
  if(bot.ended||bot.serverClosing)return;
@@ -30,10 +38,10 @@ async function dig(bot,block,signal,preferredTool,options={}){
   if(signal?.aborted||bot.dead||!bot.connected)throw Error('停止しました');
   bot.clearControlStates();bot.desiredMoveWorld=null;bot.desiredMoveSpeed=undefined;bot.lookAt(block.position.offset(.5,.5,.5),false);
   if(!bot.reach(block,options.range)||!bot.visible(block))throw Error('採掘位置が変わりました。接近し直します');
-  bot.pendingBreakActions=[];bot.pendingMiningRequest=null;bot.breakAction=null;bot.mining=position;started=true;
-  const held=bot.items[bot.quickBarSlot];if(bot.name(held)!==tool.name)throw Error('手に持ったピッケルを確認できません');
+  bot.pendingBreakActions=[];bot.pendingMiningRequest=null;bot.breakAction=null;
+  const held=bot.items[bot.quickBarSlot];if(bot.name(held)!==tool.name)throw Error('手に持ったピッケルを確認できません');state.completion=completion(bot,held);
   const breakMs=Math.max(50,bot.breakTime(block,{...tool,raw:held})),begin=Date.now();state.breakMs=breakMs;state.profile=profile;state.phase='breaking';state.startedAt=begin;
-  action(bot,'start_break',position,side,old);hand.flush(bot);let predicted=false;
+  bot.mining=position;started=true;action(bot,'start_break',position,side,old);hand.flush(bot);let predicted=false;
   const update=()=>{
    if(failure||bot.mining!==position)return;
    try{
@@ -44,12 +52,12 @@ async function dig(bot,block,signal,preferredTool,options={}){
     const elapsed=Date.now()-begin;
     state.elapsedMs=elapsed;state.remainingMs=Math.max(0,breakMs-elapsed);
     if(!predicted&&elapsed>=breakMs){
-     predicted=true;state.phase='confirming';state.predictedAt=Date.now();
-     // The authoritative path requires a prediction and its durability request
-     // in the same input frame. Legacy peers require an actual break transaction.
+     const currentHeld=bot.items[bot.quickBarSlot];state.completion=completion(bot,currentHeld);predicted=true;state.phase='confirming';state.predictedAt=Date.now();
+     // Stack-authoritative peers require the prediction and durability request
+     // in one input frame. Legacy-inventory peers process block prediction only.
      // https://mojang.github.io/bedrock-protocol-docs/guides/block-breaking-overview/
      if(old){bot.client.queue('inventory_transaction',useItem(bot,'break_block',position,side,block.stateId));action(bot,'stop_break',position,side,true);stopped=true;}
-     else{action(bot,'predict_break',position,side,false);const id=bot.requestId--;bot.pendingMiningRequest=request(id,[{type_id:'mine_block',hotbar_slot:bot.quickBarSlot,predicted_durability:bot.damage(held)+1,network_id:held.stack_id||0}]).requests[0];}
+     else{action(bot,'predict_break',position,side,false);if(state.completion==='prediction-and-stack'){const id=bot.requestId--;bot.pendingMiningRequest=request(id,[{type_id:'mine_block',hotbar_slot:bot.quickBarSlot,predicted_durability:bot.damage(currentHeld)+1,network_id:currentHeld.stack_id}]).requests[0];}}
      hand.flush(bot);
     }else if(!predicted){action(bot,old?'crack_break':'continue_break',position,side,old);}
    }catch(error){failure=error;}
@@ -62,4 +70,4 @@ async function dig(bot,block,signal,preferredTool,options={}){
   clearInterval(timer);if(started){if(!finished)cancel(bot);else{bot.pendingBreakActions=(bot.pendingBreakActions||[]).filter(a=>a.action==='stop_break'||key(a.position)!==key(position));bot.pendingMiningRequest=null;bot.mining=null;if(!stopped)action(bot,'stop_break',position,side,old);}hand.flush(bot);}hand.release(bot,lease);
  }
 }
-module.exports={dig,cancel,action,legacy,face};
+module.exports={dig,cancel,action,legacy,completion,face};

@@ -5,7 +5,7 @@ class ConnectionKeeper{
  cancel(id){if(this.stableTimers.has(id)){this.cancelTimer(this.stableTimers.get(id));this.stableTimers.delete(id);}if(this.timers.has(id))this.cancelTimer(this.timers.get(id));this.timers.delete(id);}
  eligible(id){const m=this.manager,state=m.store.bot(id);return !this.stopped&&!m.destroyed&&!m.shuttingDown&&m.names.has(id)&&state.connectionWanted===true&&!state.connectionBlocked;}
  restore(){let index=0;for(const id of this.manager.names.keys())if(this.eligible(id))this.queue(id,800+index++*1500);}
- queue(id,delay){if(!this.eligible(id)||this.timers.has(id))return;const count=this.attempts.get(id)||0;if(count>=6){this.status.set(id,{phase:'stopped',reason:'自動再接続が6回失敗しました。Webから接続をやり直してください'});return;}delay??=Math.min(60000,2000*2**count);this.status.set(id,{phase:'waiting',retryAt:Date.now()+delay,attempt:count+1});const timer=this.schedule(()=>{this.timers.delete(id);this.connect(id).catch(e=>this.failed(id,e));},delay);timer?.unref?.();this.timers.set(id,timer);this.manager.changed?.(id,'reconnect');}
+ queue(id,delay){if(!this.eligible(id)||this.timers.has(id))return;const count=this.attempts.get(id)||0;delay??=Math.min(60000,2000*2**Math.min(count,5))+(count>=6?(id%10)*200:0);this.status.set(id,{phase:'waiting',retryAt:Date.now()+delay,attempt:count+1});const timer=this.schedule(()=>{this.timers.delete(id);this.connect(id).catch(e=>this.failed(id,e));},delay);timer?.unref?.();this.timers.set(id,timer);this.manager.changed?.(id,'reconnect');}
  async connect(id){
   if(!this.eligible(id))return;const m=this.manager,worker=m.workers.get(id);if(worker?.bot.connected&&!worker.bot.ended){this.connected(id);return;}
   if(worker&&!worker.bot.ended&&worker.mode!=='disconnected')return;

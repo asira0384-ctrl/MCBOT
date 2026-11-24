@@ -10,7 +10,7 @@ class World {
   this.registry=require('prismarine-registry')(`bedrock_${this.bot.client.options.version}`);
   // 1.26 retains the 1.18+ Bedrock subchunk format; use that implementation explicitly.
   this.Chunk=require('prismarine-chunk/src/bedrock/1.18/chunk')(this.registry);
-  this.hashed=!!packet.block_network_ids_are_hashes;this.registry.handleStartGame({...packet,itemstates:packet.itemstates||this.registry.writeItemStates()});this.bot.registry=this.registry;this.networkPalette=require('./network-palette').install(this.registry,this.bot.client.options.version,this.hashed);if(this.networkPalette){for(const [state,id]of this.networkPalette.reverse)this.wireIds.set(state,id);this.bot.emit('diagnostic',`地形Runtime対応表: protocol=2193 states=${this.networkPalette.info.entries}`);}
+  this.hashed=!!packet.block_network_ids_are_hashes;this.registry.handleStartGame({...packet,itemstates:packet.itemstates||this.registry.writeItemStates()});this.bot.registry=this.registry;this.networkPalette=require('./network-palette').install(this.registry,this.bot.client.options.version,this.hashed);if(this.networkPalette){for(const [state,id]of this.networkPalette.reverse)this.wireIds.set(state,id);this.bot.emit('diagnostic',`地形Runtime対応表: protocol=${this.networkPalette.info.protocol} states=${this.networkPalette.info.entries}`);}
   const sample=new this.Chunk({x:0,z:0});this.Block=sample.Block;const mirror=this,Base=sample.Section;
   this.Section=class extends Base{
    loadRuntimePalette(layer,stream,size){this.palette[layer]=[];for(let i=0;i<size;i++){const id=stream.readZigZagVarInt(),block=mirror.paletteEntry(id);this.palette[layer][i]={...block,stateId:block.stateId,count:0};}}

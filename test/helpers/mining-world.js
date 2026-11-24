@@ -1,8 +1,8 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {Vec3}=require('vec3');const {adapter}=require('./adapter'),{Travel}=require('../../src/travel'),{Worker}=require('../../src/worker'),{ChunkMining}=require('../../src/mining');
-function fixture(t,{physics=false}={}){
- const f=adapter(t),{b,c,packets,item}=f,cells=new Map(),key=p=>`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
+function fixture(t,{physics=false,version='1.26.51'}={}){
+ const f=adapter(t,version),{b,c,packets,item}=f,cells=new Map(),key=p=>`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
  b.blockAt=p=>{p=new Vec3(p.x,p.y,p.z).floored();const name=cells.get(key(p))||(p.y===64?'stone':'air'),solid=name!=='air',entry=b.registry.blocksByName[name];return {name,position:p,stateId:entry.defaultState,solid,isAir:!solid,isLiquid:false,boundingBox:solid?'block':'empty',shapes:solid?[[0,0,0,1,1,1]]:[],diggable:entry.diggable!==false,hardness:entry.hardness??1};};
  const set=(p,name)=>{cells.set(key(p),name);b.emit('worldUpdate',p);};
  b.entity.position=new Vec3(.5,65,.5);b.entity.velocity=new Vec3(0,0,0);b.entity.onGround=true;b.health=20;b.terrainReady=true;b.terrainEstablished=true;b.serverAuthoritativeInventory=false;b.items[1]=item('netherite_pickaxe',11);b.breakTime=()=>60;
@@ -11,12 +11,12 @@ function fixture(t,{physics=false}={}){
  if(physics){b.physicsEnabled=true;b.emit('spawn');}
  return {...f,cells,set,key,w,r,travel:r.travel};
 }
-function peer(f,{modern=false,confirm=true}={}){
- const {b,c,packets,set}=f,queue=c.queue.bind(c),breaks=[];b.serverBreak=modern;b.serverAuthoritativeInventory=modern;
+function peer(f,{modern=false,inventory=modern,confirm=true}={}){
+ const {b,c,packets,set}=f,queue=c.queue.bind(c),breaks=[];b.serverBreak=modern;b.serverAuthoritativeInventory=inventory;
  c.queue=(name,data)=>{const result=queue(name,data),p=packets.at(-1);if(name==='inventory_transaction'&&data.transaction?.transaction_data?.action_type==='break_block'){
   breaks.push(p);if(confirm)queueMicrotask(()=>set(new Vec3(...['x','y','z'].map(k=>data.transaction.transaction_data.block_position[k])),'air'));
  }if(modern&&name==='player_auth_input'&&p?.params.block_action?.some(a=>a.action==='predict_break')){
-  assert(p.params.item_stack_request,'prediction must carry its durability request in the same input');const action=p.params.block_action.find(a=>a.action==='predict_break');breaks.push(p);if(confirm)queueMicrotask(()=>set(new Vec3(action.position.x,action.position.y,action.position.z),'air'));
+  if(inventory&&b.inventoryMode!=='legacy')assert(p.params.item_stack_request,'prediction must carry its durability request in the same input');else assert.equal(p.params.item_stack_request,undefined,'legacy inventory must not receive MineBlock stack requests');const action=p.params.block_action.find(a=>a.action==='predict_break');breaks.push(p);if(confirm)queueMicrotask(()=>set(new Vec3(action.position.x,action.position.y,action.position.z),'air'));
  }return result;};return breaks;
 }
 
