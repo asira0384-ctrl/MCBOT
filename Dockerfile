@@ -8,5 +8,5 @@ COPY src ./src
 COPY web ./web
 COPY vendor ./vendor
 ENV NODE_ENV=production
-EXPOSE 3000
+EXPOSE 830
 CMD ["npm", "start"]
