@@ -12,7 +12,7 @@ function fixture(t,{physics=false}={}){
  return {...f,cells,set,key,w,r,travel:r.travel};
 }
 function peer(f,{modern=false,confirm=true}={}){
- const {b,c,packets,set}=f,queue=c.queue.bind(c),breaks=[];b.serverBreak=true;b.serverAuthoritativeInventory=modern;
+ const {b,c,packets,set}=f,queue=c.queue.bind(c),breaks=[];b.serverBreak=modern;b.serverAuthoritativeInventory=modern;
  c.queue=(name,data)=>{const result=queue(name,data),p=packets.at(-1);if(name==='inventory_transaction'&&data.transaction?.transaction_data?.action_type==='break_block'){
   breaks.push(p);if(confirm)queueMicrotask(()=>set(new Vec3(...['x','y','z'].map(k=>data.transaction.transaction_data.block_position[k])),'air'));
  }if(modern&&name==='player_auth_input'&&p?.params.block_action?.some(a=>a.action==='predict_break')){

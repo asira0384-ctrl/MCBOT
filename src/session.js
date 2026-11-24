@@ -2,12 +2,15 @@
 // Responses to server-driven transitions. Never invent a destination or walk
 // the player while acknowledging a loading screen / teleport.
 function action(bot,name){
- const p=bot.entity?.position;if(!p||bot.ended)return false;
+ const p=bot.entity?.position;if(!p||bot.ended||bot.serverClosing)return false;
  const mappings=bot.registry?.protocol.types.Action?.[1]?.mappings;
  if(!mappings||!Object.values(mappings).includes(name))return false;
- const position={x:Math.floor(p.x),y:Math.floor(p.y),z:Math.floor(p.z)};
- bot.client.queue('player_action',{runtime_entity_id:BigInt(bot._runtimeEntityId),action:name,position,result_position:position,face:0});
- bot.sessionResponses[name]=(bot.sessionResponses[name]||0)+1;return true;
+ const input=require('./movement-wire').mode(bot)!=='legacy';
+ if(input&&name==='handled_teleport')bot.pendingTeleport=true;
+ else if(input&&name==='received_server_data')bot.pendingServerData=true;
+ else if(input&&['start_glide','stop_glide'].includes(name))bot.pendingGlide=name==='start_glide'?'start':'stop';
+ else {const position={x:0,y:0,z:0};bot.client.queue('player_action',{runtime_entity_id:BigInt(bot._runtimeEntityId),action:name,position,result_position:position,face:0});}
+ bot.sessionResponses??={};bot.sessionResponses[name]=(bot.sessionResponses[name]||0)+1;return true;
 }
 function installSession(bot){
  bot.sessionResponses={};bot.worldGeneration=0;bot.initialDataAcknowledged=false;

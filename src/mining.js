@@ -14,8 +14,8 @@ function columnBusy(w,q){for(const o of w.manager?.workers?.values()||[]){if(o==
 function stands(worker,target,{allowScaffold=true}={}){
  const b=worker.bot,p=b.entity.position,t=target.position,eyeReach=worker.state.miningRange||b.motion?.runtime?.config.blockReach||5,spots=[],navigation=require('./navigation'),geometry=require('./geometry');
  const stock=allowScaffold&&worker.state.scaffoldEnabled!==false&&b.list?.().some(i=>i.name===worker.state.scaffold||['cobblestone','stone','dirt','obsidian','slime','slime_block'].includes(i.name));
- for(let dy=-5;dy<=3;dy++)for(let dx=-3;dx<=3;dx++)for(let dz=-3;dz<=3;dz++){
-  const q=t.offset(dx,dy,dz);if(q.y<Math.min(Math.floor(p.y),t.y))continue;const center=q.offset(.5,0,.5),eye=center.offset(0,1.62,0),under=b.blockAt(q.offset(0,-1,0));if(require('./mining-reach').distance(eye,target)>eyeReach||!navigation.pass(b,q))continue;
+ for(let dy=Math.ceil(-eyeReach-1.62);dy<=Math.floor(eyeReach-.62);dy++)for(let dx=-3;dx<=3;dx++)for(let dz=-3;dz<=3;dz++){
+  const q=t.offset(dx,dy,dz);if(q.y< -64)continue;const center=q.offset(.5,0,.5),eye=center.offset(0,1.62,0),under=b.blockAt(q.offset(0,-1,0));if(require('./mining-reach').distance(eye,target)>eyeReach||!navigation.pass(b,q))continue;
   if(columnBusy(worker,q))continue;if(!under||under.name==='unknown'||hazard(under)||!under.solid&&(!stock||!air(under)))continue;
   if(!geometry.rayClear(b,eye,t.offset(.5,.5,.5),{ignore:[t]}))continue;
   spots.push({position:center,score:p.distanceTo(center)+(under.solid?0:9)});

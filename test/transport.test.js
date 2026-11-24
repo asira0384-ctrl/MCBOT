@@ -11,11 +11,12 @@ test('Native RakNet real UDP discovery and Bedrock handshake match the advertise
  assert.equal(client.runtimeIdSchema,'move_player:uint64');assert.equal(client.options.version,'1.26.51');assert.equal(errors.length,0);
  // Replay the gateway's real 63-bit teleport over encrypted UDP, then verify
  // the server receives our response (not merely that a codec round-trips).
- const EventEmitter=require('node:events'),{Vec3}=require('vec3');const bot=new EventEmitter();bot.client=client;bot._runtimeEntityId=9223372036854775807n;bot.registry=require('prismarine-registry')('bedrock_1.26.51');bot.entity={position:new Vec3(128,68.38,128),velocity:new Vec3(0,0,0)};bot.connected=true;bot.passivePhysics=true;
+ const EventEmitter=require('node:events'),{Vec3}=require('vec3');const bot=new EventEmitter();bot.client=client;bot._runtimeEntityId=9223372036854775807n;bot.registry=require('prismarine-registry')('bedrock_1.26.51');bot.entity={position:new Vec3(128,68.38,128),velocity:new Vec3(0,0,0)};bot.connected=true;bot.passivePhysics=true;bot.controlState={};
  require('../vendor/bedrockflayer/lib/physics/engine')(bot);require('../src/session').installSession(bot);
- const ack=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('teleport response never reached local server')),3000);peer.once('player_action',p=>{clearTimeout(timer);resolve(p);});});
+ const ack=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('teleport response never reached local server')),3000);peer.once('player_auth_input',p=>{clearTimeout(timer);resolve(p);});});
+ client.once('move_player',()=>client.queue('player_auth_input',require('../src/protocol').adaptInput(bot,{pitch:0,yaw:0,head_yaw:0,position:{x:128.5,y:2.13,z:128.5},move_vector:{x:0,y:0},delta:{x:0,y:0,z:0},input_data:0n,tick:11n})));
  peer.write('move_player',{runtime_id:bot._runtimeEntityId,position:{x:128.5,y:2.13,z:128.5},pitch:0,yaw:0,head_yaw:0,mode:'teleport',on_ground:true,ridden_runtime_id:0n,teleport:{cause:'command',source_entity_type:'player'},tick:10n});
- const received=await ack;assert.equal(received.action,'handled_teleport');assert.equal(received.runtime_entity_id,bot._runtimeEntityId);assert.equal(bot.entity.position.x,128.5);assert.equal(bot.sessionResponses.handled_teleport,1);assert.equal(errors.length,0);
+ const received=await ack;assert(received.input_data.includes('handled_teleport'));assert.equal(bot._runtimeEntityId,9223372036854775807n);assert.equal(bot.entity.position.x,128.5);assert.equal(bot.sessionResponses.handled_teleport,1);assert.equal(errors.length,0);
  // Use the actual adapter and equipment module over the encrypted connection.
  // The local server acknowledges opening the inventory and the exact offhand
  // swap; the bot must wait for both responses before reporting success.
