@@ -37,19 +37,19 @@ class Worker {
     if(Date.now()-this.lastEat>=5000){await this.bot.eat(signal);this.lastEat=Date.now();}return;}
    const missing=!this.bot.tool()?'ピッケル':null;
    if(missing){if(this.state.autoSupply&&this.runtime){this.runtime.restock.request(missing+'が不足');this.wait(missing);}else this.wait(missing);return;}
-   if(this.mode==='waiting'){if(!this.lastReceive||Date.now()-this.lastReceive<3000)return;this.bot.naturalIdleFall=false;this.bot.passivePhysics=false;this.running=true;this.mode='running';this.missing='';this.notice('補給を確認しました。再開します');}
+   if(this.mode==='waiting'){if(this.lastReceive&&Date.now()-this.lastReceive<750)return;this.bot.naturalIdleFall=false;this.bot.passivePhysics=false;this.running=true;this.mode='running';this.missing='';this.notice('補給を確認しました。再開します');}
    if(this.cleanupRequested){this.mode='cleaning';const result=await this.cleanup(signal,{finish:true});if(!result.remaining){this.stop();this.notice('採掘・不要な足場の回収が完了しました');}else{this.missing=result.reason;this.miningPhase='cleanup';if(!result.progress&&(this.lastCleanupNotice!==result.reason||Date.now()-(this.lastCleanupNoticeAt||0)>15000)){this.lastCleanupNotice=result.reason;this.lastCleanupNoticeAt=Date.now();this.notice(result.reason);}}return;}
    if(!this.running)return;this.mode='running';if(this.runtime?.needsFood?.()){this.runtime.startUse('体力回復',this.bot.find('enchanted_golden_apple'));return;}if(this.runtime?.travel.recoverCollision&&await this.runtime.travel.recoverCollision(signal))return;
    if(this.bot.entity.onGround===false&&!solid(this.bot.blockAt(this.bot.entity.position.offset(0,-.1,0)))&&!require('./navigation').water(this.bot.blockAt(this.bot.entity.position))){this.miningPhase='falling';this.missing='下段へ落下中・着地してから採掘します';return;}
-   await this.discard(signal);
+   if(Date.now()-(this.lastDiscardAt||0)>1000){this.lastDiscardAt=Date.now();await this.discard(signal);}
    const target=this.chooseTarget();this.miningTarget=target?{name:target.name,position:{...target.position}}:null;if(!target){await this.explore(signal);return;}
    const reservation=`${this.bot.dimensionId}:${key(target.position)}`;if(this.manager.claims.has(reservation))return;this.manager.claims.set(reservation,this.id);
    try{if(this.bot.reach(target,this.state.miningRange)&&this.bot.visible(target)){this.miningPhase='dig';this.miningApproach=null;this.approachPlan=null;if(this.runtime)this.runtime.travel.groundPlan=null;await this.bot.dig(target,signal,undefined,{range:this.state.miningRange});if(signal.aborted)return;this.missing='';this.miningPhase='confirmed';
       if(!this.owned(target.position)){addStat(this.state.stats,target.name);addStat(this.state.session,target.name);this.recordMined(target.name);if(this.manager.saveMining)this.manager.saveMining();else this.manager.store.save();}
-      await this.cleanup(signal);
+      if(Date.now()-(this.lastCleanupAt||0)>1000){this.lastCleanupAt=Date.now();await this.cleanup(signal);}
      }else await this.approach(target,signal);
    }catch(e){if(signal.aborted)return;if(this.bot.health<12)return;this.miningPhase='retry';this.failed.set(key(target.position),Date.now()+(e.code==='PATH_WAIT'?8000:3000));this.approachPlan=null;this.missing=e.message;if(this.lastMiningNotice!==e.message||Date.now()-(this.lastMiningNoticeAt||0)>10000){this.lastMiningNotice=e.message;this.lastMiningNoticeAt=Date.now();this.manager.notice(this.id,'採掘経路を再確認: '+e.message,{game:false});}return;}finally{this.manager.claims.delete(reservation);}
-  }catch(e){if(!signal.aborted&&this.running&&this.bot.health>=12){this.stop();this.notice(e.message);}}finally{this.busy=false;}
+  }catch(e){if(!signal.aborted&&this.running&&this.bot.health>=12){this.missing=e.message;this.miningPhase='error';this.stop();this.notice(e.message);}}finally{this.busy=false;}
  }
  recordMined(name){const drop={stone:'cobblestone',deepslate:'cobbled_deepslate',grass_block:'dirt',snow:'snowball',redstone_ore:'redstone',coal_ore:'coal',diamond_ore:'diamond',emerald_ore:'emerald',lapis_ore:'lapis_lazuli',nether_quartz_ore:'quartz',glowstone:'glowstone_dust',glass:null};
   for(const n of [name,drop[name]])if(n&&!this.state.minedItems.includes(n))this.state.minedItems.push(n);}
@@ -71,7 +71,7 @@ class Worker {
    // Search real ground for every stance first. A cheap floating stance must
    // not win just because a carried stack makes placement possible.
    for(const allowScaffold of stock?[false,true]:[false]){if(best)break;spots=require('./mining').stands(this,target,{allowScaffold});const began=performance.now();let searched=0;
-    for(const goal of spots.slice(0,24)){if(signal?.aborted)throw Error('停止しました');if(searched++%3===2)await new Promise(resolve=>setImmediate(resolve));if(best&&performance.now()-began>35)break;const path=navigation.groundPath(b,b.entity.position,goal,travel.groundOptions({dig:true,block:allowScaffold?stock:null,minY:Math.min(Math.floor(b.entity.position.y),target.position.y),limit:900}));if(!path.reached)continue;const score=path.cost+(solid(b.blockAt(goal.offset(0,-1,0)))?0:5);const choice={goal,score,targetKey,at:Date.now(),progressAt:Date.now(),remaining:b.entity.position.distanceTo(goal),placements:path.placements};if(!allowScaffold&&stock&&score>Math.hypot(goal.x-b.entity.position.x,goal.z-b.entity.position.z)*1.8+Math.max(0,b.entity.position.y-goal.y)*.03+4){if(!detour||score<detour.score)detour=choice;continue;}if(!best||score<best.score)best=choice;if(score<=1)break;}
+    for(const goal of spots.slice(0,24)){if(signal?.aborted)throw Error('停止しました');searched++;await new Promise(resolve=>setImmediate(resolve));if(best&&performance.now()-began>20)break;const path=navigation.groundPath(b,b.entity.position,goal,travel.groundOptions({dig:true,block:allowScaffold?stock:null,minY:Math.min(Math.floor(b.entity.position.y),target.position.y),limit:900}));if(!path.reached)continue;const score=path.cost+(solid(b.blockAt(goal.offset(0,-1,0)))?0:5);const choice={goal,score,targetKey,at:Date.now(),progressAt:Date.now(),remaining:b.entity.position.distanceTo(goal),placements:path.placements};if(!allowScaffold&&stock&&score>Math.hypot(goal.x-b.entity.position.x,goal.z-b.entity.position.z)*1.8+Math.max(0,b.entity.position.y-goal.y)*.03+4){if(!detour||score<detour.score)detour=choice;continue;}if(!best||score<best.score)best=choice;if(score<=1)break;}
    }
    if(!best)best=detour;
    if(!best)throw Object.assign(Error(spots.length?'指定ブロックへ届く経路を再探索中。別の対象も確認します':'指定ブロックを掘れる立ち位置がありません。範囲・床・天井を確認してください'),{code:'PATH_WAIT'});
