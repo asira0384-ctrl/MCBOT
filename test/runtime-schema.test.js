@@ -1,5 +1,5 @@
 'use strict';
-const test=require('node:test');const assert=require('node:assert/strict');const EventEmitter=require('node:events');const {Vec3}=require('vec3');const {Serializer,FullPacketParser}=require('protodef');const {correctedProtocol,patchRuntimeIds}=require('../src/runtime-schema');const {createSerializer,createDeserializer}=require('bedrock-protocol/src/transforms/serializer');const physics=require('../vendor/bedrockflayer/lib/physics/engine');
+const test=require('node:test');const assert=require('node:assert/strict');const EventEmitter=require('node:events');const {Vec3}=require('vec3');const {Serializer,FullPacketParser}=require('protodef');const {correctedProtocol,patchRuntimeIds}=require('../src/bedrock/runtime-schema');const {createSerializer,createDeserializer}=require('bedrock-protocol/src/transforms/serializer');const physics=require('../vendor/bedrockflayer/lib/physics/engine');
 for(const version of ['1.21.2','1.26.51'])test(`MovePlayer ${version}: actual gateway 63-bit ID survives decoding and applies own reset`,()=>{
  const id=9223372036854775807n,proto=correctedProtocol(version),wire=new Serializer(proto,'mcpe_packet');
  const originalReader=createDeserializer(version),s=createSerializer(version),d=createDeserializer(version);patchRuntimeIds({options:{version},serializer:s,deserializer:d});

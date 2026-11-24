@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),EventEmitter=require('node:events'),{Vec3}=require('vec3');
-const {DebugRecorder,markPhysics}=require('../src/debug');
+const {DebugRecorder,markPhysics}=require('../src/diagnostics/debug');
 function fixture(){
  const bot=new EventEmitter();Object.assign(bot,{connected:true,entity:{position:new Vec3(.5,70,.5),velocity:new Vec3(0,0,0)},controlState:{},actors:new Map(),
   blockAt:p=>p.y<68?{name:'stone',solid:true,stateId:1,boundingBox:'block'}:null,config:{token:'DO_NOT_EXPORT',authDir:'PRIVATE'},client:{auth:'SECRET'}});

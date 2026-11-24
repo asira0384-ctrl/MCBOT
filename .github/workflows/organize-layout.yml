@@ -1,0 +1,26 @@
+name: Organize MCBOT
+on:
+  push:
+    branches: [organize-layout]
+    paths: ['layout.patch.gz', '.github/workflows/organize-layout.yml']
+permissions:
+  contents: write
+jobs:
+  organize:
+    if: github.event.head_commit.message != 'Organize MCBOT modules, interfaces and project files'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply reviewed file moves
+        shell: bash
+        run: |
+          set -euo pipefail
+          gzip -dc layout.patch.gz > "$RUNNER_TEMP/layout.patch"
+          echo "113ef27fcab2827deba19bb0f050ebd38820290ba52f6582db5844a3405b8c88  $RUNNER_TEMP/layout.patch" | sha256sum --check
+          git apply --check --index "$RUNNER_TEMP/layout.patch"
+          git apply --index "$RUNNER_TEMP/layout.patch"
+          git rm layout.patch.gz
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Organize MCBOT modules, interfaces and project files'
+          git push origin HEAD:refs/heads/organize-layout

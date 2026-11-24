@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test');const assert=require('node:assert/strict');const EventEmitter=require('node:events');const {Vec3}=require('vec3');
-const {installSession}=require('../src/session');const {adaptInput}=require('../src/protocol');const physics=require('../vendor/bedrockflayer/lib/physics/engine');const {World}=require('../src/world');const {BedrockBot}=require('../src/bedrock');
+const {installSession}=require('../src/bedrock/session');const {adaptInput}=require('../src/bedrock/protocol');const physics=require('../vendor/bedrockflayer/lib/physics/engine');const {World}=require('../src/bedrock/world');const {BedrockBot}=require('../src/bedrock/bedrock');
 const {createSerializer,createDeserializer}=require('bedrock-protocol/src/transforms/serializer');
 function fixture(version){const b=new EventEmitter();b.client=new EventEmitter();b.client.options={version};b.registry=require('prismarine-registry')('bedrock_'+version);b._runtimeEntityId=9223372036854775807n;b.entity={position:new Vec3(128,68.38,128),velocity:new Vec3(0,0,0)};b.controlState={};b.connected=true;b.passivePhysics=true;b.sent=[];b.client.queue=(name,params)=>b.sent.push({name,params});b.worldMirror=new World(b);b.halt=()=>{b.passivePhysics=true;};physics(b);installSession(b);return b;}
 for(const version of ['1.21.2','1.26.51'])test(`session ${version}: own teleport response on wire, no foreign ACK, terrain precedes dimension ACK`,()=>{

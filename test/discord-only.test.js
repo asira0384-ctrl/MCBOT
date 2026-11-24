@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),http=require('node:http');
-const {WebControl}=require('../src/web'),{OWNER}=require('../src/store');
+const {WebControl}=require('../web/server/web'),{OWNER}=require('../data/store');
 test('browser OAuth approval transfers identity to app, retries keep cookie, codes cannot sign in',async t=>{
  const data={bots:{}},store={data,save(){},bot(id){return data.bots[id]??={};}};
  const manager={store,names:new Map([[21,'Bot21'],[50,'Bot50']]),workers:new Map(),targets:t=>[Number(t)]};

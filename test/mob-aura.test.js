@@ -1,5 +1,5 @@
 'use strict';
-const test=require('node:test'),assert=require('node:assert/strict'),{Vec3}=require('vec3'),{fixture}=require('./helpers/mining-world'),mob=require('../src/modules/combat/mobaura');
+const test=require('node:test'),assert=require('node:assert/strict'),{Vec3}=require('vec3'),{fixture}=require('./helpers/mining-world'),mob=require('../modules/combat/mob-aura/mobaura');
 function actor(id,name,x=2.5){return {id:BigInt(id),name:'minecraft:'+name,player:false,dimension:0,position:new Vec3(x,65,.5)};}
 function setup(t){const f=fixture(t);f.w.state.mobAura={enabled:true,range:4,delay:100,weapon:'Auto',targets:'Hostile'};f.w.running=true;f.b.items[2]=f.item('netherite_sword',12);f.b.items[3]=f.item('netherite_axe',13);f.w.mobAura=new mob.MobAura(f.w);t.after(()=>f.w.mobAura.destroy());return f;}
 test('MobAura ignores players, crystals, dropped items, vehicles and distant mobs',t=>{
@@ -19,7 +19,7 @@ test('missing weapons allow mining; armed MobAura holds mining during cooldown',
  const f=setup(t);f.b.actors.set('32',actor(32,'zombie'));const abort=f.w.abort=new AbortController();f.b.actionHandBusy={kind:'mining'};f.b.items[2]=null;f.b.items[3]=null;assert.equal(await f.w.mobAura.pulse(),false);assert.equal(abort.signal.aborted,false);f.b.items[2]=f.item('netherite_sword',12);f.w.mobAura.lastAttack=Date.now();assert.equal(await f.w.mobAura.pulse(),false);assert.equal(abort.signal.aborted,true);assert(f.w.mobAura.holdsMining);
 });
 test('Combat settings enable and update MobAura without issuing a command that stops Nuke',async()=>{
- const desktop=require('../src/desktop-modules'),s={nukeEnabled:true,runtimePaused:true},w={running:true,runtime:{paused:true}},m={store:{bot:()=>s,save(){}},workers:new Map([[1,w]]),execute(){throw Error('legacy command must not run');}};const web={manager:m,targets:()=>[1]};assert.equal(desktop.catalog.MobAura.group,'Combat');
+ const desktop=require('../desktop/bridge/desktop-modules'),s={nukeEnabled:true,runtimePaused:true},w={running:true,runtime:{paused:true}},m={store:{bot:()=>s,save(){}},workers:new Map([[1,w]]),execute(){throw Error('legacy command must not run');}};const web={manager:m,targets:()=>[1]};assert.equal(desktop.catalog.MobAura.group,'Combat');
  assert((await desktop.apply(web,{}, {module:'MobAura',enabled:true,target:'1',values:{Range:3,'Attack Delay':500,Weapon:'Axe',Targets:'Hostile'}})).ok);assert.equal(s.mobAura.enabled,true);assert.equal(s.runtimePaused,false);assert.equal(w.runtime.paused,false);assert.equal(s.nukeEnabled,true);assert.equal(w.running,true);
  assert((await desktop.apply(web,{}, {module:'MobAura',enabled:null,target:'1',values:{Range:5,'Attack Delay':750,Weapon:'Sword',Targets:'All Mobs'}})).ok);assert.equal(s.mobAura.range,5);assert.equal(s.mobAura.enabled,true);assert.equal(w.running,true);
 });

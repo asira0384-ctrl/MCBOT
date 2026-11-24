@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
 const {Vec3}=require('vec3'),{createSerializer}=require('bedrock-protocol/src/transforms/serializer');
-const {adaptInput,blockActionNames}=require('../src/protocol'),digging=require('../src/digging');
+const {adaptInput,blockActionNames}=require('../src/bedrock/protocol'),digging=require('../modules/world/mining/digging');
 const {fixture,peer}=require('./helpers/mining-world');
 const raw=tick=>({pitch:0,yaw:0,head_yaw:0,position:{x:.5,y:66.62,z:.5},delta:{x:0,y:0,z:0},move_vector:{x:0,y:0},input_data:0n,tick:BigInt(tick)});
 function pump(f,t){let tick=0;const frame=()=>f.c.queue('player_auth_input',raw(++tick)),timer=setInterval(frame,20);t.after(()=>clearInterval(timer));return frame;}
@@ -22,11 +22,11 @@ test('modern teleport and terrain acknowledgments use input flags with independe
 
 test('legacy teleport acknowledgment retains unsigned 64-bit ID and zero block fields',()=>{
  const sent=[],id=9223372036854775807n,b={registry:require('prismarine-registry')('bedrock_1.26.51'),advertisedMovement:'client',entity:{position:new Vec3(-12,65,8)},_runtimeEntityId:id,client:{queue:(name,params)=>sent.push({name,params})}};
- assert(require('../src/session').action(b,'handled_teleport'));assert.equal(sent.length,1);const buffer=createSerializer('1.26.51').createPacketBuffer(sent[0]),r=reader(buffer);assert.equal(r.uint(),36n);assert.equal(r.uint(),id);assert.equal(r.int(),30);for(let i=0;i<7;i++)assert.equal(r.int(),0);assert.equal(r.offset,buffer.length);
+ assert(require('../src/bedrock/session').action(b,'handled_teleport'));assert.equal(sent.length,1);const buffer=createSerializer('1.26.51').createPacketBuffer(sent[0]),r=reader(buffer);assert.equal(r.uint(),36n);assert.equal(r.uint(),id);assert.equal(r.int(),30);for(let i=0;i<7;i++)assert.equal(r.int(),0);assert.equal(r.offset,buffer.length);
 });
 
 test('mining durability request has variant 9 and matching legacy action byte 11',()=>{
- const params=require('../src/protocol').request(-1,[{type_id:'mine_block',hotbar_slot:1,predicted_durability:2,network_id:123}]);const buffer=createSerializer('1.26.51').createPacketBuffer({name:'item_stack_request',params}),r=reader(buffer);assert.equal(r.uint(),147n);assert.equal(r.uint(),1n);assert.equal(r.int(),-1);assert.equal(r.uint(),1n);assert.equal(r.uint(),9n);assert.equal(r.uint(),11n);assert.equal(r.int(),1);assert.equal(r.int(),2);assert.equal(buffer.readInt32LE(r.offset),123);
+ const params=require('../src/bedrock/protocol').request(-1,[{type_id:'mine_block',hotbar_slot:1,predicted_durability:2,network_id:123}]);const buffer=createSerializer('1.26.51').createPacketBuffer({name:'item_stack_request',params}),r=reader(buffer);assert.equal(r.uint(),147n);assert.equal(r.uint(),1n);assert.equal(r.int(),-1);assert.equal(r.uint(),1n);assert.equal(r.uint(),9n);assert.equal(r.uint(),11n);assert.equal(r.int(),1);assert.equal(r.int(),2);assert.equal(buffer.readInt32LE(r.offset),123);
 });
 
 for(const modern of [false,true])test(`a real ${modern?'authoritative':'legacy'} dig confirms without duplicate PlayerAction packets`,async t=>{
@@ -52,6 +52,6 @@ test('an unconfirmed dig refreshes terrain without sending get_updated_block and
 });
 
 test('kick cleanup cannot send or overwrite the packet that preceded the server kick',t=>{
- const f=fixture(t);f.b.pendingBreakActions=[{action:'continue_break',position:{x:1,y:65,z:0},face:1}];f.c.queue('player_auth_input',raw(1));const safety=require('../src/packet-safety'),last=structuredClone(f.b.lastGameplayPacket),count=f.packets.length;
+ const f=fixture(t);f.b.pendingBreakActions=[{action:'continue_break',position:{x:1,y:65,z:0},face:1}];f.c.queue('player_auth_input',raw(1));const safety=require('../src/diagnostics/packet-safety'),last=structuredClone(f.b.lastGameplayPacket),count=f.packets.length;
  f.b.mining={x:1,y:65,z:0};f.b.digState={mode:'legacy',face:1};f.b.removeAllListeners('error');f.b.on('error',()=>{f.b.halt();f.c.queue('player_action',{action:'abort_break'});});f.c.emit('kick',{message:'Corrupted packet'});assert.equal(f.packets.length,count);assert.deepEqual(safety.exitPackets(f.b).last,last);assert.match(safety.lastLabel(f.b),/player_auth_input \(continue_break\)/);assert.equal(f.b.pendingBreakActions.length,0);
 });

@@ -2,8 +2,8 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {Vec3}=require('vec3');
 const {adapter}=require('./helpers/adapter');
-const {Runtime}=require('../src/runtime');
-const tactics=require('../src/tactics');
+const {Runtime}=require('../src/app/runtime');
+const tactics=require('../modules/combat/targeting/tactics');
 const air=p=>({name:'air',position:new Vec3(p.x,p.y,p.z).floored(),solid:false,isAir:true,stateId:0});
 function fixture(t,config={}){
  const a=adapter(t),state={runtime:{gear:false,autototem:false,autoslot:false,heal:false,autolog:false,...config},combatRevision:37,tacticsRevision:37,autoSupply:false,respawn:true,owned:{},minedItems:[],floor:null};
@@ -50,7 +50,7 @@ test('gapple use starts without waiting for a busy combat operation and retreats
  await r.tick();r.motionTick();await r.consumeTask;assert(use>0);assert.equal(b.lastItemUse.status,'confirmed');assert.equal(r.travel.following?.kind,'retreat');assert(r.retreatGoal.x<.5);r.busy=false;
 });
 test('large-wall flight planner chooses a loaded side corridor beyond the old local search horizon',()=>{
- const {airDetour}=require('../src/navigation'),{sweptClear}=require('../src/travel');const b={blockAt:p=>Math.floor(p.x)===4&&p.z>-35&&p.z<35&&p.y<100?{name:'obsidian',solid:true}:air(p)};const start=new Vec3(.5,8,.5),goal=new Vec3(20.5,8,.5),path=airDetour(b,start,goal,sweptClear,1.3);assert(path?.length);assert(Math.abs(path[0].position.z) >=35);assert(sweptClear(b,start,path[0].position,1.3));assert(sweptClear(b,path[0].position,path[1].position,1.3));
+ const {airDetour}=require('../modules/movement/navigation/navigation'),{sweptClear}=require('../modules/movement/navigation/travel');const b={blockAt:p=>Math.floor(p.x)===4&&p.z>-35&&p.z<35&&p.y<100?{name:'obsidian',solid:true}:air(p)};const start=new Vec3(.5,8,.5),goal=new Vec3(20.5,8,.5),path=airDetour(b,start,goal,sweptClear,1.3);assert(path?.length);assert(Math.abs(path[0].position.z) >=35);assert(sweptClear(b,start,path[0].position,1.3));assert(sweptClear(b,path[0].position,path[1].position,1.3));
 });
 test('restock does not touch containers before approval, rejects stale approvals, and preserves interrupted one-kit state',async t=>{
  const {r,w,state}=fixture(t);let taken=0;r.restock.kit=async job=>{if(!job.kitTaken){job.kitTaken=true;taken++;}throw Error('connection interrupted');};

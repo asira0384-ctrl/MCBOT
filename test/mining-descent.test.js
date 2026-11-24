@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),{Vec3}=require('vec3');
-const {fixture}=require('./helpers/mining-world'),navigation=require('../src/navigation'),{stands}=require('../src/mining');
+const {fixture}=require('./helpers/mining-world'),navigation=require('../modules/movement/navigation/navigation'),{stands}=require('../modules/world/mining/mining');
 
 function pit(t){const f=fixture(t);f.b.entity.position=new Vec3(.5,70,.5);f.b.entity.onGround=true;f.w.state.miningRange=5;f.w.state.maxDrop=8;f.w.state.ceiling=75;f.w.running=true;f.b.items[2]={...f.item('cobblestone',20),count:64};f.set(new Vec3(0,69,0),'obsidian');f.set(new Vec3(6,69,0),'stone');return {...f,target:f.b.blockAt(new Vec3(6,69,0))};}
 

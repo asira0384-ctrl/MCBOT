@@ -3,11 +3,11 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const Module=require('node:module');
 const {transform}=require('../src/quality-fixes');
-const spam=require('../src/desktop-spam');
+const spam=require('../desktop/bridge/desktop-spam');
 
 test('Connect is a single ordered server-switch and connect action',()=>{
  const source="case 'endpoint':{if(!['ign','2b2e'].includes(d.realm))";
- const patched=transform('src/desktop-extra.js',source);
+ const patched=transform('desktop/bridge/desktop-extra.js',source);
  assert.match(patched,/case 'connect-route'/);
  assert(patched.indexOf("state.serverRealm=d.realm")<patched.indexOf('m.requestConnection(id)'));
  assert.match(patched,/m\.store\.save\(\)/);
@@ -16,7 +16,7 @@ test('All spam schedules operate independently of manual ChatQueue settings',()=
  const source="const spamFields=[T('Messages'),R('Interval',5,5,120,.5),"+
   "cycle:Math.max(v.Interval,Math.ceil(ids.length/Math.round(v['Batch Size']))*v['Group Delay']),groupIndex:Math.floor(ids.indexOf(id)/Math.round(v['Batch Size']))"+
   "if(w?.runtime)w.runtime[key+'Next']=on===true?0:Date.now()+v.Interval*1000;lines.push(n+' updated');";
- const patched=transform('src/desktop-modules.js',source);
+ const patched=transform('desktop/bridge/desktop-modules.js',source);
  assert.match(patched,/R\('Interval',5,1,120/);
  assert.match(patched,/cycle:v.Interval/);
 });
@@ -32,9 +32,9 @@ function mockSpamRuntime(withTell=false){
 test('Spam sends public messages despite pending manual chatQueue',()=>{
  const old=Module._load;
  Module._load=function(name,...args){
-  if(name==='./chat-output')return {publicPacket:(_b,text)=>({message:text}),whisperPacket:(_b,to,text)=>({origin:{request_id:'test'},to,text})};
-  if(name==='./chat-delivery')return {sent(){}};
-  if(name==='./chat-suffix')return {apply:(_s,text)=>text};
+  if(name==='../../modules/chat/delivery/chat-output')return {publicPacket:(_b,text)=>({message:text}),whisperPacket:(_b,to,text)=>({origin:{request_id:'test'},to,text})};
+  if(name==='../../modules/chat/delivery/chat-delivery')return {sent(){}};
+  if(name==='../../modules/chat/delivery/chat-suffix')return {apply:(_s,text)=>text};
   return old.call(this,name,...args);
  };
  try{
@@ -51,9 +51,9 @@ test('Spam sends public messages despite pending manual chatQueue',()=>{
 test('TellSpam has its own interval without the manual five-second timer',()=>{
  const old=Module._load;
  Module._load=function(name,...args){
-  if(name==='./chat-output')return {publicPacket:(_b,text)=>({message:text}),whisperPacket:(_b,to,text)=>({origin:{request_id:'test'},to,text})};
-  if(name==='./chat-delivery')return {sent(){}};
-  if(name==='./chat-suffix')return {apply:(_s,text)=>text};
+  if(name==='../../modules/chat/delivery/chat-output')return {publicPacket:(_b,text)=>({message:text}),whisperPacket:(_b,to,text)=>({origin:{request_id:'test'},to,text})};
+  if(name==='../../modules/chat/delivery/chat-delivery')return {sent(){}};
+  if(name==='../../modules/chat/delivery/chat-suffix')return {apply:(_s,text)=>text};
   return old.call(this,name,...args);
  };
  try{

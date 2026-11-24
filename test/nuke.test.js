@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),{Vec3}=require('vec3');
-const nuke=require('../src/modules/world/nuke'),desktop=require('../src/desktop-modules'),registry=require('minecraft-data')('bedrock_1.21.2');
+const nuke=require('../modules/world/nuke'),desktop=require('../desktop/bridge/desktop-modules'),registry=require('minecraft-data')('bedrock_1.21.2');
 const values=raw=>desktop.validate('Nuke',{...nuke.values({}),...raw});
 test('two corners include both endpoints, reverse axes and the lowest world layer',()=>{
  const p=nuke.plan(values({'Start X':'12','Start Y':'-64','Start Z':'9','End X':'-2','End Y':'-64','End Z':'-3'}),registry);

@@ -1,5 +1,5 @@
 'use strict';
-const test=require('node:test');const assert=require('node:assert/strict');const {adapter}=require('./helpers/adapter');const {wear,autoSlots}=require('../src/equipment');
+const test=require('node:test');const assert=require('node:assert/strict');const {adapter}=require('./helpers/adapter');const {wear,autoSlots}=require('../modules/inventory/equipment/equipment');
 test('legacy equip applied without an echo is confirmed by a requested full snapshot, without sending a second swap',async t=>{
  const {b,c,item,packets}=adapter(t);b.serverAuthoritativeInventory=false;b.inventoryTimeoutMs=150;b.items[12]=item('totem_of_undying',12);
  const serverItems=b.items.slice(),serverOffhand=[null],old=c.queue;let opens=0;

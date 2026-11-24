@@ -1,6 +1,6 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),{Vec3}=require('vec3');
-const {fixture,peer}=require('./helpers/mining-world'),{groundPath,dropLanding,pass}=require('../src/navigation');
+const {fixture,peer}=require('./helpers/mining-world'),{groundPath,dropLanding,pass}=require('../modules/movement/navigation/navigation');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(fn,ms=4000){const end=Date.now()+ms;while(!fn()){assert(Date.now()<end,'condition timed out');await sleep(5);}}
 
@@ -27,7 +27,7 @@ test('all reachable real-ground stances are considered before a floating scaffol
  const f=fixture(t,{physics:true}),{b,w,set}=f;for(let x=1;x<=3;x++)for(let z=-1;z<=1;z++)set(new Vec3(x,64,z),'air');const position=new Vec3(7,65,0);set(position,'obsidian');b.items[5]={...f.item('cobblestone'),count:64};w.running=true;w.miner.layer=65;await w.approach(b.blockAt(position));assert.equal(w.approachPlan.placements,0);assert.equal(Object.keys(w.state.owned).length,0);
 });
 test('ten workers can assist one upper chunk with separate target reservations',t=>{
- const f=fixture(t),workers=[f.w],{b,set}=f;f.w.state.area={x1:2,z1:0,x2:13,z2:0};f.w.state.ceiling=68;f.w.manager.assigned=require('../src/manager').Manager.prototype.assigned;
+ const f=fixture(t),workers=[f.w],{b,set}=f;f.w.state.area={x1:2,z1:0,x2:13,z2:0};f.w.state.ceiling=68;f.w.manager.assigned=require('../src/app/manager').Manager.prototype.assigned;
  for(let x=2;x<=13;x++)set(new Vec3(x,68,0),'obsidian');
  for(let n=2;n<=10;n++){const other=fixture(t).w;other.id=n;other.manager=f.w.manager;other.state.area=f.w.state.area;other.state.ceiling=68;other.bot.blockAt=b.blockAt;other.bot.entity.position=new Vec3(-n,65,-3);other.bot.config=b.config;f.w.manager.workers.set(n,other);workers.push(other);}
  for(const w of workers)w.running=true;const selected=[];
@@ -35,7 +35,7 @@ test('ten workers can assist one upper chunk with separate target reservations',
  assert.equal(new Set(selected).size,10);assert(workers.slice(1).every(w=>w.miner.assisting));assert(workers.every(w=>w.miner.layer===68));
 });
 test('offline bots and workers in another server do not reserve a support or a mining stripe',t=>{
- const f=fixture(t),other=fixture(t).w,{w}=f;other.id=2;other.manager=w.manager;other.bot.entity.position=new Vec3(3.5,66,.5);other.running=true;w.running=true;w.manager.workers.set(2,other);other.bot.connected=false;assert.equal(w.underPlayer(new Vec3(3,65,0)),false);other.bot.connected=true;other.bot.config={host:'different.example',port:19132};assert.equal(w.underPlayer(new Vec3(3,65,0)),false);assert(require('../src/manager').Manager.prototype.assigned.call(w.manager,w,16,0));
+ const f=fixture(t),other=fixture(t).w,{w}=f;other.id=2;other.manager=w.manager;other.bot.entity.position=new Vec3(3.5,66,.5);other.running=true;w.running=true;w.manager.workers.set(2,other);other.bot.connected=false;assert.equal(w.underPlayer(new Vec3(3,65,0)),false);other.bot.connected=true;other.bot.config={host:'different.example',port:19132};assert.equal(w.underPlayer(new Vec3(3,65,0)),false);assert(require('../src/app/manager').Manager.prototype.assigned.call(w.manager,w,16,0));
 });
 test('a miner removes its own last column from the top and falls onto the next confirmed block',async t=>{
  const f=fixture(t,{physics:true}),{b,w,set}=f;w.state.area={x1:2,z1:0,x2:2,z2:0};w.state.ceiling=68;b.entity.position=new Vec3(2.5,69,.5);b.entity.onGround=true;for(let y=65;y<=68;y++)set(new Vec3(2,y,0),'obsidian');peer(f);w.running=true;
@@ -52,8 +52,8 @@ test('unknown-chunk exploration uses only a reachable received landing, never an
  const {b,w}=fixture(t),base=b.blockAt;b.blockAt=p=>p.x>=6?null:base(p);w.miner.chunk={x:1,z:0,x1:16,x2:31,z1:0,z2:15};const goal=w.miner.goal();assert(goal);assert(goal.x<6);assert(pass(b,goal.floored()));assert(b.blockAt(goal.offset(0,-1,0)).solid);assert(groundPath(b,b.entity.position,goal).reached);
 });
 test('scaffold and fall settings apply to every selected bot and survive a disk reload',async t=>{
- const {Store}=require('../src/store'),{Manager}=require('../src/manager'),fs=require('node:fs'),os=require('node:os'),dir=fs.mkdtempSync(os.tmpdir()+'/asira-320-');t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const store=new Store(dir),m={store,targets:()=>[1,2,3],workers:new Map(),realm:()=> '2b2e'};await Manager.prototype.execute.call(m,'all','scaffold off');await Manager.prototype.execute.call(m,'all','falllimit 96');for(const id of [1,2,3]){assert.equal(new Store(dir).bot(id).scaffoldEnabled,false);assert.equal(new Store(dir).bot(id).maxDrop,96);}await assert.rejects(Manager.prototype.execute.call(m,'all','falllimit 900'),/範囲|0|384/);assert.equal(store.bot(1).maxDrop,96);
+ const {Store}=require('../data/store'),{Manager}=require('../src/app/manager'),fs=require('node:fs'),os=require('node:os'),dir=fs.mkdtempSync(os.tmpdir()+'/asira-320-');t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const store=new Store(dir),m={store,targets:()=>[1,2,3],workers:new Map(),realm:()=> '2b2e'};await Manager.prototype.execute.call(m,'all','scaffold off');await Manager.prototype.execute.call(m,'all','falllimit 96');for(const id of [1,2,3]){assert.equal(new Store(dir).bot(id).scaffoldEnabled,false);assert.equal(new Store(dir).bot(id).maxDrop,96);}await assert.rejects(Manager.prototype.execute.call(m,'all','falllimit 900'),/範囲|0|384/);assert.equal(store.bot(1).maxDrop,96);
 });
 test('a report saved after disconnect retains the last mining target and movement history',t=>{
- const f=fixture(t),{w,b}=f,{Manager}=require('../src/manager'),{ControlPanel}=require('../src/panel'),m=w.manager;m.names=new Map([[1,'Test Bot']]);m.logs=new Map();m.targets=()=>[1];m.trace=()=>{};w.miningTarget={name:'obsidian',position:{x:4,y:68,z:0}};w.runtime.snapshot=()=>({paused:false});w.runtime.debug={report:()=>({samples:[{position:{...b.entity.position}}]})};Manager.prototype.rememberDiagnostic.call(m,1);assert(m.disconnectedReports?.get(1));b.entity.position.y=12;m.workers.delete(1);const saved=new ControlPanel(m,'1343843235252146219').diagnostic({target:'1'}).bots[0];assert.equal(saved.recordedState,true);assert.equal(saved.mode,'offline');assert.equal(saved.position.y,65);assert.equal(saved.mining.target.name,'obsidian');assert.equal(saved.debug.samples[0].position.y,65);assert(saved.recordedAt);
+ const f=fixture(t),{w,b}=f,{Manager}=require('../src/app/manager'),{ControlPanel}=require('../web/server/panel'),m=w.manager;m.names=new Map([[1,'Test Bot']]);m.logs=new Map();m.targets=()=>[1];m.trace=()=>{};w.miningTarget={name:'obsidian',position:{x:4,y:68,z:0}};w.runtime.snapshot=()=>({paused:false});w.runtime.debug={report:()=>({samples:[{position:{...b.entity.position}}]})};Manager.prototype.rememberDiagnostic.call(m,1);assert(m.disconnectedReports?.get(1));b.entity.position.y=12;m.workers.delete(1);const saved=new ControlPanel(m,'1343843235252146219').diagnostic({target:'1'}).bots[0];assert.equal(saved.recordedState,true);assert.equal(saved.mode,'offline');assert.equal(saved.position.y,65);assert.equal(saved.mining.target.name,'obsidian');assert.equal(saved.debug.samples[0].position.y,65);assert(saved.recordedAt);
 });

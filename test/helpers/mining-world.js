@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {Vec3}=require('vec3');const {adapter}=require('./adapter'),{Travel}=require('../../src/travel'),{Worker}=require('../../src/worker'),{ChunkMining}=require('../../src/mining');
+const {Vec3}=require('vec3');const {adapter}=require('./adapter'),{Travel}=require('../../modules/movement/navigation/travel'),{Worker}=require('../../src/app/worker'),{ChunkMining}=require('../../modules/world/mining/mining');
 function fixture(t,{physics=false,version='1.26.51'}={}){
  const f=adapter(t,version),{b,c,packets,item}=f,cells=new Map(),key=p=>`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
  b.blockAt=p=>{p=new Vec3(p.x,p.y,p.z).floored();const name=cells.get(key(p))||(p.y===64?'stone':'air'),solid=name!=='air',entry=b.registry.blocksByName[name];return {name,position:p,stateId:entry.defaultState,solid,isAir:!solid,isLiquid:false,boundingBox:solid?'block':'empty',shapes:solid?[[0,0,0,1,1,1]]:[],diggable:entry.diggable!==false,hardness:entry.hardness??1};};

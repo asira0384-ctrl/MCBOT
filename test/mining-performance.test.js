@@ -22,7 +22,7 @@ test('a present pickaxe resumes supply waiting even without a new inventory even
  await f.w.tick();assert.equal(f.w.running,true);assert.equal(f.w.mode,'running');
 });
 test('snapshot retains per-account confirmed totals, including offline accounts',()=>{
- const {WebControl}=require('../src/web');const states=new Map([[1,{stats:{total:100},session:{total:20}}],[2,{stats:{total:300},session:{total:40}}]]);
+ const {WebControl}=require('../web/server/web');const states=new Map([[1,{stats:{total:100},session:{total:20}}],[2,{stats:{total:300},session:{total:40}}]]);
  const manager={names:new Map([[1,'One'],[2,'Two']]),workers:new Map(),logs:new Map(),store:{data:{},bot:id=>states.get(id)}};
  const result=WebControl.prototype.snapshot.call({manager,env:{},now:()=>1,audit:[]});assert.equal(result.bots.reduce((sum,b)=>sum+b.miningTotals.total,0),400);assert.equal(result.bots.reduce((sum,b)=>sum+b.miningTotals.session,0),60);assert(result.bots.every(b=>!b.connected));
 });

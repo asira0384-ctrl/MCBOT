@@ -1,8 +1,8 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
-const {Vec3}=require('vec3'),{adapter}=require('./helpers/adapter'),{Runtime}=require('../src/runtime');
-const {Store}=require('../src/store'),{Accounts,refreshSaved}=require('../src/accounts');
-const {RoofNavigator,ceiling,opening}=require('../src/roof'),{sweptClear}=require('../src/travel');
+const {Vec3}=require('vec3'),{adapter}=require('./helpers/adapter'),{Runtime}=require('../src/app/runtime');
+const {Store}=require('../data/store'),{Accounts,refreshSaved}=require('../src/auth/accounts');
+const {RoofNavigator,ceiling,opening}=require('../modules/movement/navigation/roof'),{sweptClear}=require('../modules/movement/navigation/travel');
 const UI=require('../web/ui-state');
 const air=p=>({name:'air',solid:false,isAir:true,boundingBox:'empty',position:new Vec3(p.x,p.y,p.z).floored(),stateId:0});
 const block=(p,name='obsidian')=>({...air(p),name,solid:true,isAir:false,boundingBox:'block',stateId:1});
