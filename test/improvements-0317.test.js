@@ -1,6 +1,6 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),{Vec3}=require('vec3');
-const {fixture,peer}=require('./helpers/mining-world'),{BedrockBot}=require('../src/bedrock'),speed=require('../src/mining-speed');
+const {fixture,peer}=require('./helpers/mining-world'),{BedrockBot}=require('../src/bedrock/bedrock'),speed=require('../modules/world/mining/mining-speed');
 const block=(b,name)=>({...b.registry.blocksByName[name],name});
 function pick(f,name='netherite_pickaxe',efficiency=0){const raw=f.item(name,20);if(efficiency)raw.extra={nbt:{type:'compound',name:'',value:{ench:{type:'list',value:{type:'compound',value:[{id:{type:'short',value:15},lvl:{type:'short',value:efficiency}}]}}}}};return {name,raw,slot:1};}
 test('the report case no longer computes 75.1 seconds for netherite blocks',t=>{
@@ -49,5 +49,5 @@ test('top-down mining steps off its final support onto confirmed lower ground be
  const f=fixture(t,{physics:true}),{b,w,set}=f,target=new Vec3(0,65,0);b.entity.position=new Vec3(.5,66,.5);b.entity.onGround=true;set(target,'obsidian');w.state.area={x1:0,z1:0,x2:0,z2:0};w.state.ceiling=65;w.running=true;w.mode='running';peer(f);for(let n=0;n<10&&b.blockAt(target).name!=='air';n++)await w.tick();assert.equal(b.blockAt(target).name,'air');assert.equal(w.state.stats.obsidian,1);for(let n=0;n<40&&(!b.entity.onGround||b.entity.position.y>65.01);n++)await new Promise(resolve=>setTimeout(resolve,25));assert(b.entity.onGround);assert.equal(b.entity.position.y,65);assert(Math.floor(b.entity.position.x)!==0||Math.floor(b.entity.position.z)!==0);
 });
 test('repeated server corrections back off and preserve mining intent until the user stops',t=>{
- const f=fixture(t),{Worker}=require('../src/worker'),state=f.w.state,manager={store:{bot:()=>state,save(){}},workers:new Map(),claims:new Map(),notice(){},assigned:()=>true};const w=new Worker(manager,1,f.b);manager.workers.set(1,w);clearInterval(w.timer);for(const timer of [w.runtime.timer,w.runtime.motionTimer,w.runtime.combatTimer])clearInterval(timer);t.after(()=>{w.stop();w.runtime.destroy();});w.start();for(let n=0;n<6;n++)f.b.emit('forcedMove');assert.equal(w.running,true);assert(w.miningRetryAt>Date.now());assert.equal(w.miningPhase,'repath');w.stop();f.b.emit('forcedMove');assert.equal(w.running,false);
+ const f=fixture(t),{Worker}=require('../src/app/worker'),state=f.w.state,manager={store:{bot:()=>state,save(){}},workers:new Map(),claims:new Map(),notice(){},assigned:()=>true};const w=new Worker(manager,1,f.b);manager.workers.set(1,w);clearInterval(w.timer);for(const timer of [w.runtime.timer,w.runtime.motionTimer,w.runtime.combatTimer])clearInterval(timer);t.after(()=>{w.stop();w.runtime.destroy();});w.start();for(let n=0;n<6;n++)f.b.emit('forcedMove');assert.equal(w.running,true);assert(w.miningRetryAt>Date.now());assert.equal(w.miningPhase,'repath');w.stop();f.b.emit('forcedMove');assert.equal(w.running,false);
 });

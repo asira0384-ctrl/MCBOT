@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),{Vec3}=require('vec3');
-const life=require('../src/mining-lifecycle'),{Worker}=require('../src/worker'),{ConnectionKeeper}=require('../src/connection-keeper'),{fixture}=require('./helpers/mining-world');
+const life=require('../modules/world/mining/mining-lifecycle'),{Worker}=require('../src/app/worker'),{ConnectionKeeper}=require('../src/app/connection-keeper'),{fixture}=require('./helpers/mining-world');
 function worker(state){const bot={connected:true,ended:false,terrainReady:true,health:20,dimensionId:0,config:{host:'server.test',port:19132},client:{startGameData:{world_name:'main'}},halt(){}};return Object.assign(Object.create(Worker.prototype),{id:1,bot,state,manager:{changed(){}},miner:{reset(){}},busy:false,controlBusy:false});}
 test('mining ON survives an unexpected disconnect and resumes on the same loaded world',()=>{
  const s={area:{x1:0,x2:5,z1:0,z2:5},floor:64,ceiling:70};const first=worker(s);first.start();assert.equal(s.nukeEnabled,true);first.stop();assert.equal(s.nukeEnabled,true);

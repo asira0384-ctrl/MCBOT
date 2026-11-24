@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),{EventEmitter}=require('node:events'),{Vec3}=require('vec3');
-const {World}=require('../src/world'),physics=require('../vendor/bedrockflayer/lib/physics/engine'),controls=require('../vendor/bedrockflayer/lib/plugins/controls');
+const {World}=require('../src/bedrock/world'),physics=require('../vendor/bedrockflayer/lib/physics/engine'),controls=require('../vendor/bedrockflayer/lib/plugins/controls');
 const Stream=require('prismarine-chunk/src/bedrock/common/Stream'),Storage=require('prismarine-chunk/src/bedrock/common/PalettedStorage');
 // Wire IDs from Geyser's independently generated 26_50 palette, not the bot registry.
 function payload(){const s=new Stream();s.writeUInt8(9);s.writeUInt8(1);s.writeUInt8(4);s.writeUInt8(3);const blocks=new Storage(1);for(let x=0;x<16;x++)for(let z=0;z<16;z++)blocks.set(x,0,z,1);blocks.write(s);s.writeZigZagVarInt(2);s.writeZigZagVarInt(17025);s.writeZigZagVarInt(2587);return s.getBuffer();}

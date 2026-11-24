@@ -14,7 +14,7 @@
 const { Vec3 } = require('../utils/vec3')
 const { moveEntity, isInWater, isInLava, isOnClimbable } = require('./collision')
 const C = require('./constants')
-const { markPhysics } = require('../../../../src/debug')
+const { markPhysics } = require('../../../../src/diagnostics/debug')
 
 function physicsPlugin(bot) {
     // ---- Control state ----
@@ -62,7 +62,7 @@ function physicsPlugin(bot) {
             if (packet.tick && bot.lastCorrectionTick && BigInt(packet.tick) < bot.lastCorrectionTick) return
             if (packet.tick) bot.lastCorrectionTick = BigInt(packet.tick)
             bot.serverPosition = { ...packet.position }
-            const pos = require('../../../../src/positions').serverPosition(bot, packet.position, 'correct_player_move_prediction')
+            const pos = require('../../../../src/bedrock/positions').serverPosition(bot, packet.position, 'correct_player_move_prediction')
             bot.entity.position.x = pos.x
             bot.entity.position.y = pos.y
             bot.entity.position.z = pos.z
@@ -88,7 +88,7 @@ function physicsPlugin(bot) {
             // Only reset/teleport count as corrections; normal own movement still synchronizes.
             if (mode !== 'rotation' && packet.position && packet.position.x !== undefined && bot.entity) {
                 bot.serverPosition = { ...packet.position }
-                const pos = require('../../../../src/positions').serverPosition(bot, packet.position, 'move_player')
+                const pos = require('../../../../src/bedrock/positions').serverPosition(bot, packet.position, 'move_player')
                 bot.entity.position.x = pos.x
                 bot.entity.position.y = pos.y
                 bot.entity.position.z = pos.z
@@ -120,7 +120,7 @@ function _simulateTick(bot) {
         bot.position = bot.entity.position.clone()
         _sendPositionPacket(bot, 0, (bot.motion?.following || bot.motion?.flight) && bot.controlState.forward ? -1 : 0); bot.tick++; bot.emit('physicsTick'); return
     }
-    if (require('../../../../src/positions').guardPenetration(bot)) {
+    if (require('../../../../src/bedrock/positions').guardPenetration(bot)) {
         markPhysics(bot, 'collision_hold', '体とブロックの重なり・位置補正待ち')
         _sendPositionPacket(bot, 0, 0); bot.tick++; bot.emit('physicsTick'); return
     }

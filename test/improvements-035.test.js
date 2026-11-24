@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),{Vec3}=require('vec3');
-const {adapter}=require('./helpers/adapter'),{Travel,sweptClear}=require('../src/travel'),{CrystalCombat}=require('../src/combat'),{groundPath}=require('../src/navigation');
+const {adapter}=require('./helpers/adapter'),{Travel,sweptClear}=require('../modules/movement/navigation/travel'),{CrystalCombat}=require('../modules/combat/crystal/combat'),{groundPath}=require('../modules/movement/navigation/navigation');
 const solid=(position,name='stone')=>({name,position,solid:true,boundingBox:'block',stateId:1});
 const air=position=>({name:'air',position,solid:false,isAir:true,boundingBox:'empty',stateId:0});
 function travelFixture(t){const {b,c,item,packets}=adapter(t);b.entity.position=new Vec3(.5,5,.5);b.blockAt=p=>Math.floor(p.y)<0?solid(new Vec3(p.x,p.y,p.z).floored()):air(new Vec3(p.x,p.y,p.z).floored());const r={bot:b,worker:{state:{}},config:{flyHorizontal:.85,flyVertical:.25,flightClearance:1,straightTimer:.24},notice(){}};r.travel=new Travel(r);return {b,c,item,packets,r,travel:r.travel};}

@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test');const assert=require('node:assert/strict');const EventEmitter=require('node:events');const {Vec3}=require('vec3');
-const physics=require('../vendor/bedrockflayer/lib/physics/engine');const {adaptInput}=require('../src/protocol');
+const physics=require('../vendor/bedrockflayer/lib/physics/engine');const {adaptInput}=require('../src/bedrock/protocol');
 test('stopped controls allow natural falling; own corrections sync and foreign players are ignored',t=>{
  t.mock.timers.enable({apis:['setInterval']});
  const bot=new EventEmitter();bot.client=new EventEmitter();const sent=[];bot.client.queue=(name,data)=>sent.push(data);bot.physicsEnabled=true;bot.passivePhysics=true;bot.tick=0;bot._runtimeEntityId=7n;

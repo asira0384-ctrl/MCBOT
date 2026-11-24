@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),{Vec3}=require('vec3');
-const {fixture,peer}=require('./helpers/mining-world'),{ConnectionKeeper}=require('../src/connection-keeper');
+const {fixture,peer}=require('./helpers/mining-world'),{ConnectionKeeper}=require('../src/app/connection-keeper');
 const {createSerializer,createDeserializer}=require('bedrock-protocol/src/transforms/serializer');
 
 for(const version of ['1.26.51','1.26.60'])for(const inventory of [false,true])test(`${version} Nether obsidian mining respects inventory authority=${inventory}`,async t=>{
@@ -43,10 +43,10 @@ test('automatic reconnect never loops a failed Microsoft authentication',async()
 });
 
 test('version aliases select the latest installed release or server discovery without overriding a pinned version',()=>{
- const {connectionVersion}=require('../src/server-version'),{CURRENT_VERSION}=require('bedrock-protocol/src/options');
+ const {connectionVersion}=require('../src/bedrock/server-version'),{CURRENT_VERSION}=require('bedrock-protocol/src/options');
  assert.equal(CURRENT_VERSION,'1.26.60');assert.equal(connectionVersion(1,{MC_VERSION:'latest'}),'1.26.60');assert.equal(connectionVersion(11,{IGN_VERSION:'latest'}),'1.26.60');assert.equal(connectionVersion(1,{}),undefined);assert.equal(connectionVersion(11,{IGN_VERSION:'auto'}),undefined);assert.equal(connectionVersion(1,{MC_VERSION:'1.26.51'}),'1.26.51');assert.throws(()=>connectionVersion(1,{MC_VERSION:'broken'}));
 });
 
 for(const [version,count,protocol]of [['1.26.51',22091,2193],['1.26.60',23960,2225]])test(`${version} has a complete, non-air-substituting network block palette`,()=>{
- const registry=require('prismarine-registry')('bedrock_'+version),{install}=require('../src/network-palette');for(const hashed of [false,true]){const palette=install(registry,version,hashed);assert.equal(palette.info.protocol,protocol);assert.equal(palette.info.entries,count);assert.equal(palette.ordered.size,count);for(const name of ['air','obsidian','netherrack','bedrock']){const state=registry.blocksByName[name].defaultState,id=palette.reverse.get(state);assert.equal((hashed?palette.hashes:palette.ordered).get(id).name,name);}}
+ const registry=require('prismarine-registry')('bedrock_'+version),{install}=require('../src/bedrock/network-palette');for(const hashed of [false,true]){const palette=install(registry,version,hashed);assert.equal(palette.info.protocol,protocol);assert.equal(palette.info.entries,count);assert.equal(palette.ordered.size,count);for(const name of ['air','obsidian','netherrack','bedrock']){const state=registry.blocksByName[name].defaultState,id=palette.reverse.get(state);assert.equal((hashed?palette.hashes:palette.ordered).get(id).name,name);}}
 });

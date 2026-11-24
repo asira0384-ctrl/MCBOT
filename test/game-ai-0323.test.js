@@ -1,5 +1,5 @@
 'use strict';
-const test=require('node:test'),assert=require('node:assert/strict'),{handle}=require('../src/game-ai');
+const test=require('node:test'),assert=require('node:assert/strict'),{handle}=require('../modules/chat/ai/game-ai');
 test('shared chat replies once, includes real bot and requester, and does not authorize training from raw display names',async()=>{
  const answers=[],m={store:{data:{gameAI:{mode:'all',allow:[],notes:[]}},authorized:()=>true,save:()=>{}},workers:new Map()},w={id:3,mode:'running',running:true,miner:{state:'Y84'},bot:{connected:true,config:{host:'test'},players:new Map([['alice',{xuid:'12345'}]]),chat:s=>answers.push(s)}};m.workers.set(3,w);
  for(let i=0;i<2;i++)await handle(m,w,{type:'raw'}, {name:'Alice',message:'!ai いまなにしてる？'});assert.deepEqual(answers,['[Bot3][IGNGPT] @Alice 採掘中。Y84']);

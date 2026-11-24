@@ -3,8 +3,8 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const {Vec3}=require('vec3');
 const {fixture}=require('./helpers/mining-world');
-const floor=require('../src/mining-floor');
-const {groundPathAsync}=require('../src/navigation');
+const floor=require('../modules/world/mining/mining-floor');
+const {groundPathAsync}=require('../modules/movement/navigation/navigation');
 
 test('fills a floor hole, preserves its block through cleanup and leaves adjacent terrain alone',async t=>{
  const f=fixture(t),hole=new Vec3(1,64,0),outside=new Vec3(2,64,0);
@@ -67,9 +67,9 @@ test('a block outside center reach can be aimed at its visible near face',t=>{
  const f=fixture(t),q=new Vec3(5,66,0);f.set(q,'obsidian');
  const target=f.b.blockAt(q),eye=f.b.entity.position.offset(0,1.62,0);
  assert(eye.distanceTo(q.offset(.5,.5,.5))>4.6);
- const aim=require('../src/mining-reach').aim(f.b,target,4.6);
+ const aim=require('../modules/world/mining/mining-reach').aim(f.b,target,4.6);
  assert(aim);assert.equal(aim.face,4);assert(eye.distanceTo(aim.point)<=4.6);
- f.set(new Vec3(3,66,0),'stone');assert.equal(require('../src/mining-reach').aim(f.b,target,4.6),null);
+ f.set(new Vec3(3,66,0),'stone');assert.equal(require('../modules/world/mining/mining-reach').aim(f.b,target,4.6),null);
 });
 
 test('an unconfirmed dig releases its claim and requires a different stance for the same block',async t=>{
@@ -88,7 +88,7 @@ test('walking climbs a one-block step with a delayed jump cooldown',async t=>{
 });
 
 test('mining stays paused between mob attacks and resumes after the last in-range mob leaves',async t=>{
- const f=fixture(t),{MobAura}=require('../src/modules/combat/mobaura');
+ const f=fixture(t),{MobAura}=require('../modules/combat/mob-aura/mobaura');
  f.w.running=true;f.w.mode='running';f.w.state.mobAura={enabled:true,range:4,delay:2000};
  f.b.items[2]=f.item('netherite_sword',22);f.w.mobAura=new MobAura(f.w);
  let scans=0;f.w.chooseTarget=()=>{scans++;return null;};f.w.explore=async()=>{};
@@ -101,7 +101,7 @@ test('mining stays paused between mob attacks and resumes after the last in-rang
 test('a new goto command takes movement away from Circle for the selected bot',t=>{
  const f=fixture(t),ring={excluded:new Set()};
  const runtime=Object.assign(f.r,{circle:ring,selfDefense:{stop(){}},follower:{stop(){}},manager:f.w.manager,notice(){}});
- require('../src/runtime').Runtime.prototype.requestMove.call(runtime,'walk','overworld',5,66,0);
+ require('../src/app/runtime').Runtime.prototype.requestMove.call(runtime,'walk','overworld',5,66,0);
  assert.equal(runtime.circle,null);assert(ring.excluded.has(f.w.id));assert.equal(runtime.paused,false);
  assert.deepEqual(runtime.pendingMove,['walk','overworld',5,66,0]);
 });

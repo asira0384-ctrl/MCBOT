@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {Vec3}=require('vec3'),{adapter}=require('./helpers/adapter'),{Runtime}=require('../src/runtime');
-const {inHole}=require('../src/combat'),{claim,release}=require('../src/hand');
+const {Vec3}=require('vec3'),{adapter}=require('./helpers/adapter'),{Runtime}=require('../src/app/runtime');
+const {inHole}=require('../modules/combat/crystal/combat'),{claim,release}=require('../modules/inventory/items/hand');
 const air=p=>({name:'air',position:new Vec3(p.x,p.y,p.z).floored(),solid:false,isAir:true,boundingBox:'empty',shapes:[],stateId:0});
 const block=(p,name='obsidian')=>({...air(p),name,solid:true,isAir:false,boundingBox:'block',shapes:[[0,0,0,1,1,1]],stateId:1});
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -107,7 +107,7 @@ test('Nukkit-style inventory state is closed before melee while a different slot
  await b.openInventory();assert(serverOpen);assert(b.inventoryOpen);b.closeContainer();
 });
 test('AutoSlot protects a combat-held stack and resumes the deferred move after the action lease ends',async t=>{
- const {b,item}=adapter(t),equipment=require('../src/equipment');b.items[1]=item('end_crystal');b.select(1);const lease=claim(b);
+ const {b,item}=adapter(t),equipment=require('../modules/inventory/equipment/equipment');b.items[1]=item('end_crystal');b.select(1);const lease=claim(b);
  assert.equal(await equipment.autoSlots(b),false);assert.equal(b.name(b.items[1]),'end_crystal');assert.equal(b.items[6],null);release(b,lease);
  assert.equal(await equipment.autoSlots(b),true);assert.equal(b.name(b.items[6]),'end_crystal');assert.equal(b.items[1],null);
 });

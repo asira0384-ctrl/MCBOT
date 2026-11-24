@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),EventEmitter=require('node:events');
-const bedrock=require('bedrock-protocol'),{Store}=require('../src/store'),{Manager}=require('../src/manager'),UI=require('../web/ui-state');
+const bedrock=require('bedrock-protocol'),{Store}=require('../data/store'),{Manager}=require('../src/app/manager'),UI=require('../web/ui-state');
 function fixture(t){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'asira-login039-')),m=new Manager(require('./helpers/accounts').configured(new Store(dir))),clients=[],flows=[],original=bedrock.createClient;
  class Flow{
@@ -44,5 +44,5 @@ test('a persistence warning never turns an unconnected Microsoft login into a su
 
 test('a connection report includes failed pre-game authentication without exposing a device code or credential',async t=>{
  const {m,flows}=fixture(t);m.requestConnection(1);let report=m.connectionDiagnostic(1);assert(report.codePending);assert(!JSON.stringify(report).includes('DEVICE-'));const pending=m.connectRequests.get(1).promise;flows[0].reject(Error('Xbox rejected'));await pending;report=m.connectionDiagnostic(1);assert.equal(report.connection.state,'failed');assert.match(report.connection.error,/Xbox rejected/);assert(!m.workers.has(1));
- const {ControlPanel}=require('../src/panel');const diagnostic=new ControlPanel(m,'owner').diagnostic({target:'1'});assert.equal(diagnostic.bots[0].authentication.connection.state,'failed');assert(!JSON.stringify(diagnostic).includes('PRIVATE-CREDENTIAL'));
+ const {ControlPanel}=require('../web/server/panel');const diagnostic=new ControlPanel(m,'owner').diagnostic({target:'1'});assert.equal(diagnostic.bots[0].authentication.connection.state,'failed');assert(!JSON.stringify(diagnostic).includes('PRIVATE-CREDENTIAL'));
 });

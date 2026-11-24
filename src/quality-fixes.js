@@ -7,7 +7,7 @@ const Module = require('node:module');
 const previous = require('./hotfix');
 const root = path.resolve(__dirname, '..');
 const replacements = {
-  'src/manager.js': [
+  'src/app/manager.js': [
     [
       "if(this.workers.has(id))return '接続済み・認証中です。statusで現在の段階を確認できます';",
       "const existing=this.workers.get(id);if(existing&&(existing.bot?.ended||existing.mode==='disconnected')){existing.destroy?.();this.workers.delete(id);}else if(existing)return '接続済み・認証中です。statusで現在の段階を確認できます';"
@@ -17,7 +17,7 @@ const replacements = {
       "this.trace(id,`接続先: ${bot.config.host}:${bot.config.port} / 通信版: ${bot.config.version||'広告から自動選択'} / Server: ${realm}`);"
     ]
   ],
-  'src/desktop-extra.js': [
+  'desktop/bridge/desktop-extra.js': [
     [
       "case 'endpoint':{if(!['ign','2b2e'].includes(d.realm))",
       `case 'connect-route': {
@@ -43,7 +43,7 @@ const replacements = {
 case 'endpoint':{if(!['ign','2b2e'].includes(d.realm))`
     ]
   ],
-  'src/desktop-modules.js': [
+  'desktop/bridge/desktop-modules.js': [
     [
       "const spamFields=[T('Messages'),R('Interval',5,5,120,.5),",
       "const spamFields=[T('Messages'),R('Interval',5,1,120,.5),"
@@ -57,7 +57,7 @@ case 'endpoint':{if(!['ign','2b2e'].includes(d.realm))`
       "if(w?.runtime&&on!==null)w.runtime[key+'Next']=on===true?0:Infinity;lines.push(n+' updated');"
     ]
   ],
-  'src/panel.js': [
+  'web/server/panel.js': [
     [
       "s.result=await this.manager.execute(s.target,cmd);}\n   await i.editReply(this.render(s));",
       `if(cmd==='connect'){
@@ -83,7 +83,7 @@ function transform(file,source) {
  return result;
 }
 const ownFiles=new Set([...Object.keys(replacements)]);
-const baseFixed=new Set(['src/panel.js','src/discord.js','src/web.js','src/manager.js','src/accounts.js']);
+const baseFixed=new Set(['web/server/panel.js','discord/bot/discord.js','web/server/web.js','src/app/manager.js','src/auth/accounts.js']);
 let installed=false;
 function install(){
  if(installed)return;installed=true;

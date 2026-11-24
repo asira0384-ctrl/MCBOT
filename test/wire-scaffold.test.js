@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),{Vec3}=require('vec3');
-const navigation=require('../src/navigation'),{validMotion,remember}=require('../src/packet-safety'),{adaptInput}=require('../src/protocol');
+const navigation=require('../modules/movement/navigation/navigation'),{validMotion,remember}=require('../src/diagnostics/packet-safety'),{adaptInput}=require('../src/bedrock/protocol');
 test('a longer existing ground route takes priority over a scaffold shortcut',()=>{
  const source={blockAt(p){p=new Vec3(p.x,p.y,p.z).floored();const solid=p.y===64&&(p.x===0&&p.z>=0&&p.z<=24||p.x===6&&p.z>=0&&p.z<=24||p.z===24&&p.x>=0&&p.x<=6);return {position:p,name:solid?'stone':'air',solid,isAir:!solid,shapes:solid?[[0,0,0,1,1,1]]:[],diggable:solid,hardness:solid?1:0};}};
  const start=new Vec3(0,65,0),goal=new Vec3(6,65,0),options={radius:32,limit:6000,maxDrop:0};const natural=navigation.groundPath(source,start,goal,options);assert(natural.reached);assert(natural.cost>6*1.8+4);

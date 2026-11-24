@@ -2,7 +2,7 @@
 
 Minecraft統合版のBotをDiscordとWebから操作する、既存MCBOTサービス用の更新版です。最大20アカウントを登録できます。
 
-[更新ガイド](UPDATE-v0.3.23-JA.md) · [初回設定](START-HERE-JA.md) · [Web操作](WEB-GUIDE-JA.md) · [コマンド](COMMANDS-JA.md) · [検証記録](VALIDATION-v0.3.23.md)
+[更新ガイド](UPDATE-v0.3.23-JA.md) · [初回設定](docs/START-HERE-JA.md) · [Web操作](docs/WEB-GUIDE-JA.md) · [コマンド](docs/COMMANDS-JA.md) · [検証記録](VALIDATION-v0.3.23.md)
 
 ## 今回の変更
 
@@ -38,3 +38,6 @@ Node.js 24を使います。`.env.example` を `.env` にコピーし、Discord 
 429件の自動テスト成功。PC・スマホのブラウザで、登録した人のログイン・操作・解除を確認しました。実NBT・アイテムID・パケット形式・衝突物理を用いて確認しています。実Microsoft/Discord認証、Railway本番、2b2e/IGN実接続と20体同時稼働は未確認です。
 
 過去の変更は [v0.3.17](UPDATE-v0.3.17-JA.md)、[v0.3.16](UPDATE-v0.3.16-JA.md)、[v0.3.15](UPDATE-v0.3.15-JA.md) に記録しています。操作は本版のガイドを優先してください。
+
+
+[開発者向けフォルダ案内](docs/DEVELOPER-GUIDE-JA.md)

@@ -1,5 +1,5 @@
 'use strict';
-const test=require('node:test'),assert=require('node:assert/strict'),EventEmitter=require('node:events');const {Vec3}=require('vec3'),{World}=require('../src/world'),Stream=require('prismarine-chunk/src/bedrock/common/Stream'),Storage=require('prismarine-chunk/src/bedrock/common/PalettedStorage');
+const test=require('node:test'),assert=require('node:assert/strict'),EventEmitter=require('node:events');const {Vec3}=require('vec3'),{World}=require('../src/bedrock/world'),Stream=require('prismarine-chunk/src/bedrock/common/Stream'),Storage=require('prismarine-chunk/src/bedrock/common/PalettedStorage');
 function fixture(hash=false){const b=new EventEmitter();b.client={options:{version:'1.26.51'},queue(){}};b.dimensionId=0;b.entity={position:new Vec3(.5,70,.5)};const w=new World(b);w.init({block_network_ids_are_hashes:hash});return {b,w};}
 function writeID(s,n){s.writeVarInt(((n<<1)^(n>>31))>>>0);}
 function compact(id){const s=new Stream();s.writeUInt8(9);s.writeUInt8(1);s.writeUInt8(4);s.writeUInt8(1);writeID(s,id);return s.getBuffer();}

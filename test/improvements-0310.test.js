@@ -1,8 +1,8 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {Vec3}=require('vec3'),{adapter}=require('./helpers/adapter'),{Runtime}=require('../src/runtime');
-const {groundPath}=require('../src/navigation'),{CrystalCombat}=require('../src/combat'),{rayClear,facePoint}=require('../src/geometry');
-const {claim,release}=require('../src/hand');
+const {Vec3}=require('vec3'),{adapter}=require('./helpers/adapter'),{Runtime}=require('../src/app/runtime');
+const {groundPath}=require('../modules/movement/navigation/navigation'),{CrystalCombat}=require('../modules/combat/crystal/combat'),{rayClear,facePoint}=require('../src/shared/geometry');
+const {claim,release}=require('../modules/inventory/items/hand');
 const air=p=>({name:'air',position:new Vec3(p.x,p.y,p.z).floored(),solid:false,isAir:true,boundingBox:'empty',shapes:[],stateId:0});
 const block=(p,name='obsidian',shapes=[[0,0,0,1,1,1]])=>({...air(p),name,solid:true,isAir:false,boundingBox:'block',shapes,stateId:1});
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));

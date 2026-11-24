@@ -1,5 +1,5 @@
 'use strict';
-const test=require('node:test');const assert=require('node:assert/strict');const zlib=require('node:zlib');const {Vec3}=require('vec3');const {renderView}=require('../src/view');
+const test=require('node:test');const assert=require('node:assert/strict');const zlib=require('node:zlib');const {Vec3}=require('vec3');const {renderView}=require('../web/server/view');
 function rawPNG(b){assert.equal(b.subarray(1,4).toString(),'PNG');const parts=[];for(let i=8;i<b.length;){const n=b.readUInt32BE(i);if(b.toString('ascii',i+4,i+8)==='IDAT')parts.push(b.subarray(i+8,i+8+n));i+=12+n;}return zlib.inflateSync(Buffer.concat(parts));}
 test('view renders real received blocks, distinguishes unknown terrain and never moves the bot',()=>{
  const bot={connected:true,entity:{position:new Vec3(128,68.38,128),yaw:0,pitch:0},blockAt:()=>null};const before=bot.entity.position.clone();

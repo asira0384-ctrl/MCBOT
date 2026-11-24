@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),{Vec3}=require('vec3');
-const {airPath,groundPath}=require('../src/navigation'),{sweptClear,Travel}=require('../src/travel');
+const {airPath,groundPath}=require('../modules/movement/navigation/navigation'),{sweptClear,Travel}=require('../modules/movement/navigation/travel');
 function block(name){return {name,solid:['stone','obsidian'].includes(name),isAir:name==='air',isLiquid:name==='water'};}
 test('flight plans around a loaded wall and discards the route when new terrain blocks it',()=>{const bot={blockAt:p=>block(Math.floor(p.x)===3&&p.z<3&&p.z> -3&&p.y<12?'obsidian':'air')};const start=new Vec3(.5,5,.5),goal=new Vec3(7.5,5,.5),path=airPath(bot,start,goal,sweptClear);assert(path.length);let p=start;for(const n of path){assert(sweptClear(bot,p,n.position,.75));p=n.position;}assert(p.distanceTo(goal)<1);assert(path.some(n=>Math.abs(n.position.z)>.5));bot.blockAt=()=>block('obsidian');assert.deepEqual(airPath(bot,start,goal,sweptClear),[]);});
 test('ground planner prefers a short dry detour to swimming, but crosses water when enclosed',()=>{const bot={blockAt:p=>block(p.y===0?'stone':p.y===1&&p.x===2&&p.z===0?'water':'air')},start=new Vec3(0,1,0),goal=new Vec3(4,1,0);const path=groundPath(bot,start,goal);assert(path.length);assert(path.every(n=>n.action==='walk'));bot.blockAt=p=>block(p.y===0||Math.abs(p.z)>0?'stone':p.y===1&&p.x===2?'water':'air');assert(groundPath(bot,start,goal).some(n=>n.action==='swim'));});
