@@ -23,7 +23,7 @@ const catalog={
  Velocity:{group:'Movement',cmd:'velocity',key:'velocity',settings:[R('Horizontal',0,0,100),R('Vertical',0,0,100)]},
  AutoTPA:{group:'Exploit',settings:[T('Target')]},
  CustomCommand:{group:'Exploit',action:true,settings:[T('Command','/help')]},
- Nuke:{group:'World',settings:[T('Min X','0'),T('Max X','16'),T('Min Z','0'),T('Max Z','16'),R('Floor',0,-64,318),R('Ceiling',127,-63,319),R('Range',5,1,6,.1)]},
+ Nuke:{group:'World',settings:[T('Start X','0'),T('Start Y','1'),T('Start Z','0'),T('End X','16'),T('End Y','127'),T('End Z','16'),R('Range',5,1,6,.1),T('Blocks','all'),B('Scaffold',true),T('Scaffold Block','cobblestone'),R('Max Drop',64,1,64)]},
  Supply:{group:'World',cmd:'supply',settings:[]},
  Gemini:{group:'Chat',settings:[E('Access','list',['list','all']),T('Allowed Players'),T('Model','gemini-3.1-flash-lite'),T('City','Tokyo'),B('Debug',false)]},
  Greeter:{group:'Chat',settings:[T('Players'),T('Join','Hello @player!'),T('Leave'),T('Chat'),E('Delivery','all',['all','rotate'])]},
@@ -66,7 +66,7 @@ function snapshot(m){return [...m.names.keys()].map(id=>{const s=m.store.bot(id)
  for(const n of ['Circle','Orbit']){const c=m.circles?.[m.realm(id)];states[n]=!!c&&!!c.orbit===(n==='Orbit')&&!c.excluded.has(id);if(c)values[n]={Center:c.centerMode||'Player',Target:c.name||'',X:String(c.x??0),Y:String(c.y??64),Z:String(c.z??0),Radius:c.radius,'Angular Speed':c.speed||.5,Direction:c.direction===-1?'Counterclockwise':'Clockwise',Jump:!!c.jump};}
  Object.assign(values.AutoEat,{Health:cfg.healHearts*2});Object.assign(values.AutoLog,{Health:cfg.logHearts*2,Condition:cfg.logMode||'empty-health',Absorption:!!cfg.logAbsorption});
  values.Speed={Speed:cfg.chaseSpeed};values.Timer={Multiplier:cfg.straightTimer};values.LavaWalk={'Lava Speed':cfg.lavaSpeed};values.NoSlow={'Eat Speed':cfg.eatSpeed};values.AutoKit={Kit:s.ignActions?.kitName||''};values.AutoWorld={World:s.ignActions?.worldName||''};values.ElytraFly={...values.ElytraFly,Horizontal:cfg.flyHorizontal,Vertical:cfg.flyVertical};values.AutoEmote={Interval:s.cosmetic?.seconds||10};values.SkinStealer={Player:s.cosmetic?.target||''};values.Follow={Target:s.follow?.name||'',Mode:s.follow?.mode||'direct',Distance:s.follow?.distance||2};
- values.Nuke={'Min X':String(s.area?.x1??0),'Max X':String(s.area?.x2??16),'Min Z':String(s.area?.z1??0),'Max Z':String(s.area?.z2??16),Floor:s.floor??0,Ceiling:s.ceiling??127,Range:s.miningRange??5};
+ values.Nuke=require('./modules/world/nuke').values(s);
  values.Greeter={Players:s.greeting?.targets?.join('\n')||'',Join:s.greeting?.join?.join('\n')||'',Leave:s.greeting?.leave?.join('\n')||'',Chat:s.greeting?.chat?.join('\n')||'',Delivery:s.greeting?.delivery||'all'};
  values.AutoReply={Players:s.replies?.targets?.join('\n')||'',Messages:s.replies?.messages?.join('\n')||''};
  const ai=require('./game-ai').settings(m.store);values.Gemini={Access:ai.mode,'Allowed Players':ai.allow.join('\n'),Model:ai.model,City:ai.city,Debug:ai.debug};
@@ -80,7 +80,7 @@ async function apply(web,session,d){
  const owner=()=>web.requireOwner(session);
  const cmd=(id,text)=>m.execute(String(id),text,'web');
  const coord=k=>{const x=Number(v[k]);if(!Number.isFinite(x)||Math.abs(x)>30000000)throw fail(k+' coordinate is invalid');return x;};
- if(n==='Nuke'){['Min X','Max X','Min Z','Max Z'].forEach(k=>{if(!Number.isInteger(coord(k)))throw fail('Mining coordinates must be integers')});if(v.Floor>=v.Ceiling)throw fail('Floor must be below Ceiling');}
+
  if(n==='AutoWalk'||n==='ElytraFly')for(const k of ['X','Y','Z'])coord(k);
  if(['CustomCommand','AutoTPA','Gemini'].includes(n))owner();
  if(n==='Gemini'){const old=require('./game-ai').settings(m.store);require('./game-ai').configure(m.store,{mode:v.Access,allow:v['Allowed Players'],notes:old.notes.join('\n'),city:v.City,model:v.Model,key:'',debug:v.Debug});if(on!==null)m.store.data.desktopAIEnabled=on;m.store.save();return {ok:true,result:'IGNGPT settings saved'};}
@@ -109,7 +109,7 @@ async function apply(web,session,d){
  if(n==='AutoLog'){lines.push(await cmd(id,'autolog '+(on===null?((s.runtime?.autolog??true)?'on':'off'):on?'on':'off')+' '+v.Health/2));lines.push(await cmd(id,'autolog mode '+v.Condition));lines.push(await cmd(id,'autolog absorption '+(v.Absorption?'on':'off')));}
  if(n==='Follow'){lines.push(await cmd(id,'follow distance '+v.Distance));lines.push(await cmd(id,'follow mode '+v.Mode));if(on!==null||s.follow?.enabled)lines.push(await cmd(id,on===false?'follow off':'follow '+v.Target));}
  if(n==='AutoWalk'&&on!==null)lines.push(await cmd(id,on?'goto walk '+v.Dimension+' '+['X','Y','Z'].map(coord).join(' '):'stop'));
- if(n==='Nuke'){if(on!==false){lines.push(await cmd(id,'area '+['Min X','Min Z','Max X','Max Z'].map(coord).join(' ')));if(s.floor!==null&&s.floor>=v.Ceiling)lines.push(await cmd(id,'floor -64'));lines.push(await cmd(id,'ceiling '+v.Ceiling));lines.push(await cmd(id,'floor '+v.Floor));lines.push(await cmd(id,'miningrange '+v.Range));}if(on!==null)lines.push(await cmd(id,on?'start':'stop'));}
+ if(n==='Nuke')lines.push(require('./modules/world/nuke').apply(m,id,v,on));
  if(n==='AutoEmote')lines.push(await cmd(id,'autoemote '+(on===false?'off':on===null&&!s.cosmetic?.seconds?'off':v.Interval)));
  if(n==='SkinStealer'&&(on!==null||s.cosmetic?.target))lines.push(await cmd(id,'skinstealer '+(on===false?'off':v.Player)));
  if(n==='Greeter'||n==='AutoReply'){const section=n==='Greeter'?'greeting':'replies',old=require('./messaging').config(m,id,section,w?.bot),enabled=on===null?old.enabled:on;require('./messaging').configure(m,[id],section,n==='Greeter'?{enabled,targets:v.Players,join:v.Join,leave:v.Leave,chat:v.Chat,delivery:v.Delivery}:{enabled,targets:v.Players,messages:v.Messages});lines.push('Chat settings saved');}

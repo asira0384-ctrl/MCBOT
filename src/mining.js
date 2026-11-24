@@ -49,7 +49,7 @@ class ChunkMining{
   const active=[...preferred,...borrowed];if(this.chunk&&active.includes(this.chunk))active.splice(active.indexOf(this.chunk),1),active.unshift(this.chunk);
   const reserved=new Set([...w.manager.workers.values()].filter(other=>other!==w&&other.running&&other.bot.connected&&sameWorld(w,other)&&(other.busy||other.approachPlan)&&other.miningTarget&&(other.failed.get(key(other.miningTarget.position))||0)<=Date.now()).map(other=>key(other.miningTarget.position)));let waitingTerrain=null;
   for(const c of active){const found=read(c,this.layer);if(!found.blocks.length&&!found.unknown){c.dirty=true;continue;}
-   if(found.unknown){b.worldMirror?.request(c.x,c.z,(w.state.floor+1)>>4,this.top()>>4);waitingTerrain??=c;continue;}
+   if(found.unknown){b.worldMirror?.request(c.x,c.z,(w.state.floor+1)>>4,this.top()>>4);waitingTerrain??=c;if(!found.blocks.length)continue;}
    const targets=[];for(const block of found.blocks){if(w.underPlayer(block.position)){this.supportBlocks.push({...block.position});continue;}if((w.failed.get(key(block.position))||0)>Date.now()||w.manager.claims.has(`${b.dimensionId}:${key(block.position)}`)||reserved.has(key(block.position)))continue;targets.push(block);}
    if(targets.length){this.chunk=c;this.index=this.allChunks.indexOf(c);this.assisting=!this.chunks.includes(c);const usable=new Map(targets.map(t=>[t,!!(b.reach?.(t)&&b.visible?.(t))]));targets.sort((a,c)=>Number(usable.get(c))-Number(usable.get(a))||feet.distanceTo(a.position)-feet.distanceTo(c.position));this.state=`上から採掘${this.assisting?'・空いたBotで応援':''} / Y${this.layer} / チャンク ${this.index+1}/${this.allChunks.length} (${c.x},${c.z})`;return targets[0];}
   }
