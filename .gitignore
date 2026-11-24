@@ -1,6 +1,0 @@
-node_modules/
-/data/*
-!/data/*.js
-.env
-*.log
-*_packetReadError.txt
