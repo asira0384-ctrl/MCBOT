@@ -45,7 +45,21 @@ class Travel{
   if(Date.now()<(this.runtime.speedBlockedUntil||0)||speed===0){if(this.runtime.protectAnti?.())speed=undefined;else{this.stopFollowing();this.waiting='位置補正後の待機・経路を再確認中';return false;}}
   const old=this.following;this.following={...old,kind,destination:destination.clone(),stopRadius,speed,plannedAt:old?.kind===kind?old.plannedAt||0:0,path:old?.kind===kind?old.path:null};
   if(!old||old.kind!==kind||old.destination.distanceTo(destination)>2&&Date.now()-(old.plannedAt||0)>750)this.following.plannedAt=0;
-  const f=this.following;if(!f.plannedAt||Date.now()-f.plannedAt>1000&&b.entity.onGround!==false){f.path=require('./navigation').groundPath(b,pose,destination,{stopRadius:Math.max(.7,stopRadius-.6),jumpGaps:false,limit:260,radius:32,maxDrop:this.dropLimit(),blocked:(a,c)=>this.edgeBlocked(a,c)});f.plannedAt=Date.now();}
+  const f=this.following;
+  if(!f.plannedAt||Date.now()-f.plannedAt>1000&&b.entity.onGround!==false){
+   const nav=require('./navigation'),options={stopRadius:Math.max(.7,stopRadius-.6),jumpGaps:false,limit:260,radius:32,maxDrop:this.dropLimit(),blocked:(a,c)=>this.edgeBlocked(a,c)};
+   if(kind==='circle'){
+    if(!this.circleSearch){
+     const controller=this.circleSearch=new AbortController();
+     const origin=pose.clone(),goal=destination.clone(),dimension=b.dimensionId;
+     nav.groundPathAsync(b,origin,goal,{...options,signal:controller.signal}).then(path=>{
+      const current=this.following;
+      if(controller.signal.aborted||current?.kind!=='circle'||b.dimensionId!==dimension||b.entity.position.distanceTo(origin)>1.5||current.destination.distanceTo(goal)>2)return;
+      current.path=path;current.plannedAt=Date.now();
+     }).catch(error=>{if(!controller.signal.aborted)this.waiting=error.message;}).finally(()=>{if(this.circleSearch===controller)this.circleSearch=null;});
+    }
+   }else{f.path=nav.groundPath(b,pose,destination,options);f.plannedAt=Date.now();}
+  }
   while(f.path?.length&&(f.path[0].action==='swim'?Math.hypot(pose.x-f.path[0].position.x-.5,pose.z-f.path[0].position.z-.5)<.35:pose.distanceTo(f.path[0].position.offset(.5,0,.5))<.3))f.path.shift();
   const gap=kind==='chase'?this.gapGoal(destination):null;if(gap&&(!f.path?.length||f.path.length>pose.distanceTo(gap)*1.8)){this.flight={goal:gap,gap:true,combat:true,landing:true,expires:Date.now()+4000};this.waiting='約4ブロック以内の隙間を低速GLIDEで追尾';return true;}
   const next=f.path?.[0];if(next){const point=next.position.offset(.5,0,.5),remaining=pose.distanceTo(point);if(!f.progress||f.progress.key!==require('./util').key(next.position)||remaining<f.progress.remaining-.06){f.progress={key:require('./util').key(next.position),remaining,at:Date.now(),origin:pose.floored()};}else if(b.entity.onGround!==false&&Date.now()-f.progress.at>1600){this.failedStep(f.progress.origin,next.position,'追従中の段差・障害物で進めないため迂回');f.path=null;f.plannedAt=0;f.progress=null;this.bot.clearControlStates();return false;}}if(!next||next.action==='scaffold'){b.clearControlStates();b.desiredMoveSpeed=undefined;b.desiredMoveWorld=null;this.waiting='移動経路を再確認中';return false;}
@@ -53,7 +67,7 @@ class Travel{
   const point=next.position.offset(.5,0,.5),direction=point.minus(pose),length=Math.hypot(direction.x,direction.z)||1;b.desiredMoveWorld={x:direction.x/length,z:direction.z/length};if(!b.actionHandBusy&&!this.runtime.paOwnsHand?.())b.lookAt(point.offset(0,1.62,0),false);b.setControlState('forward',true);b.setControlState('jump',require('./navigation').water(b.blockAt(pose.offset(0,1.62,0)))||(['jump','shore'].includes(next.action)&&point.y-pose.y>.1&&point.y-pose.y<=1.05));b.setControlState('sprint',false);b.desiredMoveSpeed=this.movementSpeed(speed)>0?Math.min(this.movementSpeed(speed),Math.hypot(point.x-pose.x,point.z-pose.z)):undefined;
   this.waiting=kind==='chase'?`敵を追尾中${speed?' / 速度'+speed:''}`:'徒歩移動中';return true;
  }
- stopFollowing(){this.following=null;this.bot.desiredMoveSpeed=undefined;this.bot.desiredMoveWorld=null;for(const key of ['forward','back','left','right','jump','sprint'])this.bot.setControlState(key,false);}
+ stopFollowing(){this.circleSearch?.abort();this.circleSearch=null;this.following=null;this.bot.desiredMoveSpeed=undefined;this.bot.desiredMoveWorld=null;for(const key of ['forward','back','left','right','jump','sprint'])this.bot.setControlState(key,false);}
  failedStep(from,to,reason,ttl=6000){this.failedEdges??=new Map();for(const [k,t]of this.failedEdges)if(t<=Date.now())this.failedEdges.delete(k);this.failedEdges.set(this.edgeKey(from,to),Date.now()+ttl);this.groundPlan=null;this.lastPathFailure={at:Date.now(),from:{...from},to:{...to},reason};this.bot.worldMirror?.request(to.x>>4,to.z>>4,to.y>>4,(to.y+1.8)>>4,{force:true});}
  edgeKey(from,to){const key=require('./util').key;return `${this.bot.dimensionId}:${key(from)}>${key(to)}`;}
  edgeBlocked(from,to){return (this.failedEdges?.get(this.edgeKey(from,to))||0)>Date.now();}
@@ -68,8 +82,23 @@ class Travel{
   if(distance<.16&&Math.abs(delta.y)<.25){this.stopFollowing();return false;}
   // Keep the chosen adjacent step while jumping or entering its cell. Running
   // A* again from that same cell used to return [] before the feet had arrived.
-  const gap=walking.action==='jump-gap';if(gap&&!b.entity.onGround)walking.launched=true;
-  const jumping=gap?!walking.launched&&b.entity.onGround:['jump','shore'].includes(walking.action)&&delta.y>.12&&delta.y<=1.05;
+  const gap=walking.action==='jump-gap',step=walking.action==='jump';
+  let jumping=walking.action==='shore'&&delta.y>.12;
+  if(step||gap){
+   const grounded=b.entity.onGround,origin=walking.origin;
+   if(!grounded)walking.inAir=true;
+   if(grounded&&walking.inAir){
+    walking.inAir=false;
+    if(delta.y>.25||gap&&distance>.45){
+     walking.missed=(walking.missed||0)+1;
+     if(walking.missed>=2){walking.error='着地位置を確認し、別の段差から上がります';this.stopFollowing();return false;}
+    }
+   }
+   const direction=goal.minus(origin.offset(.5,0,.5)),length=Math.hypot(direction.x,direction.z)||1;
+   const forward=((p.x-origin.x-.5)*direction.x+(p.z-origin.z-.5)*direction.z)/length;
+   const ready=gap?forward>=.09&&forward<.77:distance<=1.08&&delta.y>.12&&delta.y<=1.05;
+   jumping=grounded&&ready&&(b._jumpCooldown||0)<=0;
+  }
   this.following={kind:'walk-step',destination:goal.clone(),stopRadius:.16,speed:undefined,path:null};
   b.desiredMoveWorld=distance>.04?{x:delta.x/distance,z:delta.z/distance}:null;b.desiredMoveSpeed=Math.min(this.movementSpeed(gap?.27:.21),distance);b.setControlState('sneak',false);
   const paused=Date.now()<(this.runtime.speedBlockedUntil||0);if(paused)walking.progressAt=Date.now();b.setControlState('forward',distance>.06&&!paused);b.setControlState('jump',jumping&&!paused);b.setControlState('sprint',false);
@@ -188,13 +217,15 @@ class Travel{
   this.waiting=r.mode==='dig'?'採掘しながら移動中':'徒歩移動中';await this.walk(r.destination,r.mode,signal);
  }
  async walk(destination,mode,signal,{until,allowScaffold=true,minY=-64}={}){const b=this.bot,p=b.entity.position,dx=destination.x-p.x,dz=destination.z-p.z;
+  if(this.runtime.worker.running||this.runtime.worker.cleanupRequested)minY=Math.max(minY,Math.min(p.floored().y,this.runtime.worker.state.floor+1));
+  if(destination.y<minY)throw Object.assign(Error('指定床より低い経路を除外しました'),{code:'PATH_WAIT'});
   if(until?.()||p.distanceTo(destination)<.22){this.stopFollowing();return;}
   if(p.floored().equals(destination.floored())&&require('./navigation').pass(b,destination.floored())){await this.moveStep(destination,'walk',signal,until);return;}
   const state=this.runtime.worker.state,stocked=allowScaffold&&state.scaffoldEnabled!==false&&(b.list?.().find(i=>i.name===state.scaffold)||b.list?.().find(i=>['cobblestone','stone','dirt','obsidian','slime','slime_block'].includes(i.name)));
   const signature=JSON.stringify([b.dimensionId,destination.x,destination.y,destination.z,mode,minY,this.lavaAllowed(),stocked?.name,state.floor,this.runtime.worker.running,this.runtime.worker.miner?.layer,state.miningFilter,this.dropLimit()]);
   let plan=this.groundPlan;if(plan?.signature!==signature||Date.now()-plan.at>15000)plan=null;
   if(plan){while(plan.path.length&&(['swim','lava'].includes(plan.path[0].action)?Math.hypot(b.entity.position.x-plan.path[0].position.x-.5,b.entity.position.z-plan.path[0].position.z-.5):b.entity.position.distanceTo(plan.path[0].position.offset(.5,0,.5)))<.28)plan.path.shift();const first=plan.path[0];if(first&&!['dig','pillar'].includes(first.action)&&!require('./navigation').pass(b,first.position,this.lavaAllowed()))plan=null;}
-  if(!plan||!plan.path.length){const path=require('./navigation').groundPath(b,p,destination,this.groundOptions({block:stocked,dig:mode==='dig',minY}));plan=this.groundPlan={signature,path,goal:destination.clone(),dimension:b.dimensionId,at:Date.now(),reached:path.reached,cost:path.cost,radius:path.radius,origin:p.clone()};}
+  if(!plan||!plan.path.length){const path=await require('./navigation').groundPathAsync(b,p,destination,this.groundOptions({block:stocked,dig:mode==='dig',minY,signal}));if(signal?.aborted)throw Error('停止');plan=this.groundPlan={signature,path,goal:destination.clone(),dimension:b.dimensionId,at:Date.now(),reached:path.reached,cost:path.cost,radius:path.radius,origin:p.clone()};}
   const path=plan.path,next=path[0];if(next&&!plan.reached){const remaining=path.at(-1).position.offset(.5,0,.5).distanceTo(destination);if(Math.hypot(dx,dz)<(plan.radius||14)-2||remaining>p.distanceTo(destination)-4)throw Object.assign(Error('目的地までつながる経路を確認できません。部分経路を往復せず再探索します'),{code:'PATH_WAIT'});}
   if(next&&['walk','jump','drop','jump-gap','shore'].includes(next.action)){const support=b.blockAt(next.position.offset(0,-1,0));if(!support||support.name==='unknown'||!support.solid&&!support.isLiquid){this.failedStep(p.floored(),next.position,'移動先の支持ブロックが更新されました');throw Object.assign(Error('支持ブロックを再受信して経路を確認します'),{code:'PATH_WAIT'});}}
   if(next){if(next.action==='pillar'){await this.pillar(stocked,signal);return;}if(next.action==='dig'){for(const point of [next.position.offset(0,1,0),next.position]){const block=b.blockAt(point);if(block?.solid){if(!this.canDig(block))throw Error('採掘の範囲・対象外のブロックは壊しません');await this.breakObstacle(block,signal);}}next.action='walk';return;}if(next.action==='scaffold'){const support=next.position.offset(0,-1,0);if(!solid(b.blockAt(support))){try{await this.runtime.worker.placeOwned(support,b.find(stocked.name), 'scaffold',signal,{timeout:1800});}catch(error){if(signal?.aborted)throw error;this.failedStep(p.floored(),next.position,'足場の設置を確認できません: '+error.message);error.code='PATH_WAIT';this.stopFollowing();throw error;}}next.action=next.position.y>p.y+.5?'jump':'walk';this.waiting='設置を確認・足場へ移動中';}
@@ -209,8 +240,24 @@ class Travel{
   const b=this.bot,p=b.entity.position,feet=p.floored();if(require('./mining').columnBusy(this.runtime.worker,feet))throw Object.assign(Error('他のBotの上昇列を避けます'),{code:'PATH_WAIT'});if(!item)throw Error('積み上げるブロックがありません');if(this.runtime.protectAnti?.())throw Error('戦闘中のAntiを維持するため積み上げを待機します');
   if(!b.entity.onGround||!solid(b.blockAt(feet.offset(0,-1,0)))||!bodyClear(b,feet.offset(.5,1,.5)))throw Object.assign(Error('積み上げ用の足場・頭上を確認中'),{code:'PATH_WAIT'});
   const center=feet.offset(.5,0,.5);if(Math.hypot(p.x-center.x,p.z-center.z)>.12){const drive=()=>{const d=center.minus(b.entity.position),length=Math.hypot(d.x,d.z)||1;b.desiredMoveWorld={x:d.x/length,z:d.z/length};b.desiredMoveSpeed=Math.min(.12,length);b.setControlState('forward',true);};try{b.on('physicsTick',drive);drive();await b.waitUntil(()=>Math.hypot(b.entity.position.x-center.x,b.entity.position.z-center.z)<.12,2000,signal);}finally{b.removeListener('physicsTick',drive);this.stopFollowing();}}
-  await b.equip(item.slot,signal);this.stopFollowing();b.setControlState('jump',true);this.waiting='ジャンプして足元へ1個ずつ積み上げ';
-  try{await b.waitUntil(()=>b.entity.position.y>=feet.y+1.02,1200,signal);b.setControlState('jump',false);const block=b.find(item.name);if(!block)throw Error('積み上げるブロックがなくなりました');await this.runtime.worker.placeOwned(feet,block,'scaffold',signal);await b.waitUntil(()=>b.entity.onGround&&b.entity.position.y>=feet.y+.9,2200,signal);}finally{b.setControlState('jump',false);}
+  await b.equip(item.slot,signal);this.stopFollowing();
+  for(let attempt=1;attempt<=2;attempt++){
+   const state=this.jumpRecovery={phase:'ready',attempt,base:{...feet}};
+   try{
+    await b.waitUntil(()=>b.entity.onGround&&(b._jumpCooldown||0)<=0,2400,signal);
+    if(!b.entity.position.floored().equals(feet)||!solid(b.blockAt(feet.offset(0,-1,0))))throw Error('足場の位置が変わったため再探索します');
+    this.waiting='着地を確認・足元に積み上げ中';state.phase='takeoff';b.setControlState('jump',true);
+    await b.waitUntil(()=>b.entity.position.y>=feet.y+1.001&&b.entity.velocity.y>=0,2400,signal);
+    b.setControlState('jump',false);state.phase='placing';
+    const held=b.list().find(i=>i.slot===b.quickBarSlot&&i.name===item.name);
+    if(!held)throw Error('足場ブロックの持ち替えを確認できません');
+    await this.runtime.worker.placeOwned(feet,held,'scaffold',signal);
+    state.phase='landing';await b.waitUntil(()=>b.entity.onGround&&b.entity.position.y>=feet.y+.99,2400,signal);state.phase='landed';return;
+   }catch(error){
+    state.phase='retry';state.reason=error.message;
+    if(signal?.aborted||attempt===2||!air(b.blockAt(feet))||!b.connected||b.dead)throw error;
+   }finally{b.setControlState('jump',false);}
+  }
  }
  rememberAnti(){const p=this.bot.entity.position;if(this.embed)this.antiAnchor={original:this.embed.original,depth:this.embed.original-this.embed.y,x:p.x,z:p.z,dimension:this.bot.dimensionId,at:Date.now()};}
  prepareFloorEscape(){

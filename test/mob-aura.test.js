@@ -15,8 +15,8 @@ test('nearby mobs interrupt only mining hand work; eating and walls retain prior
 test('weapon selector keeps pickaxes out and supports sword-only and axe-only modes',t=>{
  const f=setup(t);assert.equal(mob.weapon(f.b,'Sword').name,'netherite_sword');assert.equal(mob.weapon(f.b,'Axe').name,'netherite_axe');f.b.items[2]=null;f.b.items[3]=null;assert.equal(mob.weapon(f.b,'Auto'),undefined);
 });
-test('missing weapons and attack cooldown never interrupt active mining',async t=>{
- const f=setup(t);f.b.actors.set('32',actor(32,'zombie'));const abort=f.w.abort=new AbortController();f.b.actionHandBusy={kind:'mining'};f.b.items[2]=null;f.b.items[3]=null;assert.equal(await f.w.mobAura.pulse(),false);assert.equal(abort.signal.aborted,false);f.b.items[2]=f.item('netherite_sword',12);f.w.mobAura.lastAttack=Date.now();assert.equal(await f.w.mobAura.pulse(),false);assert.equal(abort.signal.aborted,false);
+test('missing weapons allow mining; armed MobAura holds mining during cooldown',async t=>{
+ const f=setup(t);f.b.actors.set('32',actor(32,'zombie'));const abort=f.w.abort=new AbortController();f.b.actionHandBusy={kind:'mining'};f.b.items[2]=null;f.b.items[3]=null;assert.equal(await f.w.mobAura.pulse(),false);assert.equal(abort.signal.aborted,false);f.b.items[2]=f.item('netherite_sword',12);f.w.mobAura.lastAttack=Date.now();assert.equal(await f.w.mobAura.pulse(),false);assert.equal(abort.signal.aborted,true);assert(f.w.mobAura.holdsMining);
 });
 test('Combat settings enable and update MobAura without issuing a command that stops Nuke',async()=>{
  const desktop=require('../src/desktop-modules'),s={nukeEnabled:true,runtimePaused:true},w={running:true,runtime:{paused:true}},m={store:{bot:()=>s,save(){}},workers:new Map([[1,w]]),execute(){throw Error('legacy command must not run');}};const web={manager:m,targets:()=>[1]};assert.equal(desktop.catalog.MobAura.group,'Combat');

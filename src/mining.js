@@ -12,18 +12,18 @@ function sameWorld(a,b){return a.bot.dimensionId===b.bot.dimensionId&&String(a.b
 function sameJob(a,b){return sameWorld(a,b)&&JSON.stringify(a.state.miningChunks||[])===JSON.stringify(b.state.miningChunks||[])&&JSON.stringify(a.state.area)===JSON.stringify(b.state.area)&&a.state.floor===b.state.floor&&a.state.ceiling===b.state.ceiling&&JSON.stringify(a.state.miningFilter||[])===JSON.stringify(b.state.miningFilter||[]);}
 function columnBusy(w,q){for(const o of w.manager?.workers?.values()||[]){if(o===w||!o.bot.connected||o.bot.dead||!sameWorld(w,o))continue;const p=o.bot.entity?.position;if(p&&Math.floor(p.x)===q.x&&Math.floor(p.z)===q.z&&Math.abs(p.y-q.y)<3)return true;}return false;}
 function stands(worker,target,{allowScaffold=true}={}){
- const b=worker.bot,p=b.entity.position,t=target.position,eyeReach=worker.state.miningRange||b.motion?.runtime?.config.blockReach||5,spots=[],navigation=require('./navigation'),geometry=require('./geometry');
+ const b=worker.bot,p=b.entity.position,t=target.position,eyeReach=worker.state.miningRange||b.motion?.runtime?.config.blockReach||5,spots=[],navigation=require('./navigation');
  const stock=allowScaffold&&worker.state.scaffoldEnabled!==false&&b.list?.().some(i=>i.name===worker.state.scaffold||['cobblestone','stone','dirt','obsidian','slime','slime_block'].includes(i.name));
  for(let dy=Math.ceil(-eyeReach-1.62);dy<=Math.floor(eyeReach-.62);dy++)for(let dx=-3;dx<=3;dx++)for(let dz=-3;dz<=3;dz++){
-  const q=t.offset(dx,dy,dz);if(q.y< -64)continue;const center=q.offset(.5,0,.5),eye=center.offset(0,1.62,0),under=b.blockAt(q.offset(0,-1,0));if(require('./mining-reach').distance(eye,target)>eyeReach||!navigation.pass(b,q))continue;
+  const q=t.offset(dx,dy,dz);if(q.y<=worker.state.floor)continue;const center=q.offset(.5,0,.5),eye=center.offset(0,1.62,0),under=b.blockAt(q.offset(0,-1,0));if(require('./mining-reach').distance(eye,target)>eyeReach||!navigation.pass(b,q))continue;
   if(columnBusy(worker,q))continue;if(!under||under.name==='unknown'||hazard(under)||!under.solid&&(!stock||!air(under)))continue;
-  if(!geometry.rayClear(b,eye,t.offset(.5,.5,.5),{ignore:[t]}))continue;
+  if(!require('./mining-reach').aim(b,target,eyeReach,eye))continue;
   spots.push({position:center,score:p.distanceTo(center)+(under.solid?0:9)});
  }
  return spots.sort((a,c)=>a.score-c.score).map(s=>s.position);
 }
 class ChunkMining{
- constructor(worker){this.worker=worker;this.bot=worker.bot;this.onUpdate=p=>{const w=this.worker;const changed=this.bot.blockAt(new Vec3(p.x,p.y,p.z));if(changed?.diggable&&!air(changed)&&!w.manager.claims.has(this.bot.dimensionId+':'+key(p))){for(const peer of w.manager.workers.values()){if(!peer.running||!sameWorld(w,peer)||!peer.miningTarget||p.y<=peer.miningTarget.position.y||!peer.inArea(p)||!wanted(peer,changed))continue;peer.abort?.abort();peer.approachPlan=null;const c=peer.miner?.allChunks.find(c=>c.x===(p.x>>4)&&c.z===(p.z>>4));if(c){c.layer=Math.max(c.layer,p.y);c.dirty=true;}}}this.cache?.delete(`${p.x>>4},${p.z>>4}`);for(const c of [this.chunkMap?.get(`${p.x>>4},${p.z>>4}`)].filter(Boolean))if(p.x>=c.x1&&p.x<=c.x2&&p.z>=c.z1&&p.z<=c.z2&&p.y>this.worker.state.floor&&p.y<=this.top()){c.layer=Math.max(c.layer??this.top(),Math.floor(p.y));c.dirty=true;this.done=false;this.layer=Math.max(this.layer??this.top(),Math.floor(p.y));}};this.onTerrain=({x,z,top})=>{this.cache?.delete(`${x},${z}`);const c=this.chunkMap?.get(`${x},${z}`);if(c){c.dirty=true;this.done=false;}};this.bot.on('worldUpdate',this.onUpdate);this.bot.on('terrainColumn',this.onTerrain);this.reset();}
+ constructor(worker){this.worker=worker;this.bot=worker.bot;this.onUpdate=p=>{const w=this.worker;if(p.y===w.state.floor)w.floorSurvey?.complete.delete(this.chunkMap?.get(`${p.x>>4},${p.z>>4}`));const changed=this.bot.blockAt(new Vec3(p.x,p.y,p.z));if(changed?.diggable&&!air(changed)&&!w.manager.claims.has(this.bot.dimensionId+':'+key(p))){for(const peer of w.manager.workers.values()){if(!peer.running||!sameWorld(w,peer)||!peer.miningTarget||p.y<=peer.miningTarget.position.y||!peer.inArea(p)||!wanted(peer,changed))continue;peer.abort?.abort();peer.approachPlan=null;const c=peer.miner?.chunkMap.get(`${p.x>>4},${p.z>>4}`);if(c){c.layer=Math.max(c.layer,p.y);c.dirty=true;}}}this.cache?.delete(`${p.x>>4},${p.z>>4}`);for(const c of [this.chunkMap?.get(`${p.x>>4},${p.z>>4}`)].filter(Boolean))if(p.x>=c.x1&&p.x<=c.x2&&p.z>=c.z1&&p.z<=c.z2&&p.y>this.worker.state.floor&&p.y<=this.top()){c.layer=Math.max(c.layer??this.top(),Math.floor(p.y));c.dirty=true;this.done=false;this.layer=Math.max(this.layer??this.top(),Math.floor(p.y));}};this.onTerrain=({x,z,top})=>{this.cache?.delete(`${x},${z}`);const c=this.chunkMap?.get(`${x},${z}`);if(c){c.dirty=true;this.done=false;}};this.bot.on('worldUpdate',this.onUpdate);this.bot.on('terrainColumn',this.onTerrain);this.reset();}
  top(){return Math.min(this.worker.state.ceiling,this.bot.dimensionId===1?127:this.bot.dimensionId===2?255:319);}
  reset(){this.cache=new Map();this.chunkMap=new Map();this.requested=new Map();this.metrics={reads:0,scanMs:0};this.signature='';this.chunks=[];this.allChunks=[];this.index=0;this.chunk=null;this.layer=null;this.state='未開始';this.unknown=0;this.done=false;this.assisting=false;this.exploreGoal=null;}
  prepare(){const w=this.worker,a=w.state.area;
@@ -51,7 +51,7 @@ class ChunkMining{
   const remaining=this.allChunks.filter(c=>c.dirty||c.layer>w.state.floor);
   remaining.sort((a,c)=>Number(own.has(c))-Number(own.has(a))||distance(a)-distance(c));
   if(this.chunk&&remaining.includes(this.chunk)&&distance(this.chunk)<48){remaining.splice(remaining.indexOf(this.chunk),1);remaining.unshift(this.chunk);}
-  const ordered=remaining.slice(0,1);
+  const ordered=remaining.filter(c=>!(c.deferUntil>Date.now())).slice(0,1);
   for(const c of ordered){if(!c.dirty)continue;this.request(c);
    for(;c.layer>w.state.floor;c.layer--){const found=read(c,c.layer);if(!found){this.surveying=true;break;}if(found.blocks.length||found.unknown){c.dirty=false;break;}}
    if(c.layer<=w.state.floor)c.dirty=false;if(this.surveying)break;
@@ -69,13 +69,13 @@ class ChunkMining{
   }
   if(this.surveying||active.some(c=>c.dirty)){this.surveying=true;this.state='範囲の上段を分割して確認中';return finish(null);}
   if(waitingTerrain){this.chunk=waitingTerrain;this.unknown=read(waitingTerrain,this.layer)?.unknown||0;this.state=`チャンク ${waitingTerrain.x},${waitingTerrain.z} / Y${this.layer}の地形受信待ち`;return finish(null);}
-  this.waitingBlocked=true;this.state=`Y${this.layer}の足元・他Bot・経路の再試行待ち`;return finish(null);
+  for(const c of active)c.deferUntil=Date.now()+1200;this.waitingBlocked=true;this.state=`Y${this.layer}の足元・他Bot・経路の再試行待ち`;return finish(null);
  }
  goal(){const c=this.chunk;if(!c||this.surveying||this.waitingBlocked)return null;const b=this.bot,p=b.entity.position,navigation=require('./navigation'),destination=new Vec3((c.x1+c.x2)/2,p.y,(c.z1+c.z2)/2),old=this.exploreGoal;
   if(old&&old.chunk===c&&Date.now()-old.at<5000&&p.distanceTo(old.position)>.5&&navigation.pass(b,old.position.floored()))return old.position;
   const spots=[],base=p.floored(),maxDrop=this.worker.runtime?.travel.dropLimit?.()??64;
-  for(let dx=-10;dx<=10;dx+=2)for(let dz=-10;dz<=10;dz+=2){let q=base.offset(dx,0,dz),under=b.blockAt(q.offset(0,-1,0));if(!under||under.name==='unknown')continue;if(!under.solid)q=navigation.dropLanding(b,q,maxDrop);if(!q||!navigation.pass(b,q))continue;const position=q.offset(.5,0,.5),remaining=Math.hypot(position.x-destination.x,position.z-destination.z);if(remaining>Math.hypot(p.x-destination.x,p.z-destination.z)-1.5)continue;spots.push({position,remaining});}
-  spots.sort((a,c)=>a.remaining-c.remaining);for(const {position}of spots.slice(0,8)){const path=navigation.groundPath(b,p,position,{maxDrop,limit:450});if(path.reached&&path.length){this.exploreGoal={chunk:c,position,at:Date.now()};return position;}}return null;
+  for(let dx=-10;dx<=10;dx+=2)for(let dz=-10;dz<=10;dz+=2){let q=base.offset(dx,0,dz),under=b.blockAt(q.offset(0,-1,0));if(!under||under.name==='unknown')continue;if(!under.solid)q=navigation.dropLanding(b,q,maxDrop);if(!q||q.y<=this.worker.state.floor||!navigation.pass(b,q))continue;const position=q.offset(.5,0,.5),remaining=Math.hypot(position.x-destination.x,position.z-destination.z);if(remaining>Math.hypot(p.x-destination.x,p.z-destination.z)-1.5)continue;spots.push({position,remaining});}
+  spots.sort((a,c)=>a.remaining-c.remaining);for(const {position}of spots.slice(0,8)){const path=navigation.groundPath(b,p,position,{maxDrop,limit:450,minY:this.worker.state.floor+1});if(path.reached&&path.length){this.exploreGoal={chunk:c,position,at:Date.now()};return position;}}return null;
  }
  snapshot(){return {scan:this.metrics,order:'layer-top-down',filter:this.worker.state.miningFilter||[],state:this.state,chunk:this.chunk?{x:this.chunk.x,z:this.chunk.z}:null,layer:this.layer,index:this.index,total:this.allChunks.length,assisting:!!this.assisting,unknown:this.unknown,done:this.done,surveying:!!this.surveying,waitingBlocked:!!this.waitingBlocked,supportBlocks:(this.supportBlocks||[]).slice(0,32)};}
  destroy(){this.bot.removeListener('worldUpdate',this.onUpdate);this.bot.removeListener('terrainColumn',this.onTerrain);}

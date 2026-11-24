@@ -7,7 +7,7 @@ function leaves(worker){const all=rows(worker),supports=Object.values(worker.sta
 function permanent(worker,point){const floor=point.offset(0,-1,0);return solid(worker.bot.blockAt(floor))&&!worker.owned(floor);}
 async function step(worker,signal,{finish=false}={}){
  const b=worker.bot,travel=worker.runtime?.travel,now=Date.now();worker.scaffoldFailures??=new Map();
- for(const o of rows(worker)){const q=new Vec3(o.p.x,o.p.y,o.p.z),block=b.blockAt(q);if(block&&(air(block)||block.name!==o.name))worker.removeOwned(q);}
+ for(const o of rows(worker)){const q=new Vec3(o.p.x,o.p.y,o.p.z);if(Number.isInteger(worker.state.floor)&&q.y===worker.state.floor&&worker.inArea?.(q.offset(0,1,0))){worker.removeOwned(q);continue;}const block=b.blockAt(q);if(block&&(air(block)||block.name!==o.name))worker.removeOwned(q);}
  let all=rows(worker);const result=(phase,reason,progress=false)=>{const value={phase,remaining:rows(worker).length,reason,progress,at:Date.now()};worker.scaffoldCleanup=value;return value;};
  if(!all.length){worker.state.scaffoldCleanupPending=false;return result('complete','置いた足場の回収完了');}
  if(b.handUse||b.actionHandBusy||b.manualInventoryBusy||travel?.flight||worker.runtime?.protectAnti?.())return result('waiting','飲食・手の操作・飛行・戦闘が終わってから足場を回収します');
@@ -19,11 +19,11 @@ async function step(worker,signal,{finish=false}={}){
  if(!travel||!finish&&!all.some(o=>occupied(worker,new Vec3(o.p.x,o.p.y,o.p.z))&&o.p.y>=(worker.miner?.layer??Infinity)))return result('waiting','足元・他プレイヤー・上の足場を支えている足場は移動後に回収します');
  // Move onto received permanent ground before removing our last support.
  const base=b.entity.position.floored(),goals=[];for(let dx=-5;dx<=5;dx++)for(let dz=-5;dz<=5;dz++)for(const dy of new Set([-3,-2,-1,0,1,(require('./navigation').dropLanding(b,base.offset(dx,0,dz),travel.dropLimit?.()??64)?.y??base.y)-base.y])){
-  const q=base.offset(dx,dy,dz),point=q.offset(.5,0,.5);if(point.distanceTo(b.entity.position)<.5||!permanent(worker,point)||!require('./navigation').pass(b,q))continue;
+  const q=base.offset(dx,dy,dz),point=q.offset(.5,0,.5);if(q.y<=worker.state.floor||point.distanceTo(b.entity.position)<.5||!permanent(worker,point)||!require('./navigation').pass(b,q))continue;
   const nextTarget=available[0]||all[0],tp=new Vec3(nextTarget.p.x,nextTarget.p.y,nextTarget.p.z);goals.push({point,score:point.distanceTo(b.entity.position)+point.distanceTo(tp)*.6});
  }
  goals.sort((a,c)=>a.score-c.score);for(const {point}of goals.slice(0,12)){
-  const path=require('./navigation').groundPath(b,b.entity.position,point,{limit:350,blocked:(a,c)=>travel.edgeBlocked?.(a,c)});if(!path.length||path.at(-1).position.offset(.5,0,.5).distanceTo(point)>.25)continue;
+  const path=await require('./navigation').groundPathAsync(b,b.entity.position,point,{signal,minY:worker.state.floor+1,limit:350,blocked:(a,c)=>travel.edgeBlocked?.(a,c)});if(!path.length||path.at(-1).position.offset(.5,0,.5).distanceTo(point)>.25)continue;
   try{await travel.walk(point,'walk',signal,{allowScaffold:false});return result('approach','安全な地面へ移動して足場を回収中',true);}catch(e){if(signal?.aborted)throw e;}
  }
  const unknown=all.find(o=>!b.blockAt(new Vec3(o.p.x,o.p.y,o.p.z)));if(unknown)b.worldMirror?.request(unknown.p.x>>4,unknown.p.z>>4,unknown.p.y>>4,unknown.p.y>>4);

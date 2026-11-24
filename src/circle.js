@@ -41,6 +41,7 @@ function drive(r,now=Date.now()){const c=r.circle;if(!c)return false;const s=c.s
  if(now-s.restAt<100)return true;b.lookAt(c.center.offset(0,1.5,0),false);s.faceAt??=now;
  if(now-s.faceAt>=50&&s.swung!==c.epoch&&!b.handUse&&!b.actionHandBusy){b.client.queue('animate',{action_id:'swing_arm',runtime_entity_id:BigInt(b._runtimeEntityId),data:0,has_swing_source:false});s.swung=c.epoch;}return true;}
  s.holding=false;s.rest=null;s.faceAt=null;
- if(len<1.4&&Math.abs(d.y)<.45&&[.33,.67,1].every(k=>{const q=p.offset(k*d.x,0,k*d.z).floored();return pass(b,q)&&solid(b.blockAt(q.offset(0,-1,0)));})){t.stopFollowing();b.desiredMoveWorld={x:d.x/len,z:d.z/len};b.desiredMoveSpeed=Math.min(.19,len);b.setControlState('forward',true);b.lookAt(s.goal.offset(0,1.5,0),false);}else if(!t.follow(s.goal,.21,'circle',.25)&&t.following&&now-(s.replanAt||0)>1000){t.following.plannedAt=0;s.replanAt=now;}if(c.jump&&c.orbit&&b.entity.onGround)b.setControlState('jump',true);else if(!c.jump)b.setControlState('jump',false);return true;
+ if(len>0&&len<6&&Math.abs(d.y)<.45&&Array.from({length:Math.ceil(len*3)},(_,i)=>(i+1)/Math.ceil(len*3)).every(k=>{const q=p.offset(k*d.x,0,k*d.z).floored();return pass(b,q)&&solid(b.blockAt(q.offset(0,-1,0)));})){t.stopFollowing();b.desiredMoveWorld={x:d.x/len,z:d.z/len};b.desiredMoveSpeed=Math.min(.19,len);b.setControlState('forward',true);b.lookAt(s.goal.offset(0,1.5,0),false);}else if(!t.follow(s.goal,.21,'circle',.25)&&t.following&&now-(s.replanAt||0)>1000){t.following.plannedAt=0;s.replanAt=now;}if(c.jump&&c.orbit&&b.entity.onGround)b.setControlState('jump',true);else if(!c.jump)b.setControlState('jump',false);return true;
 }
-module.exports={configure,snapshot,refresh,drive};
+function release(r){const ring=r.circle||r.manager?.circles?.[r.manager.realm(r.worker.id)];if(ring)ring.excluded.add(r.worker.id);r.circle=null;}
+module.exports={release,configure,snapshot,refresh,drive};

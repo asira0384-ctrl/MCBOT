@@ -24,7 +24,7 @@ const catalog={
  Velocity:{group:'Movement',cmd:'velocity',key:'velocity',settings:[R('Horizontal',0,0,100),R('Vertical',0,0,100)]},
  AutoTPA:{group:'Exploit',settings:[T('Target')]},
  CustomCommand:{group:'Exploit',action:true,settings:[T('Command','/help')]},
- Nuke:{group:'World',settings:[T('Start X','0'),T('Start Y','1'),T('Start Z','0'),T('End X','16'),T('End Y','127'),T('End Z','16'),R('Range',5,1,6,.1),T('Blocks','all'),B('Scaffold',true),T('Scaffold Block','cobblestone'),R('Max Drop',64,1,64)]},
+ Nuke:{group:'World',settings:[T('Start X','0'),T('Start Y','1'),T('Start Z','0'),T('End X','16'),T('End Y','127'),T('End Z','16'),R('Range',5,1,6,.1),T('Blocks','all'),B('ItemDrop',true),B('Scaffold',true),T('Scaffold Block','cobblestone'),R('Max Drop',64,1,64)]},
  Supply:{group:'World',cmd:'supply',settings:[]},
  Gemini:{group:'Chat',settings:[E('Access','list',['list','all']),T('Allowed Players'),T('Model','gemini-3.1-flash-lite'),T('City','Tokyo'),B('Debug',false)]},
  Greeter:{group:'Chat',settings:[T('Players'),T('Join','Hello @player!'),T('Leave'),T('Chat'),E('Delivery','all',['all','rotate'])]},
