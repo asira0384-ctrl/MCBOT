@@ -49,7 +49,7 @@ async function dig(bot,block,signal,preferredTool,options={}){
      // in the same input frame. Legacy peers require an actual break transaction.
      // https://mojang.github.io/bedrock-protocol-docs/guides/block-breaking-overview/
      if(old){bot.client.queue('inventory_transaction',useItem(bot,'break_block',position,side,block.stateId));action(bot,'stop_break',position,side,true);stopped=true;}
-     else{action(bot,'predict_break',position,side,false);const id=--bot.requestId;bot.pendingMiningRequest=request(id,[{type_id:'mine_block',hotbar_slot:bot.quickBarSlot,predicted_durability:bot.damage(held)+1,network_id:held.stack_id||0}]).requests[0];}
+     else{action(bot,'predict_break',position,side,false);const id=bot.requestId--;bot.pendingMiningRequest=request(id,[{type_id:'mine_block',hotbar_slot:bot.quickBarSlot,predicted_durability:bot.damage(held)+1,network_id:held.stack_id||0}]).requests[0];}
      hand.flush(bot);
     }else if(!predicted){action(bot,old?'crack_break':'continue_break',position,side,old);}
    }catch(error){failure=error;}

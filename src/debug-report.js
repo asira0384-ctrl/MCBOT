@@ -14,16 +14,16 @@ function clean(value,depth=0){
  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([k])=>!/(password|secret|token|cookie|authorization|email|authflow|device.?code|refresh)/i.test(k)).map(([k,v])=>[k,clean(v,depth+1)]));
  return value;
 }
-function packets(rows){return (rows||[]).slice(-24).map(p=>({name:p.name,at:p.at,tick:p.tick,action:p.action,blockActions:p.blockActions}));}
+function packets(rows){return (rows||[]).slice(-24).map(p=>({name:p.name,at:p.at,tick:p.tick,action:p.action,blockActions:p.blockActions,blockTargets:p.blockTargets,stackRequest:p.stackRequest,subchunk:p.subchunk}));}
 function report(manager,ids){
  const rows=[...new Set(ids)].slice(0,70).map(id=>{
   const s=manager.store.bot(id),w=manager.workers.get(id),b=w?.bot,exit=b?require('./packet-safety').exitPackets(b):null;
   return clean({id,name:manager.names.get(id),server:s.serverRealm,connected:!!b?.connected,mode:w?.mode||'disconnected',nukeEnabled:!!s.nukeEnabled,running:!!w?.running,
    position:b?.entity?.position,health:b?.health,dimension:b?.dimensionId,protocol:b?.client?.options?.version,movement:b?{advertised:b.advertisedMovement,selected:b.lastMovementWire,sentInputs:b.sentInputs,sentLegacyMoves:b.sentLegacyMoves}:null,
    mining:{area:s.area,floor:s.floor,ceiling:s.ceiling,range:s.miningRange,scaffold:s.scaffoldEnabled!==false,maxDrop:s.maxDrop,filter:s.miningFilter,status:w?.miningStatus?.(),totals:s.stats,sessionTotals:s.session},
-   connection:manager.connectionKeeper?.snapshot(id),lastExit:s.lastConnectionExit?{kind:s.lastConnectionExit.kind,reason:s.lastConnectionExit.reason,at:s.lastConnectionExit.at,packets:packets(s.lastConnectionExit.packets),packetIssue:s.lastConnectionExit.packetIssue}:null,
-   packets:packets(exit?.packets),packetIssue:exit?.issue,rejectedBlockActions:b?.rejectedBlockActions||0,runtimeErrors:w?.runtime?.featureErrors});
+   connection:manager.connectionKeeper?.snapshot(id),lastExit:s.lastConnectionExit?{kind:s.lastConnectionExit.kind,reason:s.lastConnectionExit.reason,at:s.lastConnectionExit.at,packets:packets(s.lastConnectionExit.packets),packetIssue:s.lastConnectionExit.packetIssue,requests:s.lastConnectionExit.requests,evidence:s.lastConnectionExit.evidence}:null,
+   packets:packets(exit?.packets),requests:exit?.requests,evidence:exit?.evidence,packetIssue:exit?.issue,rejectedBlockActions:b?.rejectedBlockActions||0,runtimeErrors:w?.runtime?.featureErrors});
  });
- return {format:'asira-debug-v1',build:'7.10',generatedAt:new Date().toISOString(),summary:{selected:rows.length,connected:rows.filter(r=>r.connected).length,mining:rows.filter(r=>r.running).length},bots:rows};
+ return {format:'asira-debug-v1',build:'7.10.1',generatedAt:new Date().toISOString(),summary:{selected:rows.length,connected:rows.filter(r=>r.connected).length,mining:rows.filter(r=>r.running).length},bots:rows};
 }
 module.exports={report,clean};

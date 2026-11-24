@@ -25,7 +25,7 @@ class BedrockBot extends EventEmitter {
   this.client.on('loggingIn',()=>{if(this.ended)return;this.connectionPhase='サーバーログイン中';this.emit('connectionStage',this.connectionPhase);});
   this.client.on('join',()=>{if(this.ended)return;this.connectionPhase='ワールド読み込み中';this.emit('connectionStage',this.connectionPhase);});
   const queue=this.client.queue.bind(this.client);
-  this.client.queue=(name,data)=>{if(this.serverClosing||this.ended)return;if(name==='item_stack_request'&&this.registry)data=require('./protocol').adaptRequest(this,data);if(name==='player_auth_input')return require('./movement-wire').send(this,data,queue);require('./packet-safety').remember(this,name,data);return queue(name,data);};
+  this.client.queue=(name,data)=>{if(this.serverClosing||this.ended)return;if(name==='item_stack_request'&&this.registry)data=require('./protocol').adaptRequest(this,data);if(name==='subchunk_request'&&this.registry){data=require('./subchunk-request').normalize(this,data);if(!data.requests.length)return;}if(name==='player_auth_input')return require('./movement-wire').send(this,data,queue);require('./packet-safety').remember(this,name,data);return queue(name,data);};
   this.worldMirror=new World(this);this.blockAt=p=>this.worldMirror.get(p);
   physics(this);controls(this);pathfinder(this);
   require('./session').installSession(this);
