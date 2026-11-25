@@ -1,0 +1,5 @@
+'use strict';
+function normalize(input){if(!Array.isArray(input)||!input.length||input.length>1024)throw Error('チャンクは1〜1024個選択してください');const seen=new Map();for(const pair of input){if(!Array.isArray(pair)||pair.length!==2||pair.some(n=>!Number.isInteger(n)||Math.abs(n)>1874999))throw Error('チャンク座標が不正です');seen.set(pair.join(','),pair);}return [...seen.values()].sort((a,b)=>a[1]-b[1]||a[0]-b[0]);}
+function rectangle(args){if(![2,4].includes(args.length))throw Error('chunks cx1 cz1 [cx2 cz2]');const [x,z,x2=x,z2=z]=args.map(Number);if([x,z,x2,z2].some(n=>!Number.isInteger(n)||Math.abs(n)>1874999)||(Math.abs(x2-x)+1)*(Math.abs(z2-z)+1)>1024)throw Error('チャンク座標・個数を確認してください（最大1024）');const out=[];for(let cz=Math.min(z,z2);cz<=Math.max(z,z2);cz++)for(let cx=Math.min(x,x2);cx<=Math.max(x,x2);cx++)out.push([cx,cz]);return out;}
+function apply(state,input){const chunks=normalize(input);state.miningChunks=chunks;state.area={x1:Math.min(...chunks.map(c=>c[0]))*16,z1:Math.min(...chunks.map(c=>c[1]))*16,x2:Math.max(...chunks.map(c=>c[0]))*16+15,z2:Math.max(...chunks.map(c=>c[1]))*16+15};return chunks;}
+module.exports={normalize,rectangle,apply};
