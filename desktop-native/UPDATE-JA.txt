@@ -1,0 +1,78 @@
+Asira Native 6.4
+
+更新順
+1. GitHub更新ZIPのsrc/とweb/を、リポジトリの同じ場所へ上書き・追加。
+2. Railwayの再デプロイ完了後、旧EXEを閉じてAsira-Native-v6.4.exeを起動。
+3. config/はそのまま使用できます。デスクトップの旧ショートカットはConsole→Shortcutで更新。
+これはv6.3までの更新も含むサーバー用パッチです。認証用の環境変数は既存設定を使用します。
+
+GUI
+・ClickGUI→Separatorsでモジュール間の区切り線を表示。Separator Alphaで濃さを変更。
+・設定のON/OFFは小さいチェックボックスを廃止し、行全体をクリックする表示へ変更。
+・ClickGUI→DescriptionをONにすると、モジュールや設定へカーソルを約0.4秒合わせて説明を表示。
+・設定のない機能には右クリックの空欄や開閉マークを出しません。
+・AnimationにFade / Slide / None。既定のFadeは高さを動かさず短い透明度の変化で表示。
+  Expand Durationで時間を調節。従来のSlideも選べます。同時展開は最大2個。
+・入力中もWeather/Shaderのアニメーションを継続。既存の描画バッファ・色・フォントのキャッシュは維持。
+・レイアウト、配色、カテゴリーの配置は保存済み設定を維持。壁紙の配置場所は変更していません。
+
+Shader（ClickGUI内）
+Flow / Wave / Nebula / Galaxy / Purple Galaxy / Lava / Water / Gradient。
+Shader FillとShader Outlineを個別にON/OFF。
+Outline Color / Width / Core / Smooth、Glow / Radius / Intensity、Inner Edges、Rainbow、Gradient Colorを追加。
+従来のShader Border / Alpha / Widthは互換用の切替・倍率として残しています。
+Outlineを消す場合はShader OutlineまたはShader BorderをOFF。
+色はすべてカラーピッカーで変更可能。Shaderはカテゴリー・HUDへ描画し、独立したブロックは表示しません。
+方向は一定方向へ流します。Galaxyは少ない星、Purple Galaxyは星と淡い雲、Nebulaは雲のみ。
+
+Weather
+PCの長時間稼働後にLavaの粒子位置が負数になり見えなくなる処理を修正。
+Snow / Rain / Lava / Crystalの位置を正しく画面内へ循環。
+Lavaに淡い光、Crystalに菱形の表示を追加。Density / Speed / Size / Wind / Color / Alphaを維持。
+
+Notification（Misc）
+左クリックで通知全体をON/OFF。右クリックで設定。
+右下へコンパクトな枠で即時表示（フェードインなし）。下の線が残り時間に応じて短くなり、最後だけフェードアウト。
+Duration / Width / Maximum / Fade Out / Progress Bar / Success / Errors / Background / Accent / Opacity。
+複数Botの成功結果を大きな中央の一覧にしません。詳細はConsole→Activityで確認。
+ログインの失敗はログインカード内に表示します。
+
+Mojangles
+送ってもらったMojangles.ttfをEXEにそのまま同梱。
+ClickGUI→Font→Mojanglesを選んでもファイル選択は開きません。
+既存の別フォント設定は維持。新規設定の既定はMojanglesです。
+日本語の説明は文字が欠けないようSegoe UIをフォールバックに使用。
+FontFileから別のTTF/OTFを追加する機能も維持。
+
+IGNGPT HUD
+HUD→IGNGPTを左クリックしてアシスタントを表示。上部をつかんで移動。
+右クリック設定: Width / Height / Opacity。会話履歴はホイールでスクロール。
+入力欄でEnter、または↑で送信。Copyで直近のAI回答をコピー。
+例: 「KillAuraをONにして」「ShaderをOFFにして」「おすすめ設定を教えて」「GUIの設定を適用して」。
+Bot操作はAccountで選択中の対象へ反映します。明確にモジュールとON/OFFを指定した指示のみ実行。
+おすすめ・方法・質問だけの場合は自動でON/OFFしません。
+自由な相談とGUI設定案には既存のGemini APIキー（Railway GEMINI_API_KEY、またはWebのIGNGPT設定）とモデルを使用。
+明確なモジュールON/OFFやShader ON/OFFはAPIキーがなくても動作します。
+モデルから返されたGUI変更は、実在する設定項目・種類・範囲をクライアントで検証して適用。
+認証、アカウント削除、任意のゲームコマンド、ファイル操作をAIから実行する機能は追加していません。
+
+認証
+パスワードを維持し、EXE・サーバー・Webの最小文字数を8へ統一。既存のパスワードはそのまま使用できます。
+ログインカードを整理。Discordログイン後、ブラウザの「Allow desktop sign-in」まで押してください。
+承認後のpoll応答にパスワード作成状態・プロフィール・CSRFを含め、EXEが余分なAPI要求なしでパスワード画面へ戻るよう変更。
+端末へパスワード・認証Cookieを書き出す処理は追加していません。
+
+Combat / Offhand
+KA / CA / PAにRotation Delay（ms）を追加し、回転から次の処理へ進む前に適用。
+OffhandはPacket / Spam / Interval（ms）。Interval 0は追加待ちを置かず、前の操作のサーバー確認後に再装着します。
+Popイベント時は通常の再試行待ちと装備整理の完了待ちを優先補充の妨げにしません。
+Packet+Spamではインベントリを毎回閉じず、予備Totemを使う有効な操作を確認付きで直列送信。
+通常の再装着が毎回戦闘を中断しないよう分離し、装備整理中は通常の再装着が譲ります。
+進行中のアイテム操作を重複して送信せず、所持品の最新状態を使います。
+通信とサーバー応答が必要なため、補充完了まで0msという保証はできません。
+
+検証
+Windows x64向けビルド、同梱フォントのバイト一致を確認。
+関連するバックエンドテスト55件を通過。インベントリ実アダプターの整列・応答待ち・拒否・直列化も含む。
+ネイティブの入力切り取り、空の設定拒否、最大2設定、長時間稼働のLava座標、通知の残り時間/フェード、入力中アニメーションを検証。
+Windows実機のGUI操作、実Minecraftサーバーでの補充・攻撃、実GeminiへのAPI接続は未確認です。
