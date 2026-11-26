@@ -1,7 +1,7 @@
 'use strict';
 const R=(n,v,lo,hi,step=1)=>[n,'range',v,lo,hi,step],T=(n,v='')=>[n,'text',v],B=(n,v)=>[n,'checkbox',v],E=(n,v,a)=>[n,'select',v,a];
 const catalog={
- MobAura:{group:'Combat',settings:[R('Range',4,1,6,.1),R('Attack Delay',500,100,2000,25),E('Weapon','Auto',['Auto','Sword','Axe']),E('Targets','Hostile',['Hostile','All Mobs'])]},
+ MobAura:{group:'Combat',settings:[R('Range',4,1,6,.1),R('Chase Range',16,4,32,1),R('Attack Delay',500,100,2000,25),E('Weapon','Auto',['Auto','Sword','Axe']),E('Targets','Hostile',['Hostile','All Mobs'])]},
  KillAura:{group:'Combat',cmd:'killaura',key:'killaura',settings:[R('Reach',5,2,6,.1),R('Attack Delay',75,25,1000)]},
  CrystalAura:{group:'Combat',cmd:'crystalaura',key:'crystalaura',settings:[R('Reach',5,2,6,.1),R('Place Delay',50,0,1000),R('Break Delay',25,0,1000)]},
  PistonCrystal:{group:'Combat',cmd:'pistoncrystal',key:'pistoncrystal',settings:[R('Reach',5,2,6,.1)]},
@@ -13,6 +13,7 @@ const catalog={
  AutoArmor:{group:'Player',cmd:'gear',key:'gear',settings:[]},
  AutoSlot:{group:'Player',cmd:'autoslot',key:'autoslot',settings:[]},
  AutoEat:{group:'Player',cmd:'heal',key:'heal',settings:[R('Health',16,1,20)]},
+ EatStop:{group:'Player',key:'eatStop',settings:[]},
  AutoLog:{group:'Player',cmd:'autolog',key:'autolog',settings:[R('Health',8,1,19),E('Condition','empty-health',['pop','empty','health','empty-health']),B('Absorption',false)]},
  Inventory:{group:'Player',action:true,settings:[]},
  Follow:{group:'Movement',settings:[T('Target'),E('Mode','direct',['direct','trail']),R('Distance',2,1,10,.5)]},
@@ -67,7 +68,7 @@ function snapshot(m){return [...m.names.keys()].map(id=>{const s=m.store.bot(id)
  for(const n of ['Circle','Orbit']){const c=m.circles?.[m.realm(id)];states[n]=!!c&&!!c.orbit===(n==='Orbit')&&!c.excluded.has(id);if(c)values[n]={Center:c.centerMode||'Player',Target:c.name||'',X:String(c.x??0),Y:String(c.y??64),Z:String(c.z??0),Radius:c.radius,'Angular Speed':c.speed||.5,Direction:c.direction===-1?'Counterclockwise':'Clockwise',Jump:!!c.jump};}
  Object.assign(values.AutoEat,{Health:cfg.healHearts*2});Object.assign(values.AutoLog,{Health:cfg.logHearts*2,Condition:cfg.logMode||'empty-health',Absorption:!!cfg.logAbsorption});
  values.Speed={Speed:cfg.chaseSpeed};values.Timer={Multiplier:cfg.straightTimer};values.LavaWalk={'Lava Speed':cfg.lavaSpeed};values.NoSlow={'Eat Speed':cfg.eatSpeed};values.AutoKit={Kit:s.ignActions?.kitName||''};values.AutoWorld={World:s.ignActions?.worldName||''};values.ElytraFly={...values.ElytraFly,Horizontal:cfg.flyHorizontal,Vertical:cfg.flyVertical};values.AutoEmote={Interval:s.cosmetic?.seconds||10};values.SkinStealer={Player:s.cosmetic?.target||''};values.Follow={Target:s.follow?.name||'',Mode:s.follow?.mode||'direct',Distance:s.follow?.distance||2};
- states.MobAura=!!s.mobAura?.enabled;values.MobAura={Range:s.mobAura?.range??4,'Attack Delay':s.mobAura?.delay??500,Weapon:s.mobAura?.weapon||'Auto',Targets:s.mobAura?.targets||'Hostile'};
+ states.MobAura=!!s.mobAura?.enabled;values.MobAura={Range:s.mobAura?.range??4,'Chase Range':s.mobAura?.chaseRange??16,'Attack Delay':s.mobAura?.delay??500,Weapon:s.mobAura?.weapon||'Auto',Targets:s.mobAura?.targets||'Hostile'};
  values.Nuke=require('../../model/world/nuke').values(s);
  values.Greeter={Players:s.greeting?.targets?.join('\n')||'',Join:s.greeting?.join?.join('\n')||'',Leave:s.greeting?.leave?.join('\n')||'',Chat:s.greeting?.chat?.join('\n')||'',Delivery:s.greeting?.delivery||'all'};
  values.AutoReply={Players:s.replies?.targets?.join('\n')||'',Messages:s.replies?.messages?.join('\n')||''};
@@ -104,6 +105,7 @@ async function apply(web,session,d){
  if(n==='Speed')lines.push(await cmd(id,'speed '+(on===false?'off':on===null&&!((s.runtime?.chaseSpeed??.27)>0)?'off':v.Speed)));
  if(n==='Timer')lines.push(await cmd(id,'timer '+(on===false?'off':on===null&&!((s.runtime?.straightTimer??.24)>0)?'off':v.Multiplier)));
  if(n==='NoSlow'){const active=on===null?(s.runtime?.noSlow??true):on;lines.push(await cmd(id,'eatspeed '+v['Eat Speed']));lines.push(await cmd(id,'noslow '+(active?'on':'off')));}
+ if(n==='EatStop'){const cfg=s.runtime??=Object.assign({},require('../../src/app/runtime').defaults);cfg.eatStop=on===null?(cfg.eatStop!==false):on;if(w?.runtime)w.runtime.config.eatStop=cfg.eatStop;lines.push('EatStop '+(cfg.eatStop?'ON':'OFF'));}
  if(n==='LavaWalk')lines.push(await cmd(id,'lavaspeed '+v['Lava Speed']));
  if(n==='AutoKit'||n==='AutoWorld'){const flag=n==='AutoKit'?'autoKit':'autoWorld';if(on!==null||s.ignActions?.[flag])lines.push(await cmd(id,(n==='AutoKit'?'autokit ':'autoworld ')+(on===false?'off':'on '+v[n==='AutoKit'?'Kit':'World'])));}
  if(n==='ElytraFly'){lines.push(await cmd(id,'flyspeed '+v.Horizontal+' '+v.Vertical));if(on!==null)lines.push(await cmd(id,on?'elytrafly '+v.Dimension+' '+['X','Y','Z'].map(coord).join(' '):'elytrafly off'));}
@@ -111,7 +113,7 @@ async function apply(web,session,d){
  if(n==='AutoLog'){lines.push(await cmd(id,'autolog '+(on===null?((s.runtime?.autolog??true)?'on':'off'):on?'on':'off')+' '+v.Health/2));lines.push(await cmd(id,'autolog mode '+v.Condition));lines.push(await cmd(id,'autolog absorption '+(v.Absorption?'on':'off')));}
  if(n==='Follow'){lines.push(await cmd(id,'follow distance '+v.Distance));lines.push(await cmd(id,'follow mode '+v.Mode));if(on!==null||s.follow?.enabled)lines.push(await cmd(id,on===false?'follow off':'follow '+v.Target));}
  if(n==='AutoWalk'&&on!==null)lines.push(await cmd(id,on?'goto walk '+v.Dimension+' '+['X','Y','Z'].map(coord).join(' '):'stop'));
- if(n==='MobAura'){s.mobAura={enabled:on===null?!!s.mobAura?.enabled:on,range:v.Range,delay:v['Attack Delay'],weapon:v.Weapon,targets:v.Targets};if(on===true){s.runtimePaused=false;if(w?.runtime)w.runtime.paused=false;}lines.push('MobAura updated');}
+ if(n==='MobAura'){s.mobAura={enabled:on===null?!!s.mobAura?.enabled:on,range:v.Range,chaseRange:v['Chase Range'],delay:v['Attack Delay'],weapon:v.Weapon,targets:v.Targets};if(on===true){s.runtimePaused=false;if(w?.runtime)w.runtime.paused=false;}lines.push('MobAura updated');}
  if(n==='Nuke')lines.push(require('../../model/world/nuke').apply(m,id,v,on));
  if(n==='AutoEmote')lines.push(await cmd(id,'autoemote '+(on===false?'off':on===null&&!s.cosmetic?.seconds?'off':v.Interval)));
  if(n==='SkinStealer'&&(on!==null||s.cosmetic?.target))lines.push(await cmd(id,'skinstealer '+(on===false?'off':v.Player)));

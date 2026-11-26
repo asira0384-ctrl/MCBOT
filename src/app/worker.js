@@ -1,7 +1,7 @@
 'use strict';
 const {Vec3}=require('vec3');const {sleep,key,air,solid,hazard,emptyStats,addStat,canDiscard}=require('../shared/util');
 class Worker {
- constructor(manager,id,bot){this.manager=manager;this.id=id;this.bot=bot;this.state=manager.store.bot(id);this.mode='stopped';this.running=false;this.busy=false;this.receiving=false;this.lastReceive=0;this.lastEat=0;this.failed=new Map();this.missing='';this.resumeOnConnect=!!this.state.nukeEnabled;this.corrections=[];this.miner=new(require('../../model/world/mining/mining').ChunkMining)(this);
+ constructor(manager,id,bot){this.manager=manager;this.id=id;this.bot=bot;this.state=manager.store.bot(id);this.mode='stopped';this.running=false;this.busy=false;this.receiving=false;this.lastReceive=0;this.lastEat=0;this.failed=new Map();this.missing='';this.resumeOnConnect=!!this.state.nukeEnabled;this.corrections=[];this.ownedRevision=0;this.miner=new(require('../../model/world/mining/mining').ChunkMining)(this);
   bot.on('inventory',(old,item)=>{if(item?.network_id&&(!old||item.network_id!==old.network_id||item.count>old.count)){
    this.lastReceive=Date.now();if(this.receiving){const name=bot.name(item);if(bot.registry?.blocksByName[name]){this.state.scaffold=name;this.receivedBlock=true;manager.store.save();}}
   }});
@@ -22,8 +22,8 @@ class Worker {
  receive(){this.stop();this.receiving=true;this.mode='receiving';this.lastReceive=0;this.receivedBlock=false;this.notice('足場ブロックを渡してください。最後の受け取りから3秒後に再開します');}
  inArea(p){const a=this.state.area;return a&&(!this.state.miningChunks?.length||this.state.miningChunks.some(([x,z])=>x===(p.x>>4)&&z===(p.z>>4)))&&p.x>=a.x1&&p.x<=a.x2&&p.z>=a.z1&&p.z<=a.z2&&p.y>this.state.floor&&p.y<=this.state.ceiling;}
  owned(p){return this.state.owned[`${this.bot.dimensionId}:${key(p)}`];}
- recordOwned(p,kind,name){this.state.owned[`${this.bot.dimensionId}:${key(p)}`]={p:{x:p.x,y:p.y,z:p.z},kind,name,dimension:this.bot.dimensionId,placedAt:Date.now()};if(kind==='scaffold')this.state.scaffoldCleanupPending=true;this.manager.store.save();}
- removeOwned(p){delete this.state.owned[`${this.bot.dimensionId}:${key(p)}`];this.manager.store.save();}
+ recordOwned(p,kind,name){this.state.owned[`${this.bot.dimensionId}:${key(p)}`]={p:{x:p.x,y:p.y,z:p.z},kind,name,dimension:this.bot.dimensionId,placedAt:Date.now()};this.ownedRevision++;if(kind==='scaffold')this.state.scaffoldCleanupPending=true;this.manager.store.save();}
+ removeOwned(p){delete this.state.owned[`${this.bot.dimensionId}:${key(p)}`];this.ownedRevision++;this.manager.store.save();}
  underPlayer(p,{ignoreSelf=false}={}){return [...this.manager.workers.values()].some(w=>{const q=w.bot.entity?.position;return (!ignoreSelf||w!==this)&&(w===this||w.bot.connected)&&!w.bot.dead&&require('../../model/world/mining/mining').sameWorld(this,w)&&q&&Math.abs(q.x-(p.x+.5))<.8&&Math.abs(q.z-(p.z+.5))<.8&&q.y>=p.y&&q.y<=p.y+2;});}
  canDropThrough(block){const b=this.bot,p=block.position,q=b.entity.position;if(this.underPlayer(p,{ignoreSelf:true})||Math.abs(q.x-p.x-.5)>=.8||Math.abs(q.z-p.z-.5)>=.8||q.y<p.y||q.y>p.y+2||b.entity.onGround===false)return false;
   const {dropLanding}=require('../../model/movement/navigation/navigation'),view={blockAt:at=>key(at)===key(p)?{name:'air',isAir:true,solid:false,shapes:[],position:p}:b.blockAt(at)};
@@ -78,11 +78,11 @@ class Worker {
    // Search real ground for every stance first. A cheap floating stance must
    // not win just because a carried stack makes placement possible.
    for(const allowScaffold of stock?[false,true]:[false]){if(best)break;spots=require('../../model/world/mining/mining').stands(this,target,{allowScaffold}).filter(p=>!this.avoidDigStance(target,p));const began=performance.now();let searched=0;
-    for(const goal of spots.slice(0,24)){if(signal?.aborted)throw Error('停止しました');searched++;await new Promise(resolve=>setImmediate(resolve));if(best&&performance.now()-began>20)break;const path=await navigation.groundPathAsync(b,b.entity.position,goal,travel.groundOptions({dig:true,block:allowScaffold?stock:null,signal,minY:this.state.floor+1,limit:900}));if(!path.reached)continue;const score=path.cost+(solid(b.blockAt(goal.offset(0,-1,0)))?0:5);const choice={goal,score,targetKey,at:Date.now(),progressAt:Date.now(),remaining:b.entity.position.distanceTo(goal),placements:path.placements};if(!best||score<best.score)best=choice;if(score<=1)break;}
+    for(const goal of spots.slice(0,24)){if(signal?.aborted)throw Error('停止しました');searched++;await new Promise(resolve=>setImmediate(resolve));if(best&&performance.now()-began>20)break;const path=await navigation.groundPathAsync(b,b.entity.position,goal,travel.groundOptions({dig:true,block:allowScaffold?stock:null,signal,minY:this.state.floor+1,maxDrop:1,limit:900}));if(!path.reached)continue;const score=path.cost+(solid(b.blockAt(goal.offset(0,-1,0)))?0:5);const choice={goal,score,targetKey,at:Date.now(),progressAt:Date.now(),remaining:b.entity.position.distanceTo(goal),placements:path.placements};if(!best||score<best.score)best=choice;if(score<=1)break;}
    }
    if(!best)best=detour;
    if(!best)throw Object.assign(Error(spots.length?'指定ブロックへ届く経路を再探索中。別の対象も確認します':'指定ブロックを掘れる立ち位置がありません。範囲・床・天井を確認してください'),{code:'PATH_WAIT'});
-   this.approachPlan=best;this.miningApproach={position:{...best.goal},target:{...target.position}};this.missing='';try{await travel.walk(best.goal,'dig',signal,{allowScaffold:best.placements>0,until:()=>this.canMineHere(target),minY:this.state.floor+1});}catch(e){this.approachPlan=null;travel.groundPlan=null;throw e;}return;
+   this.approachPlan=best;this.miningApproach={position:{...best.goal},target:{...target.position}};this.missing='';try{await travel.walk(best.goal,'dig',signal,{allowScaffold:best.placements>0,until:()=>this.canMineHere(target),minY:this.state.floor+1,maxDrop:1});}catch(e){this.approachPlan=null;travel.groundPlan=null;throw e;}return;
   }const t=target.position,p=this.bot.entity.position;const spots=[];
   for(let dx=-2;dx<=2;dx++)for(let dz=-2;dz<=2;dz++)for(let dy=-1;dy<=1;dy++){const q=new Vec3(t.x+dx,Math.floor(p.y)+dy,t.z+dz);if(air(this.bot.blockAt(q))&&air(this.bot.blockAt(q.offset(0,1,0)))&&solid(this.bot.blockAt(q.offset(0,-1,0))))spots.push(q);}
   spots.sort((a,b)=>p.distanceTo(a)-p.distanceTo(b));for(const spot of spots.slice(0,3)){try{await this.bot.go(spot,signal);if(this.bot.reach(target,this.state.miningRange))return;}catch(e){if(signal.aborted||this.bot.health<12)throw e;}}
@@ -115,7 +115,7 @@ class Worker {
   if(this.miner.done){if(this.runtime&&this.state.scaffoldEnabled!==false&&!await require('../../model/world/mining/mining-floor').finish(this,signal))return;this.cleanupRequested=true;this.mode='cleaning';this.miningPhase='cleanup';this.missing='採掘完了。置いた足場を回収中';return;}
   if(this.miner.supportBlocks?.length&&await this.leaveMiningSupport(signal))return;
   this.miningPhase='scan';this.missing=this.miner.state;const goal=this.miner.goal();if(!goal||goal.distanceTo(this.bot.entity.position)<2)return;
-  try{if(this.runtime)await this.runtime.travel.walk(goal,'dig',signal,{allowScaffold:false});else await this.bot.go(goal.floored(),signal);}catch(e){if(signal.aborted)throw e;this.miningRetryAt=Date.now()+1500;this.missing=this.miner.state+' / '+e.message;this.manager.notice(this.id,this.missing,{game:false});}
+  try{if(this.runtime)await this.runtime.travel.walk(goal,'dig',signal,{allowScaffold:false,maxDrop:1});else await this.bot.go(goal.floored(),signal);}catch(e){if(signal.aborted)throw e;this.miningRetryAt=Date.now()+1500;this.missing=this.miner.state+' / '+e.message;this.manager.notice(this.id,this.missing,{game:false});}
  }
  async leaveMiningSupport(signal){
   const b=this.bot,p=b.entity.position,travel=this.runtime?.travel;if(!travel||!this.miner.supportBlocks.some(q=>Math.abs(q.x+.5-p.x)<.9&&Math.abs(q.z+.5-p.z)<.9&&p.y>=q.y&&p.y<=q.y+2))return false;

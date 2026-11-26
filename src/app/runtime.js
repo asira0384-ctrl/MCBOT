@@ -54,7 +54,8 @@ const defaults = {
   logMode: 'empty-health',
   logAbsorption: false,
   noSlow: true,
-  eatSpeed: .12
+  eatSpeed: .12,
+  eatStop: true
 };
 class Runtime {
   constructor(worker) {
@@ -308,6 +309,7 @@ class Runtime {
     this.combatAbort?.abort();
     this.crystals.trapAbort?.abort();
     if (kind === '体力回復') {
+      if (this.config.eatStop !== false) this.worker.mobAura?.controller?.abort();
       this.bot.urgentFoodPending = true;
       if (this.worker.running) {
         this.resumeMining = true;
@@ -377,7 +379,11 @@ class Runtime {
     return !this.circle && !!(this.config.killaura || this.config.crystalaura || this.config.pistoncrystal || this.config.feettrap);
   }
   chooseTarget(range = this.config.jetpack ? 48 : this.config.chaseRange) {
-    return require('../../model/combat/targeting/tactics').target(this, range);
+    const now = Date.now(), cache = this.targetCache;
+    if (cache && cache.range === range && now - cache.at < 100) return cache.value;
+    const value = require('../../model/combat/targeting/tactics').target(this, range);
+    this.targetCache = { range, at: now, value };
+    return value;
   }
   followingOwnsMovement() {
     return !!(this.follower?.config.enabled && !['killaura', 'crystalaura', 'pistoncrystal', 'pvp'].includes(this.latestFeature));
@@ -404,8 +410,14 @@ class Runtime {
       this.travel.driveStep(this.travel.walking);
       return;
     }
+    const eating = b.handUse?.kind === 'food' || this.consumeTask && b.handUse?.kind === 'food';
+    const healing = eating || this.needsFood();
+    if (eating && this.config.eatStop !== false) {
+      this.travel.stopFollowing();
+      this.combatWaiting = '食事中は戦闘機能を一時停止';
+      return;
+    }
     const enemy = this.canFight() && !this.travel.route ? this.chooseTarget() : null;
-    const healing = (this.consumeTask && b.handUse?.kind === 'food') || this.needsFood();
     if (healing && enemy) {
       this.target = enemy;
       if (Date.now() - (this.retreatAt || 0) > 500 || !this.retreatGoal) {

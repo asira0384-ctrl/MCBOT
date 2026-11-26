@@ -11,9 +11,9 @@ function eligible(runtime,actor){
  return runtime.config.assist&&[...(runtime.manager.workers?.values()||[])].some(w=>w.runtime&&w.runtime!==runtime&&!w.runtime.paused&&sameRealm(w.bot,runtime.bot)&&w.bot.connected&&w.bot.entity?.position.distanceTo(runtime.bot.entity.position)<=30&&w.runtime.target&&norm(w.runtime.target.name)===norm(actor.name)&&Date.now()-(w.runtime.engagedAt||0)<2000);
 }
 function target(runtime,range){
- const b=runtime.bot;
- for(const a of b.actors?.values()||[])require('../../../src/bedrock/actors').refreshPlayer(b,a);
- return [...(b.actors?.values()||[])].filter(a=>eligible(runtime,a)&&a.position.distanceTo(b.entity.position)<=range).sort((a,c)=>a.position.distanceTo(b.entity.position)-c.position.distanceTo(b.entity.position))[0]||null;
+ const b=runtime.bot;if(!b.entity)return null;let nearest=null,nearestDistance=Number(range)||0;
+ for(const a of b.actors?.values()||[]){if(!a?.player||a.dimension!==b.dimensionId)continue;require('../../../src/bedrock/actors').refreshPlayer(b,a);if(!eligible(runtime,a))continue;const distance=a.position.distanceTo(b.entity.position);if(distance<=nearestDistance){nearest=a;nearestDistance=distance;}}
+ return nearest;
 }
 function ray(bot,from,to){return require('../../../src/shared/geometry').rayClear(bot,from,to);}
 // Geometry estimate, not a promise of damage: server plugins, armor and effects

@@ -22,9 +22,9 @@ async function recover(w,signal){
  }
  goals.sort((a,c)=>a.distanceTo(base)-c.distanceTo(base));
  for(const goal of goals.slice(0,8)){
-  const options=travel.groundOptions({minY:base.y,limit:160,signal});
+  const options=travel.groundOptions({minY:base.y,maxDrop:1,limit:160,signal});
   const path=await navigation.groundPathAsync(b,base,goal,options);
-  if(path.reached){await travel.walk(goal.offset(.5,0,.5),'walk',signal,{minY:base.y,allowScaffold:false});return;}
+  if(path.reached){await travel.walk(goal.offset(.5,0,.5),'walk',signal,{minY:base.y,allowScaffold:false,maxDrop:1});return;}
  }
  const item=w.state.scaffoldEnabled!==false&&material(w);
  if(!item){w.missing='上がれる道がなく、足場ブロックの補給またはScaffold ONを待っています';w.miningRetryAt=Date.now()+1500;return;}
@@ -33,8 +33,8 @@ async function recover(w,signal){
    if(Math.max(Math.abs(dx),Math.abs(dz))!==radius)continue;
    const q=base.offset(dx,0,dz);
    if(!solid(b.blockAt(q.offset(0,-1,0)))||!navigation.pass(b,q)||!navigation.pass(b,q.offset(0,1,0)))continue;
-   const path=await navigation.groundPathAsync(b,base,q,travel.groundOptions({minY:base.y,limit:100,signal}));
-   if(path.reached){await travel.walk(q.offset(.5,0,.5),'walk',signal,{minY:base.y,allowScaffold:false});return;}
+   const path=await navigation.groundPathAsync(b,base,q,travel.groundOptions({minY:base.y,maxDrop:1,limit:100,signal}));
+   if(path.reached){await travel.walk(q.offset(.5,0,.5),'walk',signal,{minY:base.y,allowScaffold:false,maxDrop:1});return;}
   }
  }
  await travel.pillar(item,signal);
@@ -80,7 +80,7 @@ async function finish(w,signal){
  const goals=[...stances.values()].sort((a,c)=>p.distanceTo(a)-p.distanceTo(c));
  if(!goals.length&&unknown.length&&distance(c)>6)goals.push(new Vec3((c.x1+c.x2+1)/2,p.y,(c.z1+c.z2+1)/2));
  for(const goal of goals.slice(0,4)){
-  try{await travel.walk(goal,'walk',signal,{minY:y+1,allowScaffold:true});w.missing='床の穴の縁へ移動中';return false;}
+  try{await travel.walk(goal,'walk',signal,{minY:y+1,allowScaffold:true,maxDrop:1});w.missing='床の穴の縁へ移動中';return false;}
   catch(error){if(signal?.aborted)throw error;w.missing=error.message;}
  }
  w.missing=unknown.length?'床の地形受信待ち':'床の穴へ届く足場を再探索中';
