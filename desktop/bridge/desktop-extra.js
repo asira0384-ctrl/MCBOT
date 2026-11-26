@@ -2,6 +2,10 @@
 const fail=m=>Object.assign(Error(m),{status:400});
 function endpoint(d){const host=String(d.host||'').trim(),port=Number(d.port);if(!host||host.length>253||!(/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i.test(host)||require('node:net').isIP(host))||!Number.isInteger(port)||port<1||port>65535)throw fail('IP/ホスト名とport（1〜65535）を確認してください');return {host,port};}
 async function apply(web,s,d){const m=web.manager,ids=()=>web.targets(d.target);switch(d.action){
+case 'nuke-log':return {ok:true,report:{generatedAt:new Date().toISOString(),bots:ids().map(id=>{
+ const w=m.workers.get(id);
+ return {id,connected:!!w?.bot.connected,phase:w?.miningPhase,log:w?.nukeLog||[]};
+})}};
 case 'debug-export':return {ok:true,report:require('../../src/diagnostics/debug-report').report(m,ids())};
 case 'form-response':{const chosen=ids();if(chosen.length!==1)throw fail('Choose one bot form. Each form must be submitted manually.');return require('../../src/bedrock/server-forms').respond(m.workers.get(chosen[0])?.bot,d.token,d.response,d.cancel===true);}
 case 'relation':{if(!['friend','enemy'].includes(d.kind)||!['add','remove'].includes(d.operation))throw fail('リスト操作を選択してください');const name=require('../../model/chat/delivery/chat-output').name(d.name);return {result:await m.execute(String(m.names.keys().next().value),d.kind+' '+d.operation+' '+name,'web')};}

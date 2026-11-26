@@ -45,7 +45,8 @@ async function dig(bot,block,signal,preferredTool,options={}){
   const breakMs=Math.max(50,bot.breakTime(block,{...tool,raw:held})),begin=Date.now();state.breakMs=breakMs;state.profile=profile;state.phase='breaking';state.startedAt=begin;
   bot.mining=position;started=true;action(bot,'start_break',position,side,old);hand.flush(bot);let predicted=false;
   const update=()=>{
-   if(failure||bot.mining!==position)return;
+   if(failure)return;
+   if(bot.mining!==position){failure=Error('採掘操作が中断されたため対象を再確認します');return;}
    try{
     if(signal?.aborted||bot.dead||!bot.connected||bot.worldGeneration!==generation||bot.dimensionId!==dimension)throw Error('停止・切断・世界が変わりました');
     if(bot.handUse||bot.name(bot.items[bot.quickBarSlot])!==tool.name)throw Error('採掘中に手のアイテムが変わりました');
@@ -66,7 +67,7 @@ async function dig(bot,block,signal,preferredTool,options={}){
   };
   const progress=()=>{update();if(predicted&&!state.refreshedAt&&Date.now()-state.predictedAt>=350&&bot.mining===position){state.refreshedAt=Date.now();bot.worldMirror?.request(position.x>>4,position.z>>4,position.y>>4,position.y>>4,{force:true});}};
   timer=setInterval(progress,50);progress();
-  await bot.waitUntil(()=>{if(failure)throw failure;if(bot.worldGeneration!==generation||bot.dimensionId!==dimension)throw Error('採掘中に世界が変わりました');const current=bot.blockAt(block.position);if(current&&air(current)){finished=true;state.phase='confirmed';state.confirmed=true;state.confirmedAt=Date.now();return true;}return false;},options.timeout||Math.min(90000,Math.max(5000,breakMs*2+3000)),signal);
+  await bot.waitUntil(()=>{if(failure)throw failure;if(bot.worldGeneration!==generation||bot.dimensionId!==dimension)throw Error('採掘中に世界が変わりました');const current=bot.blockAt(block.position);if(current&&air(current)){finished=true;state.phase='confirmed';state.confirmed=true;state.confirmedAt=Date.now();return true;}return false;},options.timeout||Math.max(2500,breakMs+2500),signal);
  }catch(error){state.phase=signal?.aborted?'cancelled':'unconfirmed';state.error=error.message;if(!signal?.aborted&&state.predictedAt&&!finished&&!failure&&bot.connected&&bot.worldGeneration===generation)error.code='DIG_UNCONFIRMED';throw error;}
  finally{
   clearInterval(timer);if(started){if(!finished)cancel(bot);else{bot.pendingBreakActions=(bot.pendingBreakActions||[]).filter(a=>a.action==='stop_break'||key(a.position)!==key(position));bot.pendingMiningRequest=null;bot.mining=null;if(!stopped)action(bot,'stop_break',position,side,old);}hand.flush(bot);}hand.release(bot,lease);

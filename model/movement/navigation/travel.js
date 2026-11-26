@@ -130,6 +130,12 @@ class Travel{
   this.waiting='溶岩から浮上して岸を探しています';
   this.stopFollowing();
   this.groundPlan=null;
+  b.setControlState('jump',true);
+  try {
+   if(this.runtime.config.lavaWalk!==false && (!this.runtime.lastLavaApple || Date.now()-this.runtime.lastLavaApple>3000))
+    await this.runtime.ensureLavaProtection(signal);
+  }catch(error){this.stopFollowing();throw error;}
+  if(!isInLava(b,entity)){this.stopFollowing();return true;}
   const candidates=[];
   for(const [dx,dz] of [[0,0],[1,0],[-1,0],[0,1],[0,-1]]){
    const cell=base.offset(dx,0,dz);
@@ -142,7 +148,13 @@ class Travel{
      if(!nav.pass(b,top,true))break;
      if(nav.pass(b,top)){dry=true;break;}
     }
-    candidates.push({entry,score:(dry?20-height:height)+y*.5-(dx||dz ? .1 : 0)});
+    let shore=0;
+    if(dx||dz)for(let step=0;step<5;step++){
+     const at=entry.offset(step*dx,0,step*dz);
+     if(!nav.pass(b,at,true))break;
+     if(nav.pass(b,at)&&require('../../../src/shared/util').solid(b.blockAt(at.offset(0,-1,0)))){shore=40-step;break;}
+    }
+    candidates.push({entry,score:shore+(dry?20-height:height)+y*.5-(dx||dz ? .1 : 0)});
    }
   }
   candidates.sort((a,c)=>c.score-a.score);

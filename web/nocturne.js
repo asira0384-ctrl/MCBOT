@@ -71,6 +71,12 @@ function playToggle(on,force=false){if(!force&&!S.on.ToggleSound)return;let pair
 function open(o){if(!o)return;let i=opened.indexOf(o);if(i>=0){opened.splice(i,1);o.box.classList.remove('open');o.b.classList.remove('open');o.box.inert=true;return}if(opened.length===2)open(opened[0]);opened.push(o);o.box.inert=false;o.box.classList.add('open');o.b.classList.add('open')}
 
 function settings(m){let box=document.createElement('section'),inner=document.createElement('div');box.className='opts';box.inert=true;box.append(inner);
+if(m==='Nuke')button(inner,'Nuke Debug Log',async()=>{
+ const {report}=await api('/api/control',{action:'nuke-log',target:target()});
+ const link=document.createElement('a');
+ link.href=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));
+ link.download='Nuke-Debug-'+Date.now()+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
+});
 for(let[n,type,def,lo,hi,step]of defs[m]||[]){let label=document.createElement('label'),multi=['Players','Messages','Allowed Players','Join','Leave','Chat','Message'].includes(n),f=document.createElement(type==='select'?'select':type==='text'&&multi?'textarea':'input'),v=val(m,n)??def;
 label.append(document.createTextNode(n));if(m==='ClickGUI'&&n.startsWith('Shader ')&&n!=='Shader Mode')label.dataset.shaderSetting='1';
 if(type==='select'){for(let x of lo)f.add(new Option(x,x));f.value=v;}else{if(f.tagName!=='TEXTAREA')f.type=type;if(type==='range'){f.min=lo;f.max=hi;f.step=step}if(type==='checkbox')f.checked=!!v;else f.value=v;}

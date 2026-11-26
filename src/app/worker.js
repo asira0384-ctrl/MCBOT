@@ -6,7 +6,7 @@ class Worker {
    this.lastReceive=Date.now();if(this.receiving){const name=bot.name(item);if(bot.registry?.blocksByName[name]){this.state.scaffold=name;this.receivedBlock=true;manager.store.save();}}
   }});
   bot.on('health',()=>{if(bot.health!==null&&bot.health<12&&bot.health>0&&this.running&&this.mode!=='healing'){bot.halt();}});
-  bot.on('forcedMove',()=>{if(!this.running&&!this.cleanupRequested)return;const now=Date.now();this.corrections=this.corrections.filter(t=>now-t<10000);this.corrections.push(now);this.abort?.abort();this.bot.halt();this.runtime?.travel.stopFollowing();this.miningRetryAt=now+Math.min(3500,300+this.corrections.length*250);this.miningPhase='repath';this.missing='サーバーの補正位置から経路を再確認中';if(this.corrections.length>=5&&now-(this.lastCorrectionNotice||0)>10000){this.lastCorrectionNotice=now;this.notice('位置補正が続いたため少し待って経路を再探索します');}});
+  bot.on('forcedMove',()=>{if(!this.running&&!this.cleanupRequested)return;const now=Date.now();this.corrections=this.corrections.filter(t=>now-t<10000);this.corrections.push(now);this.abort?.abort();this.bot.halt();this.runtime?.travel.stopFollowing();this.miningRetryAt=now+Math.min(3500,120+Math.max(0,this.corrections.length-1)*250);this.miningPhase='repath';this.missing='サーバーの補正位置から経路を再確認中';if(this.corrections.length>=5&&now-(this.lastCorrectionNotice||0)>10000){this.lastCorrectionNotice=now;this.notice('位置補正が続いたため少し待って経路を再探索します');}});
   bot.on('respawned',()=>{if(this.mode==='dead'||this.resumeDig){this.mode='stopped';if(this.resumeDig)this.startRequested=true;this.resumeDig=false;}});
   bot.on('death',()=>{this.resumeDig=!!(this.running||this.startRequested||this.resumeDig);this.mode='dead';this.running=false;this.notice('死亡しました。装備の補給待ちです');});
   bot.on('respawnReady',()=>{if(this.state.respawn){try{bot.respawn();this.mode='waiting';this.missing='死亡後の装備';}catch(e){this.notice(e.message);}}});
@@ -36,10 +36,12 @@ class Worker {
   this.nukeSampleAt=now;
   const b=this.bot,p=b.entity?.position;
   this.nukeLog??=[];
-  this.nukeLog.push({at:now,phase:this.miningPhase,position:p&&{x:p.x,y:p.y,z:p.z},target:this.miningTarget,held:b.name(b.items[b.quickBarSlot]),mob:this.mobAura?.state,waiting:this.missing||this.runtime?.travel.waiting,workerBusy:this.busy,controlBusy:!!this.controlBusy,equipmentBusy:!!this.runtime?.equipmentBusy,food:!!this.runtime?.consumeTask,lastConfirmedAt:this.lastNukeBreak||null});
+  this.nukeLog.push({at:now,phase:this.miningPhase,position:p&&{x:p.x,y:p.y,z:p.z},target:this.miningTarget,digPhase:b.digState?.phase,digError:b.digState?.error,remainingMs:b.digState?.remainingMs,held:b.name(b.items[b.quickBarSlot]),mob:this.mobAura?.state,waiting:this.missing||this.runtime?.travel.waiting,workerBusy:this.busy,controlBusy:!!this.controlBusy,equipmentBusy:!!this.runtime?.equipmentBusy,food:!!this.runtime?.consumeTask,lastConfirmedAt:this.lastNukeBreak||null});
   if(this.nukeLog.length>60)this.nukeLog.shift();
  }
- async tick(){this.sampleNuke();require('../../model/world/mining/mining-lifecycle').resume(this);if(this.mobAura)await this.mobAura.pulse();if(this.mobAura?.busy||this.mobAura?.holdsMining)return;if(this.busy||this.controlBusy||this.bot.handUse||this.runtime?.consumeTask||this.runtime?.equipmentBusy||!this.bot.connected||this.bot.dead||Date.now()<(this.miningRetryAt||0))return;
+ async tick(){this.sampleNuke();require('../../model/world/mining/mining-lifecycle').resume(this);const inLava=this.running&&this.bot.connected&&!this.bot.dead&&this.bot.entity&&this.runtime&&require('../../vendor/bedrockflayer/lib/physics/collision').isInLava(this.bot,this.bot.entity);
+  if(inLava){this.mobAura?.controller?.abort();if(this.mobAura?.busy)return;}
+  else {if(this.mobAura)await this.mobAura.pulse();if(this.mobAura?.busy||this.mobAura?.holdsMining)return;}if(this.busy||this.controlBusy||this.bot.handUse||this.runtime?.consumeTask||this.runtime?.equipmentBusy||!this.bot.connected||this.bot.dead||Date.now()<(this.miningRetryAt||0))return;
   if(this.receiving){if(this.receivedBlock&&this.lastReceive&&Date.now()-this.lastReceive>=3000){this.receiving=false;try{this.start();this.notice(`足場 ${this.state.scaffold} で再開しました`);}catch(e){this.mode='stopped';this.notice(e.message);}}return;}
   if(!this.running&&!this.cleanupRequested&&this.mode!=='waiting')return;
   this.busy=true;this.abort=new AbortController();const signal=this.abort.signal;
@@ -47,11 +49,12 @@ class Worker {
    if(this.bot.health===null){this.mode='waiting_health';return;}
    if(!this.runtime&&this.bot.health<12){this.mode='healing';if(!this.bot.find('enchanted_golden_apple'))return this.wait('エンチャント金リンゴ');
     if(Date.now()-this.lastEat>=5000){await this.bot.eat(signal);this.lastEat=Date.now();}return;}
+   if(inLava){this.miningPhase='lava-escape';if(await this.runtime.travel.escapeLava(signal))return;}
    const missing=!this.bot.tool()?'ピッケル':null;
    if(missing){if(this.state.autoSupply&&this.runtime){this.runtime.restock.request(missing+'が不足');this.wait(missing);}else this.wait(missing);return;}
    if(this.mode==='waiting'){if(this.lastReceive&&Date.now()-this.lastReceive<750)return;this.bot.naturalIdleFall=false;this.bot.passivePhysics=false;this.running=true;this.mode='running';this.missing='';this.notice('補給を確認しました。再開します');}
    if(this.cleanupRequested){this.mode='cleaning';const result=await this.cleanup(signal,{finish:true});if(!result.remaining){require('../../model/world/mining/mining-lifecycle').disable(this.state);this.manager.store.save();this.stop();this.notice('採掘・不要な足場の回収が完了しました');}else{this.missing=result.reason;this.miningPhase='cleanup';if(!result.progress&&(this.lastCleanupNotice!==result.reason||Date.now()-(this.lastCleanupNoticeAt||0)>15000)){this.lastCleanupNotice=result.reason;this.lastCleanupNoticeAt=Date.now();this.notice(result.reason);}}return;}
-   if(!this.running)return;this.mode='running';if(this.runtime?.needsFood?.()){this.runtime.startUse('体力回復',this.bot.find('enchanted_golden_apple'));return;}if(await this.runtime?.travel.escapeLava?.(signal))return;if(this.runtime?.travel.recoverCollision&&await this.runtime.travel.recoverCollision(signal))return;
+   if(!this.running)return;this.mode='running';if(this.runtime?.needsFood?.()){this.runtime.startUse('体力回復',this.bot.find('enchanted_golden_apple'));return;}if(this.runtime?.travel.recoverCollision&&await this.runtime.travel.recoverCollision(signal))return;
    if(this.bot.entity.onGround===false&&!solid(this.bot.blockAt(this.bot.entity.position.offset(0,-.1,0)))&&!require('../../model/movement/navigation/navigation').water(this.bot.blockAt(this.bot.entity.position))){this.miningPhase='falling';this.missing='下段へ落下中・着地してから採掘します';return;}
    if(this.runtime&&this.bot.entity.position.y<this.state.floor+.99){await require('../../model/world/mining/mining-floor').recover(this,signal);return;}
    if(this.state.itemDrop!==false&&Date.now()>=(this.nextDiscardAt||0)){
