@@ -29,7 +29,17 @@ class Worker {
   const {dropLanding}=require('../../model/movement/navigation/navigation'),view={blockAt:at=>key(at)===key(p)?{name:'air',isAir:true,solid:false,shapes:[],position:p}:b.blockAt(at)};
   const landing=dropLanding(view,p.offset(0,1,0),this.runtime?.travel.dropLimit?.()??64);return !!landing&&landing.y>this.state.floor;
  }
- async tick(){require('../../model/world/mining/mining-lifecycle').resume(this);if(this.mobAura)await this.mobAura.pulse();if(this.mobAura?.busy||this.mobAura?.holdsMining)return;if(this.busy||this.controlBusy||this.bot.handUse||this.runtime?.consumeTask||this.runtime?.equipmentBusy||!this.bot.connected||this.bot.dead||Date.now()<(this.miningRetryAt||0))return;
+ sampleNuke(){
+  if(!this.running)return;
+  const now=Date.now();
+  if(now-(this.nukeSampleAt||0)<3000)return;
+  this.nukeSampleAt=now;
+  const b=this.bot,p=b.entity?.position;
+  this.nukeLog??=[];
+  this.nukeLog.push({at:now,phase:this.miningPhase,position:p&&{x:p.x,y:p.y,z:p.z},target:this.miningTarget,held:b.name(b.items[b.quickBarSlot]),mob:this.mobAura?.state,waiting:this.missing||this.runtime?.travel.waiting,workerBusy:this.busy,controlBusy:!!this.controlBusy,equipmentBusy:!!this.runtime?.equipmentBusy,food:!!this.runtime?.consumeTask,lastConfirmedAt:this.lastNukeBreak||null});
+  if(this.nukeLog.length>60)this.nukeLog.shift();
+ }
+ async tick(){this.sampleNuke();require('../../model/world/mining/mining-lifecycle').resume(this);if(this.mobAura)await this.mobAura.pulse();if(this.mobAura?.busy||this.mobAura?.holdsMining)return;if(this.busy||this.controlBusy||this.bot.handUse||this.runtime?.consumeTask||this.runtime?.equipmentBusy||!this.bot.connected||this.bot.dead||Date.now()<(this.miningRetryAt||0))return;
   if(this.receiving){if(this.receivedBlock&&this.lastReceive&&Date.now()-this.lastReceive>=3000){this.receiving=false;try{this.start();this.notice(`足場 ${this.state.scaffold} で再開しました`);}catch(e){this.mode='stopped';this.notice(e.message);}}return;}
   if(!this.running&&!this.cleanupRequested&&this.mode!=='waiting')return;
   this.busy=true;this.abort=new AbortController();const signal=this.abort.signal;
@@ -57,7 +67,7 @@ class Worker {
    if(signal.aborted)return;
    const target=this.chooseTarget();this.miningTarget=target?{name:target.name,position:{...target.position}}:null;if(!target){await this.explore(signal);return;}
    const reservation=`${this.bot.dimensionId}:${key(target.position)}`;if(this.manager.claims.has(reservation))return;this.manager.claims.set(reservation,this.id);
-   try{if(this.canMineHere(target)){this.miningPhase='dig';this.miningApproach=null;this.approachPlan=null;if(this.runtime)this.runtime.travel.groundPlan=null;const dug=await this.bot.dig(target,signal,undefined,{range:this.state.miningRange});if(signal.aborted||dug===false)return;this.missing='';this.miningPhase='confirmed';
+   try{if(!require('../../model/world/mining/mining').wanted(this,target))return;if(this.canMineHere(target)){this.miningPhase='dig';this.miningApproach=null;this.approachPlan=null;if(this.runtime)this.runtime.travel.groundPlan=null;const dug=await this.bot.dig(target,signal,undefined,{range:this.state.miningRange});if(signal.aborted||dug===false)return;this.missing='';this.miningPhase='confirmed';this.lastNukeBreak=Date.now();
       if(!this.owned(target.position)){addStat(this.state.stats,target.name);addStat(this.state.session,target.name);this.recordMined(target.name);if(this.manager.saveMining)this.manager.saveMining();else this.manager.store.save();}
       if(Date.now()-(this.lastCleanupAt||0)>1000){this.lastCleanupAt=Date.now();await this.cleanup(signal);}
      }else await this.approach(target,signal);

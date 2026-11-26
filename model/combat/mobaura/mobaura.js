@@ -19,8 +19,14 @@ class MobAura{
   if(w.running&&require('../../../vendor/bedrockflayer/lib/physics/collision').isInLava(b,b.entity))return false;
   const now=Date.now();
   for(const [id,retryAt] of this.unreachable)if(retryAt<=now)this.unreachable.delete(id);
-  const a=target(b,{...c,skip:actor=>this.unreachable.has(actor.id)||w.running&&actor.position.y<Number(w.state.floor??-64)+1-.1});if(!a){this.state='索敵範囲内に対象Mobなし';return false;}
+  const a=target(b,{...c,skip:actor=>this.unreachable.has(actor.id)||w.running&&actor.position.y<Number(w.state.floor??-64)+1-.1});if(!a){this.engagement=null;this.state='索敵範囲内に対象Mobなし';return false;}
   
+  if(this.engagement?.id!==a.id)this.engagement={id:a.id,since:now,best:a.position.distanceTo(b.entity.position)};
+  const distanceNow=a.position.distanceTo(b.entity.position);
+  if(distanceNow<this.engagement.best-.5){this.engagement.best=distanceNow;this.engagement.since=now;}
+  if(w.running&&now-this.engagement.since>12000){
+   this.unreachable.set(a.id,now+15000);this.engagement=null;this.state='接近・撃破が進まず採掘へ復帰';return false;
+  }
   const tool=weapon(b,c.weapon);if(!tool){this.state='剣または斧の補給待ち';return false;}
   this.holdsMining=true;
   if(b.actionHandBusy?.kind==='mining'||w.running&&w.busy&&!w.cleanupRequested&&w.mode==='running'){w.abort?.abort();this.state='採掘を一時中断してMobへ対応';return false;}

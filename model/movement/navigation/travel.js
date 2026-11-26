@@ -100,8 +100,9 @@ class Travel{
    jumping=grounded&&ready&&(b._jumpCooldown||0)<=0;
   }
   this.following={kind:'walk-step',destination:goal.clone(),stopRadius:.16,speed:undefined,path:null};
-  b.desiredMoveWorld=distance>.04?{x:delta.x/distance,z:delta.z/distance}:null;b.desiredMoveSpeed=Math.min(this.movementSpeed(gap?.27:.21),distance);b.setControlState('sneak',false);
-  const paused=Date.now()<(this.runtime.speedBlockedUntil||0);if(paused)walking.progressAt=Date.now();b.setControlState('forward',distance>.06&&!paused);b.setControlState('jump',jumping&&!paused);b.setControlState('sprint',false);
+  const dash=this.runtime.worker.running&&this.runtime.worker.state.nukeDash!==false&&walking.action==='walk'&&distance>.42&&!b.handUse&&!b.entity.isInWater;
+  b.desiredMoveWorld=distance>.04?{x:delta.x/distance,z:delta.z/distance}:null;b.desiredMoveSpeed=Math.min(this.movementSpeed(gap||dash?.27:.21),distance);b.setControlState('sneak',false);
+  const paused=Date.now()<(this.runtime.speedBlockedUntil||0);if(paused)walking.progressAt=Date.now();b.setControlState('forward',distance>.06&&!paused);b.setControlState('jump',jumping&&!paused);b.setControlState('sprint',dash&&!paused);
   if(!b.actionHandBusy&&!b.handUse)b.lookAt(goal.offset(0,1.62,0),false);
   const score=distance+Math.abs(delta.y);if(walking.best===undefined||score<walking.best-.04){walking.best=score;walking.progressAt=Date.now();}
   return true;

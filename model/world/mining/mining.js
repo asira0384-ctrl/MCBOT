@@ -7,7 +7,13 @@ function filter(value,registry){
  if(!words.length||words.length>64)throw Error('採掘するブロックを1〜64種類、またはallで指定してください');
  return [...new Set(words.map(word=>{let n=itemName(word);n=aliases[n]||n;if(/^\d+$/u.test(n))n=registry?.blocks?.[Number(n)]?.name||'';if(!n||!registry?.blocksByName?.[n])throw Error('不明なブロック: '+word);if(registry.blocksByName[n].diggable===false||registry.blocksByName[n].hardness<0)throw Error('破壊できないブロック: '+word);return n;}))];
 }
-function wanted(worker,block){return !worker.state.miningFilter?.length||worker.state.miningFilter.includes(block.name);}
+function wanted(worker,block){
+ if(worker.state.nukeLavaMode!==false&&block.position){
+  for(const [dx,dy,dz] of [[0,1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]]){
+   if(/^(flowing_)?lava$/.test(worker.bot.blockAt(block.position.offset(dx,dy,dz))?.name||''))return false;
+  }
+ }
+ return !worker.state.miningFilter?.length||worker.state.miningFilter.includes(block.name);}
 function sameWorld(a,b){return a.bot.dimensionId===b.bot.dimensionId&&String(a.bot.config?.host||'').toLowerCase()===String(b.bot.config?.host||'').toLowerCase()&&Number(a.bot.config?.port||19132)===Number(b.bot.config?.port||19132);}
 function sameJob(a,b){return sameWorld(a,b)&&JSON.stringify(a.state.miningChunks||[])===JSON.stringify(b.state.miningChunks||[])&&JSON.stringify(a.state.area)===JSON.stringify(b.state.area)&&a.state.floor===b.state.floor&&a.state.ceiling===b.state.ceiling&&JSON.stringify(a.state.miningFilter||[])===JSON.stringify(b.state.miningFilter||[]);}
 function columnBusy(w,q){for(const o of w.manager?.workers?.values()||[]){if(o===w||!o.bot.connected||o.bot.dead||!sameWorld(w,o))continue;const p=o.bot.entity?.position;if(p&&Math.floor(p.x)===q.x&&Math.floor(p.z)===q.z&&Math.abs(p.y-q.y)<3)return true;}return false;}
