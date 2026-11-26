@@ -44,7 +44,17 @@ class Worker {
    if(!this.running)return;this.mode='running';if(this.runtime?.needsFood?.()){this.runtime.startUse('体力回復',this.bot.find('enchanted_golden_apple'));return;}if(this.runtime?.travel.recoverCollision&&await this.runtime.travel.recoverCollision(signal))return;
    if(this.bot.entity.onGround===false&&!solid(this.bot.blockAt(this.bot.entity.position.offset(0,-.1,0)))&&!require('../../model/movement/navigation/navigation').water(this.bot.blockAt(this.bot.entity.position))){this.miningPhase='falling';this.missing='下段へ落下中・着地してから採掘します';return;}
    if(this.runtime&&this.bot.entity.position.y<this.state.floor+.99){await require('../../model/world/mining/mining-floor').recover(this,signal);return;}
-   if(Date.now()-(this.lastDiscardAt||0)>1000){this.lastDiscardAt=Date.now();await this.discard(signal);}
+   if(this.state.itemDrop!==false&&Date.now()>=(this.nextDiscardAt||0)){
+    try{
+     await this.discard(signal);
+     this.nextDiscardAt=Date.now()+1000;
+    }catch(error){
+     if(signal.aborted)return;
+     this.nextDiscardAt=Date.now()+30000;
+     this.manager.notice(this.id,'アイテム整理を後で再試行します: '+error.message,{game:false});
+    }
+   }
+   if(signal.aborted)return;
    const target=this.chooseTarget();this.miningTarget=target?{name:target.name,position:{...target.position}}:null;if(!target){await this.explore(signal);return;}
    const reservation=`${this.bot.dimensionId}:${key(target.position)}`;if(this.manager.claims.has(reservation))return;this.manager.claims.set(reservation,this.id);
    try{if(this.canMineHere(target)){this.miningPhase='dig';this.miningApproach=null;this.approachPlan=null;if(this.runtime)this.runtime.travel.groundPlan=null;const dug=await this.bot.dig(target,signal,undefined,{range:this.state.miningRange});if(signal.aborted||dug===false)return;this.missing='';this.miningPhase='confirmed';
@@ -69,7 +79,19 @@ class Worker {
   if(plan.targetKey===reservation&&block&&!air(block)&&block.diggable&&block.name===held.name&&this.inArea(p)&&require('../../model/world/mining/mining').wanted(this,block)&&!this.owned(p)&&!this.underPlayer(p)&&(this.failed.get(key(p))||0)<=Date.now()&&!this.manager.claims.has(reservation))return block;
   return candidate;
  }
- miningStatus(){return {...this.miner.snapshot(),mobAura:this.mobAura?.snapshot()||null,phase:this.miningPhase||null,target:this.miningTarget||null,approach:this.miningApproach||null,missing:this.missing||'',dig:this.bot.digState||null,recovery:this.runtime?.travel.collisionRecovery||null,scaffolds:this.scaffoldCleanup||null,retryAt:this.miningRetryAt||null};}
+ miningStatus(){
+  const b=this.bot,r=this.runtime,blockers=[];
+  if(!b.connected)blockers.push('未接続');
+  if(b.dead)blockers.push('リスポーン待ち');
+  if(b.terrainReady===false)blockers.push('地形受信待ち');
+  if(b.pendingServerForm)blockers.push('サーバーフォーム待ち');
+  if(this.startRequested)blockers.push('採掘開始待ち');
+  if(this.busy)blockers.push('採掘側の処理中');
+  if(this.controlBusy)blockers.push(r?.operation||'別の操作中');
+  if(r?.consumeTask||b.handUse)blockers.push('アイテム使用中');
+  if(r?.equipmentBusy||b.urgentOffhandPending)blockers.push('装備の処理中');
+  if(this.mobAura?.busy||this.mobAura?.holdsMining)blockers.push('MobAura対応中');
+  return {...this.miner.snapshot(),blockers,mobAura:this.mobAura?.snapshot()||null,phase:this.miningPhase||null,target:this.miningTarget||null,approach:this.miningApproach||null,missing:this.missing||'',dig:this.bot.digState||null,recovery:this.runtime?.travel.collisionRecovery||null,scaffolds:this.scaffoldCleanup||null,retryAt:this.miningRetryAt||null};}
  async approach(target,signal){if(this.runtime){
    const b=this.bot,travel=this.runtime.travel,navigation=require('../../model/movement/navigation/navigation'),stock=this.state.scaffoldEnabled!==false&&(b.list().find(i=>i.name===this.state.scaffold)||b.list().find(i=>['cobblestone','stone','dirt','obsidian','slime','slime_block'].includes(i.name)));this.miningPhase='approach';travel.waiting='ブロックの隣の採掘位置へ接近';
    const targetKey=`${b.dimensionId}:${key(target.position)}`,previous=this.approachPlan;let best=null;
