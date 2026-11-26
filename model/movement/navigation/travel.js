@@ -73,7 +73,7 @@ class Travel{
  edgeBlocked(from,to){return (this.failedEdges?.get(this.edgeKey(from,to))||0)>Date.now();}
  movementSpeed(speed){if(this.recovery?.until>Date.now())return Math.min(speed||.21,this.recovery.speed);return speed;}
  dropLimit(){const n=Number(this.runtime.worker.state.maxDrop??64);return Number.isInteger(n)?Math.max(0,Math.min(384,n)):64;}
- lavaAllowed(){return this.runtime.config.lavaWalk!==false&&((this.bot.effects?.get(12)?.expires||0)>Date.now()+8000||!!this.bot.find?.('enchanted_golden_apple'));}
+ lavaAllowed(){const w=this.runtime.worker;return !(w.running&&w.state.nukeLavaMode===false)&&this.runtime.config.lavaWalk!==false&&((this.bot.effects?.get(12)?.expires||0)>Date.now()+8000||!!this.bot.find?.('enchanted_golden_apple'));}
  groundOptions(extra={}){return {allowLava:this.lavaAllowed(),maxDrop:this.dropLimit(),canDig:block=>this.canDig(block),blocked:(a,c)=>this.edgeBlocked(a,c),...extra};}
  driveStep(walking=this.walking){
   if(!walking||this.walking!==walking)return false;const b=this.bot,p=b.entity.position,goal=walking.goal,delta=goal.minus(p),distance=Math.hypot(delta.x,delta.z);
@@ -121,9 +121,55 @@ class Travel{
    const {addStat}=require('../../../src/shared/util');addStat(w.state.stats,block.name);addStat(w.state.session,block.name);w.recordMined(block.name);this.runtime.manager.store.save();
   }
  }
+ async escapeLava(signal){
+  const b=this.bot,entity=b.entity;
+  const {isInLava}=require('../../../vendor/bedrockflayer/lib/physics/collision');
+  if(!entity||!isInLava(b,entity))return false;
+  const nav=require('./navigation'),base=entity.position.floored();
+  this.waiting='溶岩から浮上して岸を探しています';
+  this.stopFollowing();
+  this.groundPlan=null;
+  const candidates=[];
+  for(const [dx,dz] of [[0,0],[1,0],[-1,0],[0,1],[0,-1]]){
+   const cell=base.offset(dx,0,dz);
+   for(const y of [0,1]){
+    const entry=cell.offset(0,y,0);
+    if(!nav.pass(b,entry,true)||y&&!nav.pass(b,base.offset(0,1,0),true))continue;
+    let height=0,dry=false;
+    for(;height<8;height++){
+     const top=entry.offset(0,height,0);
+     if(!nav.pass(b,top,true))break;
+     if(nav.pass(b,top)){dry=true;break;}
+    }
+    candidates.push({entry,score:(dry?20-height:height)+y*.5-(dx||dz ? .1 : 0)});
+   }
+  }
+  candidates.sort((a,c)=>c.score-a.score);
+  const goal=candidates[0]?.entry.offset(.5,0,.5);
+  try{
+   if(goal){
+    const delta=goal.minus(entity.position),distance=Math.hypot(delta.x,delta.z);
+    if(distance>.12){
+     b.desiredMoveWorld={x:delta.x/distance,z:delta.z/distance};
+     b.desiredMoveSpeed=Math.min(.09,distance);
+     b.setControlState('forward',true);
+    }
+   }
+   b.setControlState('jump',true);
+   await require('node:timers/promises').setTimeout(250,undefined,{signal});
+  }finally{this.stopFollowing();}
+  return true;
+ }
  async recoverCollision(signal){
   const b=this.bot,w=this.runtime.worker,inspect=require('../../../src/bedrock/positions').inspect,check=inspect(b,b.entity.position);
-  if(!check.overlaps.length){if(this.collisionRecovery?.phase!=='idle')this.collisionRecovery={phase:'idle'};return false;}
+  if(!check.overlaps.length){
+   if(this.collisionRecovery?.phase!=='idle'){
+    this.collisionRecovery={phase:'idle'};
+    this.groundPlan=null;
+    w.approachPlan=null;
+   }
+   return false;
+  }
   if(this.runtime.protectAnti?.()||this.embed||this.flight)return false;
   const active=w.running||this.route||this.walking||this.following||this.runtime.follower?.config.enabled||this.runtime.pendingMove;
   if(!active||this.runtime.paused)return false;
@@ -135,13 +181,13 @@ class Travel{
   if(Date.now()<(this.collisionRetryAt||0))return true;
   const p=b.entity.position,blocks=[];
   for(let x=Math.floor(p.x-.3);x<=Math.floor(p.x+.3-1e-7);x++)for(let z=Math.floor(p.z-.3);z<=Math.floor(p.z+.3-1e-7);z++)for(let y=Math.floor(p.y);y<=Math.floor(p.y+1.8-1e-7);y++){
-   const block=b.blockAt(new Vec3(x,y,z)),owner=w.manager.claims?.get(`${b.dimensionId}:${x},${y},${z}`);if(block?.solid&&block.diggable&&block.hardness>=0&&(owner===undefined||owner===w.id)&&this.canDig(block)&&b.reach(block)&&b.visible(block))blocks.push(block);
+   const block=b.blockAt(new Vec3(x,y,z)),owner=w.manager.claims?.get(`${b.dimensionId}:${x},${y},${z}`);if(block?.solid&&block.diggable&&block.hardness>=0&&(owner===undefined||owner===w.id)&&(this.canDig(block)||w.running&&block.position.y>w.state.floor&&w.owned(block.position)?.kind==='scaffold')&&b.reach(block)&&b.visible(block))blocks.push(block);
   }
   blocks.sort((a,c)=>p.offset(0,1.62,0).distanceTo(a.position.offset(.5,.5,.5))-p.offset(0,1.62,0).distanceTo(c.position.offset(.5,.5,.5)));
   if(!blocks.length||!b.tool()){this.collisionRecovery={phase:'blocked',reason:!b.tool()?'埋まり解除用のピッケルがありません':'床・採掘範囲・指定ブロックを守るため、この重なりは自動で壊せません'};this.waiting=this.collisionRecovery.reason;this.collisionRetryAt=Date.now()+2000;return true;}
   const block=blocks[0];this.collisionRecovery={phase:'dig',position:{...block.position},name:block.name,at:Date.now()};this.waiting='重なっている許可ブロックを掘って復帰中';
   const claim=`${b.dimensionId}:${block.position.x},${block.position.y},${block.position.z}`,existing=w.manager.claims?.get(claim);w.manager.claims??=new Map();w.manager.claims.set(claim,w.id);
-  try{await this.breakObstacle(block,signal);this.collisionRecovery={phase:'recheck',at:Date.now()};}catch(e){if(signal?.aborted)throw e;this.collisionRecovery={phase:'retry',reason:e.message,at:Date.now()};this.collisionRetryAt=Date.now()+2000;}finally{if(existing===undefined)w.manager.claims.delete(claim);}return true;
+  try{await this.breakObstacle(block,signal);if(air(b.blockAt(block.position))&&w.owned(block.position)?.kind==='scaffold')w.removeOwned(block.position);this.collisionRecovery={phase:'recheck',at:Date.now()};}catch(e){if(signal?.aborted)throw e;this.collisionRecovery={phase:'retry',reason:e.message,at:Date.now()};this.collisionRetryAt=Date.now()+2000;}finally{if(existing===undefined)w.manager.claims.delete(claim);}return true;
  }
  step(){const b=this.bot;b.straightTimerActive=false;if(!b.connected||b.dead)return false;
   if(this.floorEscape){const escape=this.floorEscape;if(Date.now()-escape.at>750||escape.expires&&Date.now()>=escape.expires){this.floorEscape=null;b.setControlState('jump',false);return false;}
@@ -237,7 +283,10 @@ class Travel{
  }
  canDig(block){const w=this.runtime.worker;if(!w.running)return w.state.floor===null||block.position.y>w.state.floor;return w.inArea(block.position)&&require('../../world/mining/mining').wanted(w,block)&&block.position.y>=(w.miner?.layer??w.state.floor+1);}
  async pillar(item,signal){
-  const b=this.bot,p=b.entity.position,feet=p.floored();if(require('../../world/mining/mining').columnBusy(this.runtime.worker,feet))throw Object.assign(Error('他のBotの上昇列を避けます'),{code:'PATH_WAIT'});if(!item)throw Error('積み上げるブロックがありません');if(this.runtime.protectAnti?.())throw Error('戦闘中のAntiを維持するため積み上げを待機します');
+  const b=this.bot,p=b.entity.position,feet=p.floored(),w=this.runtime.worker;
+  if(w.running&&!w.inArea(new Vec3(feet.x,w.state.floor+1,feet.z)))
+   throw Object.assign(Error('採掘範囲内でのみ足場を積みます'),{code:'PATH_WAIT'});
+  if(require('../../world/mining/mining').columnBusy(this.runtime.worker,feet))throw Object.assign(Error('他のBotの上昇列を避けます'),{code:'PATH_WAIT'});if(!item)throw Error('積み上げるブロックがありません');if(this.runtime.protectAnti?.())throw Error('戦闘中のAntiを維持するため積み上げを待機します');
   if(!b.entity.onGround||!solid(b.blockAt(feet.offset(0,-1,0)))||!bodyClear(b,feet.offset(.5,1,.5)))throw Object.assign(Error('積み上げ用の足場・頭上を確認中'),{code:'PATH_WAIT'});
   const center=feet.offset(.5,0,.5);if(Math.hypot(p.x-center.x,p.z-center.z)>.12){const drive=()=>{const d=center.minus(b.entity.position),length=Math.hypot(d.x,d.z)||1;b.desiredMoveWorld={x:d.x/length,z:d.z/length};b.desiredMoveSpeed=Math.min(.12,length);b.setControlState('forward',true);};try{b.on('physicsTick',drive);drive();await b.waitUntil(()=>Math.hypot(b.entity.position.x-center.x,b.entity.position.z-center.z)<.12,2000,signal);}finally{b.removeListener('physicsTick',drive);this.stopFollowing();}}
   await b.equip(item.slot,signal);this.stopFollowing();
@@ -251,7 +300,14 @@ class Travel{
     b.setControlState('jump',false);state.phase='placing';
     const held=b.list().find(i=>i.slot===b.quickBarSlot&&i.name===item.name);
     if(!held)throw Error('足場ブロックの持ち替えを確認できません');
-    await this.runtime.worker.placeOwned(feet,held,'scaffold',signal);
+    await this.runtime.worker.placeOwned(feet,held,'scaffold',signal,{
+     timeout:1800,
+     beforeSend:()=>{
+      const p=b.entity.position;
+      if(p.y<feet.y+1.04||b.entity.velocity.y<-.04||Math.hypot(p.x-center.x,p.z-center.z)>.2)
+       throw Object.assign(Error('足が設置面より上にある間だけ積みます'),{code:'PATH_WAIT'});
+     }
+    });
     state.phase='landing';await b.waitUntil(()=>b.entity.onGround&&b.entity.position.y>=feet.y+.99,2400,signal);state.phase='landed';return;
    }catch(error){
     state.phase='retry';state.reason=error.message;

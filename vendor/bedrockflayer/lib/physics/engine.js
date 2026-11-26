@@ -238,7 +238,7 @@ function _simulateTick(bot) {
 
     // --- Apply gravity ---
     if (!onClimbable) {
-        const gravity = inWater ? C.WATER_GRAVITY : C.GRAVITY
+        const gravity = inWater || inLava ? C.WATER_GRAVITY : C.GRAVITY
         if (!entity.onGround) entity.velocity.y -= gravity
         else if (entity.velocity.y <= 0) entity.velocity.y = -gravity
     }

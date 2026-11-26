@@ -473,12 +473,12 @@ class Runtime {
           totem: this.config.autototem,
           elytra: !!this.travel.flight
         }));
-        if (this.config.autoslot && Date.now() > (this.manualSlotsUntil || 0)) {
-          const complete = await equipment.autoSlots(b, undefined, {
-            pistoncrystal: this.config.pistoncrystal
+        if (this.config.autoslot && !this.worker.running && Date.now() > (this.manualSlotsUntil || 0)) {
+          await this.maintenance('AutoSlot', async () => {
+            const complete = await equipment.autoSlots(b, undefined, {pistoncrystal: this.config.pistoncrystal});
+            this.dirty = !complete;
+            if (complete) this.lastSort = Date.now();
           });
-          this.dirty = !complete;
-          if (complete) this.lastSort = Date.now();
         }
       }
     } finally {
