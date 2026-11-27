@@ -45,7 +45,7 @@ function dropLanding(bot,entry,maxDrop=3,clear=q=>pass(bot,q)){
   if(under.solid)return q;
  }return null;
 }
-function* groundSteps(source,start,goal,{block=null,dig=false,canDig=()=>true,stopRadius=.7,limit=900,radius,blocked=()=>false,jumpGaps=true,maxDrop=3,preferGround=true,minY=-64,allowLava=false}={}){
+function* groundSteps(source,start,goal,{block=null,dig=false,canDig=()=>true,stopRadius=.7,limit=900,radius,blocked=()=>false,jumpGaps=true,maxDrop=3,preferGround=true,minY=-64,allowLava=false,bridgeLava=false}={}){
  start=start.floored();goal=goal.floored();radius??=Math.min(96,Math.max(14,Math.ceil(Math.hypot(goal.x-start.x,goal.z-start.z))+4));
  if(block&&preferGround){const natural=yield* groundSteps(source,start,goal,{dig,canDig,stopRadius,limit,radius,blocked,jumpGaps,maxDrop,minY,allowLava});if(natural.reached)return natural;}
  const memo=new Map(),plans=new WeakMap(),passMaps=new WeakMap(),key=p=>`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
@@ -60,7 +60,7 @@ function* groundSteps(source,start,goal,{block=null,dig=false,canDig=()=>true,st
    const landing=p.y>minY&&!bot.blockAt(p.offset(dx,-1,dz))?.solid?dropLanding(bot,p.offset(dx,0,dz),Math.min(maxDrop,p.y-minY),clear):null,levels=landing?[0,1,landing.y-p.y]:[0,1];
    for(const dy of levels){
    const q=p.offset(dx,dy,dz),under=bot.blockAt(q.offset(0,-1,0)),feet=bot.blockAt(q),head=bot.blockAt(q.offset(0,1,0)),edits=[];let breaking=false;
-   if(q.y<minY||blocked(p,q)||danger(under)&&!(allowLava&&lava(under)))continue;
+   if(q.y<minY||blocked(p,q)||danger(under)&&!((allowLava||bridgeLava&&block)&&lava(under)))continue;
    if(!clear(q)){
     if(!dig||dy!==0||[feet,head].some(b=>danger(b)||b.solid&&(!b.diggable||b.hardness<0||!canDig(b))))continue;
     if(![feet,head].some(b=>b.solid))continue;breaking=true;for(const b of [feet,head])if(b.solid)edits.push([b.position,empty(b.position)]);
@@ -70,7 +70,7 @@ function* groundSteps(source,start,goal,{block=null,dig=false,canDig=()=>true,st
    if(allowLava&&(lava(feet)||lava(under))){if(head?.solid||danger(head)&&!lava(head)||dy< -1)continue;action='lava';cost+=1.5;}
    else if(water(feet)||water(under)){if(danger(head)||head?.solid||dy< -1)continue;action='swim';cost+=2.5;}
    else if(!under?.solid){
-    if(!block||dy<0||!under?.isAir)continue;
+    if(!block||dy<0||(!under?.isAir&&!(bridgeLava&&lava(under))))continue;
     if(/^(sand|red_sand|gravel|.*concrete_powder)$/.test(block.name)&&!bot.blockAt(q.offset(0,-2,0))?.solid)continue;
     const attached=[[0,-1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]].some(([x,y,z])=>bot.blockAt(q.offset(x,y-1,z))?.solid);if(!attached)continue;
     // Never build a bridge at the old height to reach a lower nearby layer.

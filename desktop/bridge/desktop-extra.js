@@ -2,6 +2,14 @@
 const fail=m=>Object.assign(Error(m),{status:400});
 function endpoint(d){const host=String(d.host||'').trim(),port=Number(d.port);if(!host||host.length>253||!(/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i.test(host)||require('node:net').isIP(host))||!Number.isInteger(port)||port<1||port>65535)throw fail('IP/ホスト名とport（1〜65535）を確認してください');return {host,port};}
 async function apply(web,s,d){const m=web.manager,ids=()=>web.targets(d.target);switch(d.action){
+case 'create-group':{
+ const name=String(d.name||'').trim(),groups=m.store.data.botGroups??=[];
+ if(!name||name.length>48||groups.some(g=>g.name===name))throw fail('グループ名を確認してください');
+ if(!Array.isArray(d.members)||!d.members.length||d.members.some(id=>!m.names.has(id)))throw fail('登録済みのBotを選択してください');
+ const group={id:'group-'+require('node:crypto').randomUUID(),name,members:[...new Set(d.members)]};
+ groups.push(group);m.store.save();m.changed?.(0,'accounts');return {ok:true,group,result:'グループを作成しました'};
+}
+case 'recovery-log':return {ok:true,report:{generatedAt:new Date().toISOString(),bots:ids().map(id=>({id,events:m.store.bot(id).nukeRecoveryHistory||[]}))}};
 case 'nuke-log':return {ok:true,report:{generatedAt:new Date().toISOString(),bots:ids().map(id=>{
  const w=m.workers.get(id);
  return {id,connected:!!w?.bot.connected,phase:w?.miningPhase,log:w?.nukeLog||[]};
@@ -15,7 +23,7 @@ case 'instant':{if(!['kit','world','back'].includes(d.kind))throw fail('操作�
 case 'players':return {players:[...new Set([...m.workers.values()].flatMap(w=>[...(w.bot.players?.values()||[])].map(p=>p.name)))].sort()};
 case 'add':return {account:require('../../src/auth/account-slots').add(m,d.name,d.realm)};
 case 'rename':{const list=ids();if(list.length!==1)throw fail('Botを1体選択してください');return {result:await m.execute(String(list[0]),'account set '+require('../../src/auth/account-slots').validateName(d.name),'web')};}
-case 'remove':{web.requireOwner(s);const list=ids();if(list.length!==1||d.confirm!==true)throw fail('削除するBotを1体選び、確認してください');const id=list[0];await m.execute(String(id),'disconnect','web');m.names.delete(id);delete m.store.data.bots[id];require('../../src/auth/account-slots').save(m);return {result:'アカウント枠を削除しました（認証キャッシュのファイルは削除していません）'};}
+case 'remove':{web.requireOwner(s);const list=ids();if(list.length!==1||d.confirm!==true)throw fail('削除するBotを1体選び、確認してください');const id=list[0];await m.execute(String(id),'disconnect','web');m.names.delete(id);for(const g of m.store.data.botGroups||[])g.members=g.members.filter(n=>n!==id);delete m.store.data.bots[id];require('../../src/auth/account-slots').save(m);return {result:'アカウント枠を削除しました（認証キャッシュのファイルは削除していません）'};}
 case 'connect-route': {
  // One atomic desktop action: apply requested server FIRST, THEN start login/connect.
  // A saved Microsoft token is not a guarantee of Minecraft authorization.

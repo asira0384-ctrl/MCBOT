@@ -70,7 +70,10 @@ class WebControl{
  }
  loginMessage(actor,label,discordUser){const login=this.issueLogin(actor,label,discordUser);return {content:`[Web管理画面を開く](${login.url})\nあなた専用・一度限り・2分間有効です。このリンクを押すと、そのままログインできます。\n手入力する場合のコード: **${login.code}**`,allowedMentions:{parse:[]}};}
  targets(value){
-  const target=String(value||'');if(target==='2b2e'||target==='ign')return [...this.manager.names.keys()].filter(n=>require('../../src/app/realms').selected(this.manager.store,n)===target);
+  const target=String(value||'');if(target.startsWith('group-')){
+   const g=this.manager.store.data.botGroups?.find(group=>group.id===target);
+   if(!g)throw fail(400,'グループが見つかりません');return g.members.filter(id=>this.manager.names.has(id));
+  }if(target==='2b2e'||target==='ign')return [...this.manager.names.keys()].filter(n=>require('../../src/app/realms').selected(this.manager.store,n)===target);
   if(target!=='all'&&(!/^[1-9][0-9]*$/.test(target)||Number(target)>require('../../src/auth/account-slots').LIMIT))throw fail(400,'Bot番号またはグループを選んでください');
   return this.manager.targets(target);
  }
@@ -86,7 +89,7 @@ class WebControl{
     bps:r?.telemetry?.bps||0,verticalBps:r?.telemetry?.verticalBps||0,restock:r?.restock||null,nearby:w?.runtime?.telemetry?require('../../model/combat/targeting/tactics').nearby(w.runtime):[],accounts:state.accountHistory||[name],authentication:this.manager.authentication?.(id)||null,authCacheSaved:this.manager.accounts?.snapshot(id,name).saved||false,ignActions:r?.ignActions||state.ignActions||null,followingPlayer:r?.followingPlayer||{...state.follow,points:0},runtime:r?{loopTiming:w?.runtime?.loopTiming||null,selfDefense:r.selfDefense,autoLog:r.autoLog,rollbackRecovery:r.rollbackRecovery,paused:r.paused,operation:r.operation,movement:r.movement,target:r.target,combatWaiting:r.combatWaiting,attacksSent:r.attacksSent,totemsUsed:r.totemsUsed,meleeState:r.meleeState,autototem:w.runtime.urgentTotem?.state,consumption:r.consumption,lastItemUse:r.lastItemUse,crystalCombat:r.crystalCombat,featureErrors:r.featureErrors,lastError:r.lastError}:null,
     packetsReceived:Object.values(b?.packetCounts||{}).reduce((a,n)=>a+Number(n||0),0),corrections:b?.positionCorrections||0,logs:(this.manager.logs.get(id)||[]).slice(-30).map(redact)};
   });
-  return {tpJobs:Object.fromEntries(Object.entries(this.manager.tpJobs||{}).map(([k,v])=>[k,v.state])),circles:require('../../model/movement/circle/circle').snapshot(this.manager),version:require('../../package.json').version,at:this.now(),bots,alerts:this.manager.alerts||[],friends:(this.manager.store.data.friends||[]).map(e=>e.name),enemies:(this.manager.store.data.enemies||[]).map(e=>e.name),audit:this.audit.slice(-30)};
+  return {botGroups:this.manager.store.data.botGroups||[],tpJobs:Object.fromEntries(Object.entries(this.manager.tpJobs||{}).map(([k,v])=>[k,v.state])),circles:require('../../model/movement/circle/circle').snapshot(this.manager),version:require('../../package.json').version,at:this.now(),bots,alerts:this.manager.alerts||[],friends:(this.manager.store.data.friends||[]).map(e=>e.name),enemies:(this.manager.store.data.enemies||[]).map(e=>e.name),audit:this.audit.slice(-30)};
  }
  session(req){
   const token=this.token(req);if(!token)return null;const key=digest(token);let session=this.sessions.get(key);if(this.sessionRepository.revoked(key)){this.sessions.delete(key);return null;}

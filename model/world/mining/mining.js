@@ -56,7 +56,7 @@ class ChunkMining{
   // Limit top-down coordination to nearby chunks, not the entire cuboid.
   const own=new Set(this.chunks),feet=b.entity.position,distance=c=>Math.hypot((c.x1+c.x2)/2-feet.x,(c.z1+c.z2)/2-feet.z);
   const remaining=this.allChunks.filter(c=>c.dirty||c.layer>w.state.floor);
-  remaining.sort((a,c)=>Number(own.has(c))-Number(own.has(a))||distance(a)-distance(c));
+  remaining.sort((a,c)=>(w.nearbyRecoveryUntil>Date.now()?0:Number(own.has(c))-Number(own.has(a)))||distance(a)-distance(c));
   if(this.chunk&&remaining.includes(this.chunk)&&distance(this.chunk)<48){remaining.splice(remaining.indexOf(this.chunk),1);remaining.unshift(this.chunk);}
   const ordered=remaining.filter(c=>!(c.deferUntil>Date.now())).slice(0,1);
   for(const c of ordered){if(!c.dirty)continue;this.request(c);

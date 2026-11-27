@@ -110,7 +110,7 @@ class BedrockBot extends EventEmitter {
  miningTool(block){return require('../../model/world/mining/mining-speed').choose(this,block);}
  breakTime(block,tool){return require('../../model/world/mining/mining-speed').estimate(this,block,tool).ms;}
  async dig(block,signal,preferredTool,options={}){return require('../../model/world/mining/digging').dig(this,block,signal,preferredTool,options);}
- async place(target,item,signal,options={}){if(!item)throw Error('設置するアイテムがありません');if(!air(this.blockAt(target)))throw Error('設置場所が空いていません');const placement=require('../shared/geometry').placementSupport(this,target),support=placement?.block,face=placement?.face;
+ async place(target,item,signal,options={}){if(!item)throw Error('設置するアイテムがありません');if(!air(this.blockAt(target))&&!(options.replaceLava&&/^(flowing_)?lava$/.test(this.blockAt(target)?.name)))throw Error('設置場所が空いていません');const placement=require('../shared/geometry').placementSupport(this,target),support=placement?.block,face=placement?.face;
   if(!support)throw Error('足場を置くための隣接ブロックがありません');if(/^(sand|red_sand|gravel|.*concrete_powder)$/.test(item.name)&&!solid(this.blockAt(target.offset(0,-1,0))))throw Error('砂系の足場は下に支えが必要です');
   const hand=require('../../model/inventory/items/hand'),lease=hand.claim(this);
   const wasSneaking=!!this.controlState.sneak,state=this.lastPlacement={phase:'selecting',name:item.name,position:{...target},dimension:this.dimensionId,startedAt:Date.now()};
