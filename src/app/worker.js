@@ -98,7 +98,7 @@ class Worker {
   return !this.avoidDigStance(target,this.bot.entity.position)&&this.bot.reach(target,this.state.miningRange)&&!!require('../../model/world/mining/mining-reach').aim(this.bot,target,this.state.miningRange);
  }
  chooseTarget(){
-  const candidate=this.miner.scan(),held=this.miningTarget,plan=this.approachPlan;if(!held||!plan||this.miner.surveying||held.position.y!==this.miner.layer)return candidate;
+  const candidate=this.miner.scan(),held=this.miningTarget,plan=this.approachPlan;if(this.miner.selection==='nearby'||!held||!plan||this.miner.surveying||held.position.y!==this.miner.layer)return candidate;
   const p=new Vec3(held.position.x,held.position.y,held.position.z),block=this.bot.blockAt(p),reservation=`${this.bot.dimensionId}:${key(p)}`;
   // Keep the actual target as well as its stance. Otherwise the nearest-block
   // sort could switch targets after every step and undo the stable route.

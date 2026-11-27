@@ -29,9 +29,9 @@ function stands(worker,target,{allowScaffold=true}={}){
  return spots.sort((a,c)=>a.score-c.score).map(s=>s.position);
 }
 class ChunkMining{
- constructor(worker){this.worker=worker;this.bot=worker.bot;this.onUpdate=p=>{const w=this.worker;if(p.y===w.state.floor)w.floorSurvey?.complete.delete(this.chunkMap?.get(`${p.x>>4},${p.z>>4}`));const changed=this.bot.blockAt(new Vec3(p.x,p.y,p.z));if(changed?.diggable&&!air(changed)&&!w.manager.claims.has(this.bot.dimensionId+':'+key(p))){for(const peer of w.manager.workers.values()){if(!peer.running||!sameWorld(w,peer)||!peer.miningTarget||p.y<=peer.miningTarget.position.y||!peer.inArea(p)||!wanted(peer,changed))continue;peer.abort?.abort();peer.approachPlan=null;const c=peer.miner?.chunkMap.get(`${p.x>>4},${p.z>>4}`);if(c){c.layer=Math.max(c.layer,p.y);c.dirty=true;}}}this.cache?.delete(`${p.x>>4},${p.z>>4}`);for(const c of [this.chunkMap?.get(`${p.x>>4},${p.z>>4}`)].filter(Boolean))if(p.x>=c.x1&&p.x<=c.x2&&p.z>=c.z1&&p.z<=c.z2&&p.y>this.worker.state.floor&&p.y<=this.top()){c.layer=Math.max(c.layer??this.top(),Math.floor(p.y));c.dirty=true;this.done=false;this.layer=Math.max(this.layer??this.top(),Math.floor(p.y));}};this.onTerrain=({x,z,top})=>{this.cache?.delete(`${x},${z}`);const c=this.chunkMap?.get(`${x},${z}`);if(c){c.dirty=true;this.done=false;}};this.bot.on('worldUpdate',this.onUpdate);this.bot.on('terrainColumn',this.onTerrain);this.reset();}
+ constructor(worker){this.worker=worker;this.bot=worker.bot;this.onUpdate=p=>{const w=this.worker;if(p.y===w.state.floor)w.floorSurvey?.complete.delete(this.chunkMap?.get(`${p.x>>4},${p.z>>4}`));const changed=this.bot.blockAt(new Vec3(p.x,p.y,p.z));if(changed?.diggable&&!air(changed)&&!w.manager.claims.has(this.bot.dimensionId+':'+key(p))){for(const peer of w.manager.workers.values()){if(!peer.running||!sameWorld(w,peer)||!peer.miningTarget||peer.miner?.selection==='nearby'||p.y<=peer.miningTarget.position.y||!peer.inArea(p)||!wanted(peer,changed))continue;peer.abort?.abort();peer.approachPlan=null;const c=peer.miner?.chunkMap.get(`${p.x>>4},${p.z>>4}`);if(c){c.layer=Math.max(c.layer,p.y);c.dirty=true;}}}this.cache?.delete(`${p.x>>4},${p.z>>4}`);for(const c of [this.chunkMap?.get(`${p.x>>4},${p.z>>4}`)].filter(Boolean))if(p.x>=c.x1&&p.x<=c.x2&&p.z>=c.z1&&p.z<=c.z2&&p.y>this.worker.state.floor&&p.y<=this.top()){c.layer=Math.max(c.layer??this.top(),Math.floor(p.y));c.dirty=true;this.done=false;this.layer=Math.max(this.layer??this.top(),Math.floor(p.y));}};this.onTerrain=({x,z,top})=>{this.cache?.delete(`${x},${z}`);const c=this.chunkMap?.get(`${x},${z}`);if(c){c.dirty=true;this.done=false;}};this.bot.on('worldUpdate',this.onUpdate);this.bot.on('terrainColumn',this.onTerrain);this.reset();}
  top(){return Math.min(this.worker.state.ceiling,this.bot.dimensionId===1?127:this.bot.dimensionId===2?255:319);}
- reset(){this.cache=new Map();this.chunkMap=new Map();this.requested=new Map();this.metrics={reads:0,scanMs:0};this.signature='';this.bounds=null;this.chunks=[];this.allChunks=[];this.index=0;this.chunk=null;this.layer=null;this.state='未開始';this.unknown=0;this.done=false;this.assisting=false;this.exploreGoal=null;}
+ reset(){this.cache=new Map();this.chunkMap=new Map();this.requested=new Map();this.metrics={reads:0,scanMs:0};this.signature='';this.bounds=null;this.chunks=[];this.allChunks=[];this.index=0;this.chunk=null;this.layer=null;this.selection=null;this.state='未開始';this.unknown=0;this.done=false;this.assisting=false;this.exploreGoal=null;}
  prepare(){const w=this.worker,a=w.state.area;
   this.peers=[...(w.manager.workers?.values()||[])].filter(o=>o.running&&o.bot.connected&&!o.bot.dead&&sameJob(w,o)).sort((a,b)=>a.id-b.id);
   const teams=(w.manager.store.data?.miningTeams||[]).filter(t=>t.members.length);
@@ -65,8 +65,51 @@ class ChunkMining{
   if(air(block)||hazard(block)||!block.diggable||block.hardness<0||(w.owned(block.position)||this.otherOwned?.has(key(block.position)))||!wanted(w,block))continue;out.push(block);
  }return {blocks:out,unknown};}
  updateOtherOwned(){const w=this.worker,peers=[...(w.manager.workers?.values()||[])].filter(other=>other!==w&&sameWorld(w,other)),signature=peers.map(other=>`${other.id}:${other.ownedRevision||0}`).join('|');if(signature!==this.ownershipSignature){this.ownershipSignature=signature;this.otherOwned=new Set(peers.flatMap(other=>Object.values(other.state?.owned||{}).filter(o=>o.dimension===this.bot.dimensionId).map(o=>key(o.p))));}}
- scan(){this.prepare();const w=this.worker,b=this.bot;this.updateOtherOwned();this.unknown=0;this.supportBlocks=[];this.waitingBlocked=false;this.surveying=false;const began=performance.now();let budget=2048,reads=0;const memo=new Map(),read=(c,y)=>{const k=c.x+","+c.z+","+y,cacheKey=`${c.x},${c.z}`;if(memo.has(k))return memo.get(k);const old=this.cache.get(cacheKey);if(old&&old.y===y&&Date.now()-old.at<500){memo.set(k,old.value);return old.value;}const cost=(c.x2-c.x1+1)*(c.z2-c.z1+1);if(budget<cost||reads&&performance.now()-began>3)return null;budget-=cost;reads+=cost;const value=this.layerBlocks(c,y);if(this.cache.size>=64)this.cache.delete(this.cache.keys().next().value);this.cache.set(cacheKey,{y,at:Date.now(),value});memo.set(k,value);return value;};
+ // Check the loaded blocks around the bot before committing it to a route.
+ nearbyTarget(){
+  const w=this.worker,b=this.bot,range=w.state.miningRange??5;
+  const eye=b.entity.position.offset(0,1.62,0);
+  const aim=require('./mining-reach'),bounds=this.bounds,now=Date.now();
+  let reads=0;
+  const minY=Math.max(w.state.floor+1,Math.floor(eye.y-range));
+  const maxY=Math.min(this.top(),Math.floor(eye.y+range));
+  for(let y=maxY;y>=minY;y--){
+   const candidates=[];
+   for(let x=Math.max(bounds.x1,Math.floor(eye.x-range));x<=Math.min(bounds.x2,Math.floor(eye.x+range));x++){
+    for(let z=Math.max(bounds.z1,Math.floor(eye.z-range));z<=Math.min(bounds.z2,Math.floor(eye.z+range));z++){
+     const c=this.chunkMap.get(`${x>>4},${z>>4}`);
+     if(!c)continue;
+     const dx=Math.max(x-eye.x,0,eye.x-x-1),dy=Math.max(y-eye.y,0,eye.y-y-1),dz=Math.max(z-eye.z,0,eye.z-z-1);
+     if(dx*dx+dy*dy+dz*dz>range*range)continue;
+     const point=new Vec3(x,y,z),id=key(point);
+     if((w.failed.get(id)||0)>now||w.manager.claims.has(`${b.dimensionId}:${id}`)||this.otherOwned?.has(id)||w.owned(point))continue;
+     reads++;
+     const block=b.blockAt(point);
+     if(!block||block.name==='unknown'||air(block)||hazard(block)||!block.diggable||block.hardness<0)continue;
+     const distance=aim.distance(eye,block);
+     if(distance>range||!wanted(w,block)||w.underPlayer(point)||w.avoidDigStance(block,b.entity.position))continue;
+     candidates.push({block,chunk:c,distance});
+    }
+   }
+   candidates.sort((a,c)=>a.distance-c.distance);
+   for(const candidate of candidates){
+    if(aim.aim(b,candidate.block,range,eye))return {...candidate,reads};
+   }
+  }
+  return {reads};
+ }
+ scan(){this.prepare();const w=this.worker,b=this.bot;this.updateOtherOwned();this.unknown=0;this.supportBlocks=[];this.waitingBlocked=false;this.surveying=false;const began=performance.now();this.selection=null;
+  const nearby=this.nearbyTarget();
+  const surveyBegan=performance.now();
+  let reads=nearby.reads,budget=2048-reads;const memo=new Map(),read=(c,y)=>{const k=c.x+","+c.z+","+y,cacheKey=`${c.x},${c.z}`;if(memo.has(k))return memo.get(k);const old=this.cache.get(cacheKey);if(old&&old.y===y&&Date.now()-old.at<500){memo.set(k,old.value);return old.value;}const cost=(c.x2-c.x1+1)*(c.z2-c.z1+1);if(budget<cost||reads>nearby.reads&&performance.now()-surveyBegan>3)return null;budget-=cost;reads+=cost;const value=this.layerBlocks(c,y);if(this.cache.size>=64)this.cache.delete(this.cache.keys().next().value);this.cache.set(cacheKey,{y,at:Date.now(),value});memo.set(k,value);return value;};
   const finish=value=>{this.metrics={reads,scanMs:+(performance.now()-began).toFixed(3),cacheSize:this.cache.size};return value;};
+  if(nearby.block){
+   this.selection='nearby';this.chunk=nearby.chunk;this.index=this.allChunks.indexOf(nearby.chunk);
+   this.layer=nearby.block.position.y;
+   this.assisting=!this.chunks.includes(nearby.chunk);
+   this.done=false;this.state=`現在地から届くブロックを優先 / Y${this.layer}`;
+   return finish(nearby.block);
+  }
   // Limit top-down coordination to nearby chunks, not the entire cuboid.
   const own=new Set(this.chunks),feet=b.entity.position,distance=c=>Math.hypot((c.x1+c.x2)/2-feet.x,(c.z1+c.z2)/2-feet.z);
   const remaining=this.allChunks.filter(c=>c.dirty||c.layer>w.state.floor);
@@ -98,7 +141,7 @@ class ChunkMining{
   for(let dx=-10;dx<=10;dx+=2)for(let dz=-10;dz<=10;dz+=2){let q=base.offset(dx,0,dz),under=b.blockAt(q.offset(0,-1,0));if(!under||under.name==='unknown')continue;if(!under.solid)q=navigation.dropLanding(b,q,maxDrop);if(!q||q.y<=this.worker.state.floor||!navigation.pass(b,q))continue;const position=q.offset(.5,0,.5),remaining=Math.hypot(position.x-destination.x,position.z-destination.z);if(remaining>Math.hypot(p.x-destination.x,p.z-destination.z)-1.5)continue;spots.push({position,remaining});}
   spots.sort((a,c)=>a.remaining-c.remaining);for(const {position}of spots.slice(0,8)){const path=navigation.groundPath(b,p,position,{maxDrop,limit:450,minY:this.worker.state.floor+1});if(path.reached&&path.length){this.exploreGoal={chunk:c,position,at:Date.now()};return position;}}return null;
  }
- snapshot(){return {scan:this.metrics,order:'layer-top-down',filter:this.worker.state.miningFilter||[],state:this.state,chunk:this.chunk?{x:this.chunk.x,z:this.chunk.z}:null,layer:this.layer,index:this.index,total:this.allChunks.length,assisting:!!this.assisting,unknown:this.unknown,done:this.done,surveying:!!this.surveying,waitingBlocked:!!this.waitingBlocked,supportBlocks:(this.supportBlocks||[]).slice(0,32)};}
+ snapshot(){return {scan:this.metrics,order:'nearby-first',selection:this.selection,filter:this.worker.state.miningFilter||[],state:this.state,chunk:this.chunk?{x:this.chunk.x,z:this.chunk.z}:null,layer:this.layer,index:this.index,total:this.allChunks.length,assisting:!!this.assisting,unknown:this.unknown,done:this.done,surveying:!!this.surveying,waitingBlocked:!!this.waitingBlocked,supportBlocks:(this.supportBlocks||[]).slice(0,32)};}
  destroy(){this.bot.removeListener('worldUpdate',this.onUpdate);this.bot.removeListener('terrainColumn',this.onTerrain);}
 }
 module.exports={columnBusy,ChunkMining,filter,wanted,stands,sameWorld,sameJob};
