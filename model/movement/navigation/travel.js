@@ -158,7 +158,8 @@ class Travel{
    }
   }
   candidates.sort((a,c)=>c.score-a.score);
-  const goal=candidates[0]?.entry.offset(.5,0,.5);
+  const alternate=this.runtime.worker.lavaEscapeDirection||0;
+  const goal=candidates[alternate%candidates.length]?.entry.offset(.5,0,.5);
   try{
    if(goal){
     const delta=goal.minus(entity.position),distance=Math.hypot(delta.x,delta.z);

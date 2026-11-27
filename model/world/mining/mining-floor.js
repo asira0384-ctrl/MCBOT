@@ -27,6 +27,20 @@ async function recover(w,signal){
   if(path.reached){await travel.walk(goal.offset(.5,0,.5),'walk',signal,{minY:base.y,allowScaffold:false,maxDrop:1});return;}
  }
  const item=w.state.scaffoldEnabled!==false&&material(w);
+ if(item&&!navigation.pass(b,base.offset(0,1,0))){
+  for(const [dx,dz] of directions){
+   const step=base.offset(dx,0,dz),goal=step.offset(0,1,0);
+   if(!w.inArea(new Vec3(goal.x,w.state.floor+1,goal.z))||!navigation.pass(b,goal)||!air(b.blockAt(step))||!placementSupport(b,step))continue;
+   await w.placeOwned(step,item,'scaffold',signal,{timeout:1800});
+   await travel.walk(goal.offset(.5,0,.5),'walk',signal,{minY:base.y,allowScaffold:false,maxDrop:0});return;
+  }
+ }
+ if(!navigation.pass(b,base.offset(0,1,0))){
+  const overhead=b.blockAt(base.offset(0,2,0));
+  if(overhead?.diggable&&w.inArea(overhead.position)&&require('./mining').wanted(w,overhead)&&!w.underPlayer(overhead.position,{ignoreSelf:true})){
+   await travel.breakObstacle(overhead,signal);return;
+  }
+ }
  if(!item){w.missing='上がれる道がなく、足場ブロックの補給またはScaffold ONを待っています';w.miningRetryAt=Date.now()+1500;return;}
  if(!navigation.pass(b,base.offset(0,1,0))){
   for(let radius=1;radius<=4;radius++)for(let dx=-radius;dx<=radius;dx++)for(let dz=-radius;dz<=radius;dz++){

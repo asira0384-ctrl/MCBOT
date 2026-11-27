@@ -8,9 +8,18 @@ class Worker {
   bot.on('health',()=>{if(bot.health!==null&&bot.health<12&&bot.health>0&&this.running&&this.mode!=='healing'){bot.halt();}});
   bot.on('forcedMove',()=>{if(!this.running&&!this.cleanupRequested)return;const now=Date.now();this.corrections=this.corrections.filter(t=>now-t<10000);this.corrections.push(now);this.abort?.abort();this.bot.halt();this.runtime?.travel.stopFollowing();this.miningRetryAt=now+Math.min(3500,120+Math.max(0,this.corrections.length-1)*250);this.miningPhase='repath';this.missing='サーバーの補正位置から経路を再確認中';if(this.corrections.length>=5&&now-(this.lastCorrectionNotice||0)>10000){this.lastCorrectionNotice=now;this.notice('位置補正が続いたため少し待って経路を再探索します');}});
   bot.on('respawned',()=>{if(this.mode==='dead'||this.resumeDig){this.mode='stopped';if(this.resumeDig)this.startRequested=true;this.resumeDig=false;}});
-  bot.on('death',()=>{this.resumeDig=!!(this.running||this.startRequested||this.resumeDig);this.mode='dead';this.running=false;this.notice('死亡しました。装備の補給待ちです');});
+  const killLog=require('../diagnostics/kill-log');
+  bot.on('chat',p=>killLog.message(this,p));
+  bot.client?.on('death_info',p=>killLog.message(this,{type:'translation',message:p.cause,parameters:p.messages}));
+  bot.on('death',()=>{killLog.death(this);this.resumeDig=!!(this.running||this.startRequested||this.resumeDig);this.mode='dead';this.running=false;this.notice('死亡しました。装備の補給待ちです');});
   bot.on('respawnReady',()=>{if(this.state.respawn){try{bot.respawn();this.mode='waiting';this.missing='死亡後の装備';}catch(e){this.notice(e.message);}}});
-  this.timer=setInterval(()=>this.tick().catch(e=>{this.stop();this.notice(e.message);}),300);
+  this.timer=setInterval(()=>this.tick().catch(error=>{
+   if(!this.running)return;
+   this.missing=error.message;
+   this.miningPhase='retry';
+   this.miningRetryAt=Date.now()+1200;
+   if(this.lastTickError!==error.message){this.lastTickError=error.message;this.notice(error.message);}
+  }),300);
   if(bot.client)this.runtime=new (require('./runtime').Runtime)(this);this.mobAura=new(require('../../model/combat/mobaura/mobaura').MobAura)(this);
  }
  notice(text){this.manager.notice(this.id,text);}
@@ -20,7 +29,7 @@ class Worker {
    this.startRequested=true;this.missing=this.bot.pendingServerForm?'サーバーフォームの操作待ち':this.bot.terrainReady===false?'足元の地形受信後に採掘を開始します':'現在の操作が終わり次第採掘を開始します';return false;
   }this.startRequested=false;this.floorSurvey=null;this.cleanupRequested=false;this.miningRetryAt=0;this.miningPhase='scan';if(this.runtime){this.runtime.paused=false;this.runtime.worker.state.runtimePaused=false;this.runtime.latestFeature='mining';this.runtime.follower.stop();this.runtime.travel.cancel(false);}this.miner.reset();this.bot.naturalIdleFall=false;this.bot.passivePhysics=false;this.running=true;this.mode='running';this.missing='';return true;}
  receive(){this.stop();this.receiving=true;this.mode='receiving';this.lastReceive=0;this.receivedBlock=false;this.notice('足場ブロックを渡してください。最後の受け取りから3秒後に再開します');}
- inArea(p){const a=this.state.area;return a&&(!this.state.miningChunks?.length||this.state.miningChunks.some(([x,z])=>x===(p.x>>4)&&z===(p.z>>4)))&&p.x>=a.x1&&p.x<=a.x2&&p.z>=a.z1&&p.z<=a.z2&&p.y>this.state.floor&&p.y<=this.state.ceiling;}
+ inArea(p){const a=this.miner?.bounds||this.state.area;return a&&(!this.state.miningChunks?.length||this.state.miningChunks.some(([x,z])=>x===(p.x>>4)&&z===(p.z>>4)))&&p.x>=a.x1&&p.x<=a.x2&&p.z>=a.z1&&p.z<=a.z2&&p.y>this.state.floor&&p.y<=this.state.ceiling;}
  owned(p){return this.state.owned[`${this.bot.dimensionId}:${key(p)}`];}
  recordOwned(p,kind,name){this.state.owned[`${this.bot.dimensionId}:${key(p)}`]={p:{x:p.x,y:p.y,z:p.z},kind,name,dimension:this.bot.dimensionId,placedAt:Date.now()};this.ownedRevision++;if(kind==='scaffold')this.state.scaffoldCleanupPending=true;this.manager.store.save();}
  removeOwned(p){delete this.state.owned[`${this.bot.dimensionId}:${key(p)}`];this.ownedRevision++;this.manager.store.save();}
@@ -44,19 +53,23 @@ class Worker {
   else {if(this.mobAura)await this.mobAura.pulse();if(this.mobAura?.busy||this.mobAura?.holdsMining)return;}if(this.busy||this.controlBusy||this.bot.handUse||this.runtime?.consumeTask||this.runtime?.equipmentBusy||!this.bot.connected||this.bot.dead||Date.now()<(this.miningRetryAt||0))return;
   if(this.receiving){if(this.receivedBlock&&this.lastReceive&&Date.now()-this.lastReceive>=3000){this.receiving=false;try{this.start();this.notice(`足場 ${this.state.scaffold} で再開しました`);}catch(e){this.mode='stopped';this.notice(e.message);}}return;}
   if(!this.running&&!this.cleanupRequested&&this.mode!=='waiting')return;
+  
   this.busy=true;this.abort=new AbortController();const signal=this.abort.signal;
   try {
    if(this.bot.health===null){this.mode='waiting_health';return;}
    if(!this.runtime&&this.bot.health<12){this.mode='healing';if(!this.bot.find('enchanted_golden_apple'))return this.wait('エンチャント金リンゴ');
     if(Date.now()-this.lastEat>=5000){await this.bot.eat(signal);this.lastEat=Date.now();}return;}
    if(inLava){this.miningPhase='lava-escape';if(await this.runtime.travel.escapeLava(signal))return;}
+   if(this.running&&this.runtime&&this.bot.entity.position.y<this.state.floor+.99){
+    await require('../../model/world/mining/mining-floor').recover(this,signal);return;
+   }
    const missing=!this.bot.tool()?'ピッケル':null;
    if(missing){if(this.state.autoSupply&&this.runtime){this.runtime.restock.request(missing+'が不足');this.wait(missing);}else this.wait(missing);return;}
    if(this.mode==='waiting'){if(this.lastReceive&&Date.now()-this.lastReceive<750)return;this.bot.naturalIdleFall=false;this.bot.passivePhysics=false;this.running=true;this.mode='running';this.missing='';this.notice('補給を確認しました。再開します');}
    if(this.cleanupRequested){this.mode='cleaning';const result=await this.cleanup(signal,{finish:true});if(!result.remaining){require('../../model/world/mining/mining-lifecycle').disable(this.state);this.manager.store.save();this.stop();this.notice('採掘・不要な足場の回収が完了しました');}else{this.missing=result.reason;this.miningPhase='cleanup';if(!result.progress&&(this.lastCleanupNotice!==result.reason||Date.now()-(this.lastCleanupNoticeAt||0)>15000)){this.lastCleanupNotice=result.reason;this.lastCleanupNoticeAt=Date.now();this.notice(result.reason);}}return;}
    if(!this.running)return;this.mode='running';if(this.runtime?.needsFood?.()){this.runtime.startUse('体力回復',this.bot.find('enchanted_golden_apple'));return;}if(this.runtime?.travel.recoverCollision&&await this.runtime.travel.recoverCollision(signal))return;
    if(this.bot.entity.onGround===false&&!solid(this.bot.blockAt(this.bot.entity.position.offset(0,-.1,0)))&&!require('../../model/movement/navigation/navigation').water(this.bot.blockAt(this.bot.entity.position))){this.miningPhase='falling';this.missing='下段へ落下中・着地してから採掘します';return;}
-   if(this.runtime&&this.bot.entity.position.y<this.state.floor+.99){await require('../../model/world/mining/mining-floor').recover(this,signal);return;}
+   
    if(this.state.itemDrop!==false&&Date.now()>=(this.nextDiscardAt||0)){
     try{
      await this.discard(signal);
@@ -74,8 +87,8 @@ class Worker {
       if(!this.owned(target.position)){addStat(this.state.stats,target.name);addStat(this.state.session,target.name);this.recordMined(target.name);if(this.manager.saveMining)this.manager.saveMining();else this.manager.store.save();}
       if(Date.now()-(this.lastCleanupAt||0)>1000){this.lastCleanupAt=Date.now();await this.cleanup(signal);}
      }else await this.approach(target,signal);
-   }catch(e){if(signal.aborted)return;if(e.code==='HAND_BUSY'){this.miningPhase='hand-wait';return;}if(this.bot.health<12)return;if(e.code==='DIG_UNCONFIRMED')require('../../model/world/nuke/recovery').intervene(this,'破壊を送信したがサーバーから完了を確認できず',Date.now());if(e.code==='DIG_UNCONFIRMED')this.missedDig={target:key(target.position),stance:key(this.bot.entity.position),until:Date.now()+20000};this.miningPhase='retry';this.failed.set(key(target.position),Date.now()+(e.code==='PATH_WAIT'?8000:3000));this.approachPlan=null;this.missing=e.message;if(this.lastMiningNotice!==e.message||Date.now()-(this.lastMiningNoticeAt||0)>10000){this.lastMiningNotice=e.message;this.lastMiningNoticeAt=Date.now();this.manager.notice(this.id,'採掘経路を再確認: '+e.message,{game:false});}return;}finally{this.manager.claims.delete(reservation);}
-  }catch(e){if(!signal.aborted&&this.running&&this.bot.health>=12){this.missing=e.message;this.miningPhase='retry';this.miningRetryAt=Date.now()+1500;this.approachPlan=null;if(this.runtime)this.runtime.travel.groundPlan=null;if(this.lastTickError!==e.message){this.lastTickError=e.message;this.notice(e.message);}}}finally{this.busy=false;}
+   }catch(e){if(signal.aborted)return;if(e.code==='HAND_BUSY'){this.miningPhase='hand-wait';return;}if(this.bot.health<12)return;if(e.code==='DIG_UNCONFIRMED')require('../../model/world/nuke/recovery').intervene(this,'破壊を送信したがサーバーから完了を確認できず',Date.now());if(e.code==='DIG_UNCONFIRMED')this.missedDig={target:key(target.position),stance:key(this.bot.entity.position),until:Date.now()+20000};this.miningPhase='retry';this.failed.set(key(target.position),Math.max(this.failed.get(key(target.position))||0,Date.now()+(e.code==='PATH_WAIT'?8000:3000)));this.approachPlan=null;this.missing=e.message;if(this.lastMiningNotice!==e.message||Date.now()-(this.lastMiningNoticeAt||0)>10000){this.lastMiningNotice=e.message;this.lastMiningNoticeAt=Date.now();this.manager.notice(this.id,'採掘経路を再確認: '+e.message,{game:false});}return;}finally{this.manager.claims.delete(reservation);}
+  }catch(e){if(!signal.aborted&&this.running&&(this.bot.health>=12||inLava||this.miningPhase==='floor-recovery')){this.missing=e.message;this.miningPhase='retry';this.miningRetryAt=Date.now()+1500;this.approachPlan=null;if(this.runtime)this.runtime.travel.groundPlan=null;if(this.lastTickError!==e.message){this.lastTickError=e.message;this.notice(e.message);}}}finally{this.busy=false;}
  }
  recordMined(name){const drop={stone:'cobblestone',deepslate:'cobbled_deepslate',grass_block:'dirt',snow:'snowball',redstone_ore:'redstone',coal_ore:'coal',diamond_ore:'diamond',emerald_ore:'emerald',lapis_ore:'lapis_lazuli',nether_quartz_ore:'quartz',glowstone:'glowstone_dust',glass:null};
   for(const n of [name,drop[name]])if(n&&!this.state.minedItems.includes(n))this.state.minedItems.push(n);}

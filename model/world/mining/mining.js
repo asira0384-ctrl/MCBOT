@@ -31,14 +31,28 @@ function stands(worker,target,{allowScaffold=true}={}){
 class ChunkMining{
  constructor(worker){this.worker=worker;this.bot=worker.bot;this.onUpdate=p=>{const w=this.worker;if(p.y===w.state.floor)w.floorSurvey?.complete.delete(this.chunkMap?.get(`${p.x>>4},${p.z>>4}`));const changed=this.bot.blockAt(new Vec3(p.x,p.y,p.z));if(changed?.diggable&&!air(changed)&&!w.manager.claims.has(this.bot.dimensionId+':'+key(p))){for(const peer of w.manager.workers.values()){if(!peer.running||!sameWorld(w,peer)||!peer.miningTarget||p.y<=peer.miningTarget.position.y||!peer.inArea(p)||!wanted(peer,changed))continue;peer.abort?.abort();peer.approachPlan=null;const c=peer.miner?.chunkMap.get(`${p.x>>4},${p.z>>4}`);if(c){c.layer=Math.max(c.layer,p.y);c.dirty=true;}}}this.cache?.delete(`${p.x>>4},${p.z>>4}`);for(const c of [this.chunkMap?.get(`${p.x>>4},${p.z>>4}`)].filter(Boolean))if(p.x>=c.x1&&p.x<=c.x2&&p.z>=c.z1&&p.z<=c.z2&&p.y>this.worker.state.floor&&p.y<=this.top()){c.layer=Math.max(c.layer??this.top(),Math.floor(p.y));c.dirty=true;this.done=false;this.layer=Math.max(this.layer??this.top(),Math.floor(p.y));}};this.onTerrain=({x,z,top})=>{this.cache?.delete(`${x},${z}`);const c=this.chunkMap?.get(`${x},${z}`);if(c){c.dirty=true;this.done=false;}};this.bot.on('worldUpdate',this.onUpdate);this.bot.on('terrainColumn',this.onTerrain);this.reset();}
  top(){return Math.min(this.worker.state.ceiling,this.bot.dimensionId===1?127:this.bot.dimensionId===2?255:319);}
- reset(){this.cache=new Map();this.chunkMap=new Map();this.requested=new Map();this.metrics={reads:0,scanMs:0};this.signature='';this.chunks=[];this.allChunks=[];this.index=0;this.chunk=null;this.layer=null;this.state='未開始';this.unknown=0;this.done=false;this.assisting=false;this.exploreGoal=null;}
+ reset(){this.cache=new Map();this.chunkMap=new Map();this.requested=new Map();this.metrics={reads:0,scanMs:0};this.signature='';this.bounds=null;this.chunks=[];this.allChunks=[];this.index=0;this.chunk=null;this.layer=null;this.state='未開始';this.unknown=0;this.done=false;this.assisting=false;this.exploreGoal=null;}
  prepare(){const w=this.worker,a=w.state.area;
   this.peers=[...(w.manager.workers?.values()||[])].filter(o=>o.running&&o.bot.connected&&!o.bot.dead&&sameJob(w,o)).sort((a,b)=>a.id-b.id);
-  const signature=JSON.stringify([a,w.state.miningChunks,w.state.floor,w.state.ceiling,w.state.miningFilter,w.bot.dimensionId]);
+  const teams=(w.manager.store.data?.miningTeams||[]).filter(t=>t.members.length);
+  const team=teams.find(t=>t.members.includes(w.id));
+  const unassigned=[...(w.manager.names?.keys()||[])].some(id=>!teams.some(t=>t.members.includes(id)));
+  const slots=teams.length+(unassigned?1:0),seat=team?teams.indexOf(team):teams.length;
+  const signature=JSON.stringify([teams,slots,a,w.state.miningChunks,w.state.floor,w.state.ceiling,w.state.miningFilter,w.bot.dimensionId]);
   if(signature!==this.signature){this.signature=signature;this.members=null;this.cache.clear();this.chunkMap.clear();this.chunks=[];this.allChunks=[];this.index=0;this.layer=null;this.done=false;
    const coords=w.state.miningChunks?.length?w.state.miningChunks:(()=>{const out=[];for(let z=a.z1>>4;z<=a.z2>>4;z++)for(let x=a.x1>>4;x<=a.x2>>4;x++)out.push([x,z]);return out;})();
-   for(const [x,z]of coords){const c={x,z,x1:Math.max(a.x1,x*16),z1:Math.max(a.z1,z*16),x2:Math.min(a.x2,x*16+15),z2:Math.min(a.z2,z*16+15),layer:this.top(),dirty:true};this.allChunks.push(c);this.chunkMap.set(`${x},${z}`,c);}
+   const axis=a.x2-a.x1>=a.z2-a.z1?'x':'z',start=a[axis+'1'],length=a[axis+'2']-start+1;
+   const min=teams.length?start+Math.floor(seat*length/slots):start;
+   const max=teams.length?start+Math.floor((seat+1)*length/slots)-1:start+length-1;
+   this.bounds={...a,[axis+'1']:min,[axis+'2']:max};
+   for(const [x,z]of coords){
+    const bounds=this.bounds;
+    const c={x,z,x1:Math.max(bounds.x1,x*16),z1:Math.max(bounds.z1,z*16),x2:Math.min(bounds.x2,x*16+15),z2:Math.min(bounds.z2,z*16+15),layer:this.top(),dirty:true};
+    if(c.x1>c.x2||c.z1>c.z2)continue;
+    this.allChunks.push(c);this.chunkMap.set(`${x},${z}`,c);
+   }
   }
+  if(team)this.peers=this.peers.filter(peer=>team.members.includes(peer.id));
   const members=this.peers.map(o=>o.id).join(',');if(this.members!==members){this.members=members;const cols=(a.x2>>4)-(a.x1>>4)+1,index=this.peers.indexOf(w),count=this.peers.length;
    this.chunks=this.allChunks.filter(c=>count<2||((c.z-(a.z1>>4))*cols+c.x-(a.x1>>4))%count===index);
   }

@@ -1,3 +1,4 @@
+#include <sstream>
 #define UNICODE
 #define _UNICODE
 #define WIN32_LEAN_AND_MEAN
@@ -74,6 +75,7 @@ void enqueue(std::string path,J d,std::string kind="",std::string module=""){std
 void setToastError(std::exception&e){toast(e.what(),true);}
 void loadValues(){themeCache.clear();if(!state.contains("desktopModules"))return;for(auto&r:state["desktopModules"]){int id=r.value("id",0);bool selected=target=="all"||target==std::to_string(id);if(!selected&&state.contains("bots"))for(auto&b:state["bots"])if(b.value("id",0)==id&&b.value("server","")==target)selected=true;if(selected){for(auto it=r["values"].begin();it!=r["values"].end();++it)values[it.key()]=it.value();break;}}}
 std::set<int>groupDraft;
+J logReports=J::object();
 bool selectedBot(const J&b){for(const auto&group:arrayMember(state,"botGroups"))if(str(group,"id")==target){for(auto&id:arrayMember(group,"members"))if(id==b.value("id",0))return true;return false;}return target=="all"||target==std::to_string(b.value("id",0))||target==b.value("server","");}
 bool calculateOn(std::string m){if(localDefs.count(m)||m.rfind("HUD",0)==0)return localOn[m];if(optimistic.count(m))return optimistic[m];bool any=false,all=true;for(auto&r:arrayMember(state,"desktopModules"))for(auto&b:arrayMember(state,"bots"))if(r.value("id",0)==b.value("id",0)&&selectedBot(b)){any=true;auto st=r.find("states");all=all&&st!=r.end()&&st->is_object()&&st->value(m,false);}return any&&all;}
 std::map<std::string,bool> frameStates;bool drawingFrame=false;
@@ -87,7 +89,7 @@ localDefs["Notification"]=J::array({R("Duration",3,1,10,.5),R("Width",300,220,60
 localDefs["Weather"]=J::array({E("Mode","Snow",{"Snow","Rain","Lava","Crystal"}),R("Density",65,0,220),R("Speed",1,.1,4,.1),R("Size",1,.3,3,.1),R("Wind",.1,-2,2,.1),C("Color","#d3d9eb"),R("Alpha",60,0,100)});
 J modes=J::array();std::set<std::string>done;for(auto it=soundInfo.begin();it!=soundInfo.end();++it){auto k=it.key();auto at=k.rfind("_on");if(at!=std::string::npos){auto n=k.substr(0,at);if(done.insert(n).second)modes.push_back(n);}}localDefs["ToggleSound"]=J::array({E("Mode","click",modes),R("Volume",45,0,100)});
 localDefs["Connect"]=J::array({E("Server","ign",{"ign","2b2e"}),B("Custom IP",false),T("IP"),T("Port","19132")});
-localDefs["MicrosoftLogin"]=J::array();localDefs["Activity"]=J::array();localDefs["RecoveryLog"]=J::array();localDefs["DebugFile"]=J::array();localDefs["ServerForms"]=J::array();localDefs["Wallpaper"]=J::array();
+localDefs["MicrosoftLogin"]=J::array();localDefs["Activity"]=J::array();localDefs["RecoveryLog"]=J::array();localDefs["KillLog"]=J::array();localDefs["TeamMode"]=J::array({T("Team size","2"),T("Bot IDs","")});localDefs["DebugFile"]=J::array();localDefs["ServerForms"]=J::array();localDefs["Wallpaper"]=J::array();
 localDefs["TPA"]=J::array({E("Action","Request",{"Request","Accept","Deny"}),T("Player")});
 localDefs["PublicChat"]=J::array({T("Message")});localDefs["PrivateChat"]=J::array({T("Player"),T("Message")});
 localDefs["KitNow"]=J::array({T("Kit")});localDefs["WorldNow"]=J::array({T("World")});
@@ -101,7 +103,7 @@ localOn={{"ClickGUI",true},{"Notification",true},{"Weather",true},{"ToggleSound"
 }
 void buildPanels(){panels.clear();if(prefs.contains("positions")&&!prefs["positions"].contains("Control")&&prefs["positions"].contains("Console"))prefs["positions"]["Control"]=prefs["positions"]["Console"];std::map<std::string,std::vector<std::string>>g;for(auto it=catalog.begin();it!=catalog.end();++it)g[it.value().value("group","Misc")].push_back(it.key());
 for(auto&[name,list]:g)for(auto it=list.begin();it!=list.end();)if(std::set<std::string>{"AutoTPA","Scaffold","CustomCommand","ChatQueue","Gemini","Greeter","AutoReply","ChatSuffix","Spam","TellSpam","ChatLog"}.count(*it))it=list.erase(it);else++it;
-g["Control"]={"Connect","Disconnect","Stop","MicrosoftLogin","ServerForms","Friendlist","EnemyList","Config","Shortcut","Activity","DebugFile","RecoveryLog"};
+g["Control"]={"Connect","Disconnect","Stop","MicrosoftLogin","ServerForms","Friendlist","EnemyList","Config","Shortcut","Activity","DebugFile","RecoveryLog","KillLog","GroupCreate"};
 g["Chat"]={"PublicChat","PrivateChat","Gemini","Greeter","AutoReply","ChatSuffix","Spam","TellSpam","ChatQueue","ChatLog","CustomCommand"};
 g["Misc"].insert(g["Misc"].end(),{"KitNow","WorldNow","BackNow","TPA","AutoTPA","ToggleSound","Notification"});
 g["GUI"]={"ClickGUI","Weather","NameTags","Wallpaper","FontFile"};g["HUD"]={"HUDMap","HUDHealth","HUDBps","HUDHotbar","HUDPlayers","HUDIGNGPT"};
@@ -115,6 +117,10 @@ std::set<std::string>formSent;
 void worker(){ULONGLONG lastPoll=0,lastMap=0,flowPoll=0;while(running){Job job;bool has=false,changed=false;{std::lock_guard<std::mutex>l(jobMutex);if(!jobs.empty()){job=jobs.front();jobs.pop_front();has=true;}}
 try{if(has){changed=true;if(job.kind=="oauth"){sessionCookie.clear();csrf.clear();flowId.clear();flowSecret.clear();auto r=api("/api/native/start",J::object());flowId=r["id"];flowSecret=r["secret"];ShellExecuteW(hwnd,L"open",wide(r["url"].get<std::string>()).c_str(),0,0,SW_SHOWNORMAL);toast("Confirm Discord sign-in in your browser");}
 else if(job.kind=="debug"){auto r=api(job.path,job.data);if(!r.contains("report")||!r["report"].is_object())throw std::runtime_error("Update the server to export debug files");std::ofstream file(fs::path(job.savePath),std::ios::binary|std::ios::trunc);if(!file)throw std::runtime_error("Cannot save the debug file here");file<<r["report"].dump(2)<<"\n";file.close();if(!file)throw std::runtime_error("Debug file could not be saved completely");toast("Debug file saved");}
+else if(job.kind=="readlog"){
+ auto reply=api(job.path,job.data);std::lock_guard<std::recursive_mutex>lock(dataMutex);
+ if(job.data.value("target","")==target)logReports[job.module]=reply["report"];
+}
 else if(job.kind=="msbrowser"){auto r=api(job.path,job.data);auto b=r["authentication"]["browser"];if(!b.is_object())throw std::runtime_error("Server update required for browser sign-in");b["target"]=job.data["target"];PostMessage(hwnd,WM_APP+4,0,reinterpret_cast<LPARAM>(new J(std::move(b))));lastPoll=0;}
 else if(job.kind=="assistant"){auto r=api("/api/desktop/assistant",job.data);{std::lock_guard<std::recursive_mutex>l(dataMutex);auto reply=applyAssistantResult(r);aiMessages.push_back({{"role","assistant"},{"text",reply}});aiAutoScroll=true;while(aiMessages.size()>40)aiMessages.erase(aiMessages.begin());aiModel=r.value("model","IGNGPT");aiBusy=false;}lastPoll=0;}
 
@@ -135,7 +141,7 @@ void txtRight(Graphics&g,const std::string&text,float x,float y,float w,float h,
 
 void hit(float x,float y,float w,float h,std::string type,std::string m="",std::string k="",J data=nullptr){float top=std::max(y,clipTop),bottom=std::min(y+h,clipBottom);if(bottom>top)hits.push_back({x,top,w,bottom-top,std::move(type),std::move(m),std::move(k),std::move(data)});}
 bool isOpen(std::string m){return std::find(opened.begin(),opened.end(),m)!=opened.end();}
-bool hasSettings(const std::string&m){if(!settingsFor(m).empty())return true;static std::set<std::string>extra={"ServerForms","MicrosoftLogin","AccountAdd","AccountEdit","Friendlist","EnemyList","Config","Activity","ChatQueue","Inventory","Wallpaper"};return extra.count(m);}
+bool hasSettings(const std::string&m){if(!settingsFor(m).empty())return true;static std::set<std::string>extra={"ServerForms","MicrosoftLogin","AccountAdd","AccountEdit","RecoveryLog","KillLog","Friendlist","EnemyList","Config","Activity","ChatQueue","Inventory","Wallpaper"};return extra.count(m);}
 void toggleOpen(std::string m){if(!hasSettings(m))return;if(!expansion.count(m))expansion[m]=isOpen(m)?1.f:0.f;auto it=std::find(opened.begin(),opened.end(),m);if(it!=opened.end())opened.erase(it);else{if(opened.size()>=2){auto old=opened.front();if(!expansion.count(old))expansion[old]=1;opened.pop_front();}opened.push_back(m);}tweening=true;tweenTick=GetTickCount64();}
 void inlineButton(Graphics&g,std::string text,float x,float y,float w,std::string action,std::string m="",std::string k="",J data=nullptr){if(!ready){bool over=loginPointerX>=x&&loginPointerX<x+w&&loginPointerY>=y&&loginPointerY<y+30;box(g,x,y,w,30,over?Color(255,132,93,167):Color(255,102,73,136),5);Pen edge(Color(over?220:100,192,155,224),1);g.DrawRectangle(&edge,x,y,w,30.f);txt(g,text,x+12,y+7,w-24,22,Color(255,247,240,255),12);hit(x,y,w,30,action,m,k,data);return;}box(g,x,y,w,23,theme("Field",130),3);txt(g,text,x+6,y+4,w-10,19,theme("Text"),11);hit(x,y,w,23,action,m,k,data);}
 #include "descriptions-ja.h"
@@ -158,11 +164,30 @@ bool hiddenShaderSetting(const std::string&k){static const std::set<std::string>
 #include "server-forms-ui.h"
 #include "nuke-status-ui.h"
 float drawSettings(Graphics&g,std::string m,float x,float y,float w){if(m=="ServerForms")return y+drawServerForms(&g,x,y,w);uiPhase="module-settings";const J& ds=settingsFor(m);for(auto&d:ds){std::string k=d[0];if(m=="ClickGUI"&&hiddenShaderSetting(k))continue;y=drawField(g,m,d,x,y,w);}
-if(m=="Nuke"){inlineButton(g,"Nuke Debug Log",x,y,w,"module","NukeDebug");y+=28;y+=drawNukeStatus(&g,x,y,w);}
+if(m=="Nuke"){inlineButton(g,"TeamMode",x,y,w,"module","TeamMode");y+=28;if(localOn["TeamMode"])y=drawSettings(g,"TeamMode",x,y,w);inlineButton(g,"Nuke Debug Log",x,y,w,"module","NukeDebug");y+=28;y+=drawNukeStatus(&g,x,y,w);}
 auto btn=[&](std::string text,std::string a,std::string k="",J d=nullptr){inlineButton(g,text,x,y,w,a,m,k,d);y+=28;};
 if(m=="Friendlist"||m=="EnemyList"){btn("+ Add MCID","relation","add");for(auto&n:arrayMember(state,m=="Friendlist"?"friends":"enemies")){txt(g,n.get<std::string>(),x,y,w-22,22,theme("Text"),11);inlineButton(g,"×",x+w-22,y,22,"relation",m,"remove",n);y+=26;}}
 
 if(m=="Connect")btn("Save server","server");
+if(m=="TeamMode"){
+ btn("Create team","teamcreate");
+ for(const auto&team:arrayMember(state,"miningTeams")){
+  std::string members;for(const auto&id:arrayMember(team,"members"))members+=(members.empty()?"":", ")+id.dump();
+  txt(g,"Bots "+members,x,y,w-28,23,theme("Text"),10);
+  inlineButton(g,"X",x+w-26,y,26,"teamdelete",m,str(team,"id"));y+=28;
+ }
+}
+if(m=="RecoveryLog"||m=="KillLog"){
+ btn("Refresh","module",m);
+ if(m=="RecoveryLog")btn("Export JSON","exportrecovery");
+ auto report=logReports.value(m,J::object());
+ int rendered=0;
+ for(const auto&entry:arrayMember(report,"rows")){
+  if(rendered++>=35)break;
+  txt(g,entry.get<std::string>(),x,y,w,53,theme("Text"),10);y+=55;
+ }
+ if(!rendered){txt(g,"No events",x,y,w,22,theme("Off Text"),10);y+=25;}
+}
 if(m=="GroupCreate"){for(auto&b:arrayMember(state,"bots")){int id=b.value("id",0);btn(std::string(groupDraft.count(id)?"[x] ":"[ ] ")+str(b,"name"),"groupmember",std::to_string(id));}btn("Create group","groupcreate");}
 if(m=="AccountAdd")btn("+ Add account","accountadd");
 if(m=="AccountEdit"){btn("Change account","rename");btn("Microsoft login","auth");btn("Delete account","delete");}
@@ -173,8 +198,10 @@ if(m=="ChatQueue"){btn("Clear queue","queueclear");for(auto* bp:bots()){auto&b=*
 if(m=="Inventory")y=drawInventory(g,x,y,w);
 if(m=="Wallpaper")btn("Choose image","wallpaper");if(moduleErrors.count(m)){txt(g,moduleErrors[m],x,y,w,58,Color(255,236,150,156),10);y+=62;}
 return y;}
-float settingsHeight(std::string m,float w){if(m=="ServerForms")return drawServerForms(nullptr,0,0,w)+6;float h=m=="Nuke"?28+drawNukeStatus(nullptr,0,0,w):0;const J& ds=settingsFor(m);for(auto&d:ds){std::string k=d[0];if(m=="ClickGUI"&&hiddenShaderSetting(k))continue;h+=(d[1]=="text"?(d[0]=="Messages"||d[0]=="Join"||d[0]=="Leave"||d[0]=="Chat"||d[0]=="Allowed Players"?78:43):33)+4;}
+float settingsHeight(std::string m,float w){if(m=="ServerForms")return drawServerForms(nullptr,0,0,w)+6;float h=m=="Nuke"?56+drawNukeStatus(nullptr,0,0,w)+(localOn["TeamMode"]?settingsHeight("TeamMode",w):0):0;const J& ds=settingsFor(m);for(auto&d:ds){std::string k=d[0];if(m=="ClickGUI"&&hiddenShaderSetting(k))continue;h+=(d[1]=="text"?(d[0]=="Messages"||d[0]=="Join"||d[0]=="Leave"||d[0]=="Chat"||d[0]=="Allowed Players"?78:43):33)+4;}
 if(m=="Friendlist"||m=="EnemyList")h+=28+arrayMember(state,m=="Friendlist"?"friends":"enemies").size()*26;
+if(m=="TeamMode")h+=28*(1+arrayMember(state,"miningTeams").size());
+if(m=="RecoveryLog"||m=="KillLog")h+=28*(m=="RecoveryLog"?2:1)+std::max(25.f,55.f*(float)std::min<size_t>(35,arrayMember(logReports.value(m,J::object()),"rows").size()));
 if(m=="GroupCreate")h+=28*(1+arrayMember(state,"bots").size());
 if(m=="Connect"||m=="AccountAdd"||m=="Wallpaper")h+=28;
 if(m=="MicrosoftLogin")h+=bots().size()*310+28;if(m=="AccountEdit")h+=84;if(m=="Config")h+=146;if(m=="Activity"){for(auto* bp:bots())if((*bp).contains("authentication")&&(*bp)["authentication"].contains("code")&&(*bp)["authentication"]["code"].is_object())h+=62;std::lock_guard<std::mutex>hl(toastMutex);h+=std::min((size_t)12,history.size())*33;}if(m=="ChatQueue")h+=28+bots().size()*21;if(m=="Inventory")h+=bots().size()*(19+4*(w/9+2)+52);if(moduleErrors.count(m))h+=62;return h+6;}
@@ -206,12 +233,12 @@ void panelBackground(Graphics&g,const Panel&p){
 
 bool moduleVisible(std::string m){std::string q=sv("Search","Query"),name=label(m);std::transform(q.begin(),q.end(),q.begin(),::tolower);std::transform(name.begin(),name.end(),name.begin(),::tolower);return q.empty()||name.find(q)!=std::string::npos;}
 void drawPanel(Graphics&g,int index){uiPhase="panel-layout";auto&p=panels[index];p.x=std::clamp(p.x,0.f,std::max(0.f,cw/(float)guiScale-p.w));p.y=std::clamp(p.y,45.f,std::max(45.f,ch/(float)guiScale-65));float row=nv("ClickGUI","Row Height",26),cap=28,total=0;if(p.title=="Account"){total=(3+arrayMember(state,"botGroups").size()+arrayMember(state,"bots").size())*row;if(reveal("AccountAdd")>0)total+=expandedHeight("AccountAdd",p.w-16);if(reveal("AccountEdit")>0)total+=expandedHeight("AccountEdit",p.w-16);}else for(auto&m:p.mods)if(moduleVisible(m))total+=row+expandedHeight(m,p.w-16);
-if(p.title=="Control"&&isOpen("GroupCreate"))total+=settingsHeight("GroupCreate",p.w-16)+3;
+
 float maxh=std::max(80.f,(float)ch/(float)guiScale-p.y-12);p.h=std::min(maxh,cap+total+6);p.scroll=std::clamp(p.scroll,0.f,std::max(0.f,total-p.h+cap+6));panelBackground(g,p);hit(p.x,p.y,p.w,p.h,"block");box(g,p.x,p.y,p.w,cap,theme("Accent",20),3);txt(g,p.title,p.x+9,p.y+6,p.w-18,22,theme("Text"),13);hit(p.x,p.y,p.w,cap,"panel",p.title,"",index);
 auto save=g.Save();g.SetClip(RectF(p.x,p.y+cap,p.w,p.h-cap));clipTop=p.y+cap;clipBottom=p.y+p.h;float y=p.y+cap-p.scroll;
 auto mod=[&](std::string m){bool enabled=on(m)||(pressedUntil.count(m)&&GetTickCount64()<pressedUntil[m]);if(enabled){box(g,p.x,y,p.w,row,theme("On Fill",110),0);if(bv("ClickGUI","Enabled Marker",true)){auto marker=sv("ClickGUI","Marker","Bar");if(marker=="Bar")box(g,p.x,y,2,row,theme("Accent"),0);else txt(g,marker=="Check"?"✓":"•",p.x+p.w-(hasSettings(m)?28:15),y+5,12,row,theme("Accent"),11);}}txt(g,label(m),p.x+9,y+5,p.w-21,row-3,theme(enabled?"Text":"Off Text"),12);if(hasSettings(m))txt(g,isOpen(m)?"⌄":"›",p.x+p.w-13,y+3,12,row,theme("Accent"),12);if(bv("ClickGUI","Separators",true))box(g,p.x,y+row-1,p.w,1,theme("Accent",(int)(nv("ClickGUI","Separator Alpha",30)*2.55)),0);hit(p.x,y,p.w,row,"module",m);y+=row;float height=expandedHeight(m,p.w-16);if(height>0){auto st=g.Save();float oldBottom=clipBottom;clipBottom=std::min(clipBottom,y+height);g.SetClip(RectF(p.x,y,p.w,height),CombineModeIntersect);drawOpacity=sv("ClickGUI","Animation","Fade")=="Fade"?reveal(m):1;drawSettings(g,m,p.x+8,y+4,p.w-16);drawOpacity=1;g.Restore(st);clipBottom=oldBottom;y+=height;}};
 if(p.title=="Account"){if(isOpen("AccountAdd"))y=drawSettings(g,"AccountAdd",p.x+8,y+3,p.w-16);int i=0;for(std::string t:{"all","ign","2b2e"}){if(target==t)box(g,p.x,y,p.w,row,theme("On Fill",110),0);txt(g,i==0?"All Bots":i==1?"IGN PvP":"2b2e",p.x+8,y+5,p.w-16,row,theme("Text"),12);hit(p.x,y,p.w,row,"account",t);y+=row;i++;if(t=="ign")for(auto&group:arrayMember(state,"botGroups")){auto id=str(group,"id");if(target==id)box(g,p.x,y,p.w,row,theme("On Fill",110),0);txt(g,str(group,"name"),p.x+8,y+5,p.w-16,row,theme("Text"),12);hit(p.x,y,p.w,row,"account",id);y+=row;}}for(auto&b:arrayMember(state,"bots")){std::string id=std::to_string(b.value("id",0));if(target==id)box(g,p.x,y,p.w,row,theme("On Fill",110),0);txt(g,str(b,"name"),p.x+8,y+5,p.w-18,row,theme("Text"),12);box(g,p.x+p.w-8,y+10,3,3,b.value("connected",false)?Color(255,127,202,166):Color(255,111,105,118),1);hit(p.x,y,p.w,row,"account",id,"",J{{"name",str(b,"name")}});y+=row;if(isOpen("AccountEdit")&&target==id)y=drawSettings(g,"AccountEdit",p.x+8,y+3,p.w-16);}}
-else {if(p.title=="Control"&&isOpen("GroupCreate"))y=drawSettings(g,"GroupCreate",p.x+8,y+3,p.w-16);for(auto&m:p.mods)if(moduleVisible(m))mod(m);}
+else for(auto&m:p.mods)if(moduleVisible(m))mod(m);
 g.Restore(save);clipTop=-10000;clipBottom=10000;if(total>p.h-cap){float track=p.h-cap-6,thumb=std::max(18.f,track*(p.h-cap)/total),offset=p.scroll/std::max(1.f,total-p.h+cap+6)*(track-thumb);box(g,p.x+p.w-3,p.y+cap+3+offset,2,thumb,theme("Accent",140),0);}}
 Color terrain(std::string n){if(n.find("lava")!=std::string::npos||n.find("magma")!=std::string::npos)return Color(255,202,106,66);if(n.find("water")!=std::string::npos)return Color(255,60,103,123);if(n.find("grass")!=std::string::npos||n.find("leaves")!=std::string::npos)return Color(255,104,130,87);if(n.find("netherrack")!=std::string::npos)return Color(255,120,82,82);if(n.find("obsidian")!=std::string::npos)return Color(255,63,57,74);if(n.find("sand")!=std::string::npos||n.find("end_stone")!=std::string::npos)return Color(255,170,163,124);return Color(255,124,124,121);}
 void drawMap(Graphics&g,float x,float y,float w,float h){box(g,x,y,w,h,Color(225,19,23,28),2);if(!mapData.contains("cells")){txt(g,"Waiting for recorded terrain",x+10,y+12,w-20,25,theme("Off Text"),11);return;}auto&v=mapData;int size=v.value("size",128);float sc=std::min(w,h)/size,ox=x+(w-size*sc)/2,oy=y+(h-size*sc)/2;auto saved=g.Save();g.SetClip(RectF(x,y,w,h));long long version=(long long)number(v,"at");if(!mapTexture||mapVersion!=version){mapTexture=std::make_unique<Bitmap>(size,size,PixelFormat32bppARGB);Graphics mg(mapTexture.get());mg.Clear(Color(255,19,23,28));for(int dz=0;dz<size;dz++)for(int dx=0;dx<size;dx++){int idx=dz*size+dx;if(idx>=v["cells"].size())continue;int id=v["cells"][idx];if(id<1||id>=v["palette"].size())continue;std::string n=v["palette"][id];if(n.empty()||n.find("bedrock")!=std::string::npos)continue;SolidBrush b(terrain(n));mg.FillRectangle(&b,dx, dz,1,1);}mapVersion=version;}g.DrawImage(mapTexture.get(),RectF(ox,oy,size*sc,size*sc));
@@ -280,20 +307,30 @@ if(h.type=="color"){picker.open=true;choice.open=false;picker.m=m;picker.k=k;pic
 if(h.type=="picksv"||h.type=="pickhue"){pickerDrag=h.type=="picksv"?"sv":"hue";POINT p;GetCursorPos(&p);ScreenToClient(hwnd,&p);pickerPoint(p.x/inputScale,p.y/inputScale);SetCapture(hwnd);return;}
 if(h.type=="pickerclose"){picker.open=false;return;}
 
-if(h.type=="suggest"){change(h.m,h.k,h.data);editSuggestions.clear();return;}if(h.type=="account"){target=m;loadValues();return;}
-if(h.type=="module"){pressedUntil[m]=GetTickCount64()+180;playToggle(true);
+if(h.type=="suggest"){change(h.m,h.k,h.data);editSuggestions.clear();return;}if(h.type=="account"){target=m;logReports.clear();loadValues();return;}
+if(h.type=="module"||h.type=="exportrecovery"){pressedUntil[m]=GetTickCount64()+180;playToggle(true);
 if(m=="CustomCommand"){sendModule(m,true);return;}
 if(m=="KitNow"||m=="WorldNow"){invoke(Hit{0,0,0,0,"send",m});return;}
 if(m=="TPA"||m=="PublicChat"||m=="PrivateChat"){invoke(Hit{0,0,0,0,"send",m});return;}
 if(m=="FontFile"){wchar_t f[32768]={};OPENFILENAMEW o{};o.lStructSize=sizeof(o);o.hwndOwner=hwnd;o.lpstrFile=f;o.nMaxFile=32768;o.lpstrFilter=L"Font files\0*.ttf;*.otf\0";o.Flags=OFN_FILEMUSTEXIST;if(GetOpenFileNameW(&o)){if(!loadFontFile(f,true))throw std::runtime_error("Font file could not be loaded");persist();}return;}
-if(m=="DebugFile"||m=="NukeDebug"||m=="RecoveryLog"){if(!ready)throw std::runtime_error("Sign in first");wchar_t f[32768]={};SYSTEMTIME now;GetLocalTime(&now);wsprintfW(f,L"Asira-Debug-%04d%02d%02d-%02d%02d%02d.json",now.wYear,now.wMonth,now.wDay,now.wHour,now.wMinute,now.wSecond);auto folder=fs::path(exePath).parent_path().wstring();OPENFILENAMEW o{};o.lStructSize=sizeof(o);o.hwndOwner=hwnd;o.lpstrFile=f;o.nMaxFile=32768;o.lpstrFilter=L"Debug JSON\0*.json\0";o.lpstrDefExt=L"json";o.lpstrInitialDir=folder.c_str();o.lpstrTitle=L"Save Asira debug report";o.Flags=OFN_OVERWRITEPROMPT|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;if(GetSaveFileNameW(&o)){std::lock_guard<std::mutex>l(jobMutex);jobs.push_back({"/api/desktop/control",{{"action",m=="RecoveryLog"?"recovery-log":m=="NukeDebug"?"nuke-log":"debug-export"},{"target",target}},"debug","",f});}return;}
+if((m=="RecoveryLog"||m=="KillLog")&&h.type=="module"){
+ if(!isOpen(m))toggleOpen(m);
+ enqueue("/api/desktop/control",{{"action",m=="KillLog"?"kill-log":"recovery-log"},{"target",target}},"readlog",m);return;
+}
+if(m=="GroupCreate"&&h.type=="module"){toggleOpen(m);return;}
+if(m=="TeamMode"&&h.type=="module"){localOn[m]=!localOn[m];return;}
+if(m=="DebugFile"||m=="NukeDebug"||h.type=="exportrecovery"){if(!ready)throw std::runtime_error("Sign in first");wchar_t f[32768]={};SYSTEMTIME now;GetLocalTime(&now);wsprintfW(f,L"Asira-Debug-%04d%02d%02d-%02d%02d%02d.json",now.wYear,now.wMonth,now.wDay,now.wHour,now.wMinute,now.wSecond);auto folder=fs::path(exePath).parent_path().wstring();OPENFILENAMEW o{};o.lStructSize=sizeof(o);o.hwndOwner=hwnd;o.lpstrFile=f;o.nMaxFile=32768;o.lpstrFilter=L"Debug JSON\0*.json\0";o.lpstrDefExt=L"json";o.lpstrInitialDir=folder.c_str();o.lpstrTitle=L"Save Asira debug report";o.Flags=OFN_OVERWRITEPROMPT|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;if(GetSaveFileNameW(&o)){std::lock_guard<std::mutex>l(jobMutex);jobs.push_back({"/api/desktop/control",{{"action",h.type=="exportrecovery"?"recovery-log":m=="NukeDebug"?"nuke-log":"debug-export"},{"target",target}},"debug","",f});}return;}
 if(m=="Connect"){if(target=="all"||target=="ign"||target=="2b2e")enqueue("/api/desktop/command",{{"target",target},{"command","connect"}});else enqueue("/api/desktop/control",{{"action","connect-route"},{"target",target},{"realm",sv("Connect","Server","ign")},{"custom",bv("Connect","Custom IP")},{"host",sv("Connect","IP")},{"port",(int)nv("Connect","Port",19132)}},"account");return;}
 if(m=="Disconnect"||m=="Stop"||m=="BackNow"){enqueue("/api/desktop/command",{{"target",target},{"command",m=="Disconnect"?"disconnect":m=="Stop"?"stop":m=="BackNow"?"back":"connect"}});return;}
 if(m=="MicrosoftLogin"){if(target=="all"||target=="ign"||target=="2b2e")throw std::runtime_error("Select one bot");enqueue("/api/desktop/auth",{{"target",target}},"auth");if(!isOpen("MicrosoftLogin"))toggleOpen("MicrosoftLogin");return;}
 if(m=="Shortcut"){shortcut();return;}
 if(m=="Wallpaper"){auto f=chooseFile();if(!f.empty()){cachedBackgroundSource=nullptr;cachedBlur=-1;auto next=readWallpaper(f);if(!next)throw std::runtime_error("Image cannot be decoded. Choose PNG/JPG, or install the Windows WebP decoder.");wallpaper=std::move(next);prefs["wallpaper"]=utf(f);persist();InvalidateRect(hwnd,0,FALSE);}return;}
 static std::set<std::string>a={"ServerForms","Config","Friendlist","EnemyList","Activity","PublicChat","PrivateChat","KitNow","WorldNow","TPA","ChatQueue","CustomCommand","Inventory","ClickGUI"};if(a.count(m)){toggleOpen(m);return;}
-if(catalog.contains(m)&&!catalog[m].value("action",false)){sendModule(m,!on(m));return;}
+if(catalog.contains(m)&&!catalog[m].value("action",false)){bool active=on(m);
+ if(!optimistic.count(m)&&!active)for(const auto&row:arrayMember(state,"desktopModules"))for(const auto&bot:arrayMember(state,"bots")){
+  if(row.value("id",0)==bot.value("id",0)&&selectedBot(bot)&&row.value("states",J::object()).value(m,false))active=true;
+ }
+ sendModule(m,!active);return;}
 if(localDefs.count(m)){localOn[m]=!localOn[m];playToggle(localOn[m]);return;}toggleOpen(m);return;}
 if(h.type=="discord"||h.type=="saveurl"){auto url=sv("Login","Server",base);while(!url.empty()&&url.back()=='/')url.pop_back();if(url.rfind("https://",0)!=0||url.find_first_of("?#@ ")!=std::string::npos)throw std::runtime_error("Enter the public HTTPS root URL.");{std::lock_guard<std::mutex>net(networkConfigMutex);base=url;}prefs["server"]=url;persist();if(h.type=="discord"){enqueue("/api/native/start",J::object(),"oauth");toast("Finish Discord sign-in and approve this app in your browser");}else toast("Server URL saved");return;}
 
@@ -302,6 +339,14 @@ if(h.type=="logout"){enqueue("/api/desktop/logout",J::object());ready=false;stag
 if(h.type=="relation"){enqueue("/api/desktop/control",{{"action","relation"},{"kind",m=="Friendlist"?"friend":"enemy"},{"operation",k},{"name",k=="remove"?h.data.get<std::string>():sv(m,"MCID")}});return;}
 if(h.type=="send"){if(m=="CustomCommand"){sendModule(m,true);return;}if(m=="KitNow"||m=="WorldNow"){enqueue("/api/desktop/control",{{"action","instant"},{"target",target},{"kind",m=="KitNow"?"kit":"world"},{"value",sv(m,m=="KitNow"?"Kit":"World")}});return;}if(m=="TPA"){auto a=sv(m,"Action");enqueue("/api/desktop/control",{{"action","tpa"},{"target",target},{"kind",a=="Request"?"request":a=="Accept"?"accept":"deny"},{"player",sv(m,"Player")}});return;}enqueue("/api/desktop/chat",{{"target",target},{"type",m=="PrivateChat"?"whisper":"public"},{"recipient",sv(m,"Player")},{"message",sv(m,"Message")}});return;}
 if(h.type=="server"){enqueue("/api/desktop/control",{{"action","endpoint"},{"target",target},{"realm",sv(m,"Server","ign")},{"custom",bv(m,"Custom IP")},{"host",sv(m,"IP")},{"port",(int)nv(m,"Port",19132)}});return;}
+if(h.type=="teamcreate"){
+ std::string ids=sv("TeamMode","Bot IDs");std::replace(ids.begin(),ids.end(),',',' ');
+ std::istringstream input(ids);J members=J::array();int id;
+ while(input>>id)members.push_back(id);
+ if(!input.eof())throw std::runtime_error("Enter Bot numbers separated by spaces");
+ enqueue("/api/desktop/control",{{"action","save-mining-team"},{"size",std::stoi(sv("TeamMode","Team size","2"))},{"members",members}},"account");return;
+}
+if(h.type=="teamdelete"){enqueue("/api/desktop/control",{{"action","delete-mining-team"},{"id",k}},"account");return;}
 if(h.type=="groupmember"){int id=std::stoi(h.k);if(!groupDraft.erase(id))groupDraft.insert(id);return;}
 if(h.type=="groupcreate"){enqueue("/api/desktop/control",{{"action","create-group"},{"name",sv("GroupCreate","Group name")},{"members",groupDraft}},"account");return;}
 if(h.type=="accountadd"){enqueue("/api/desktop/control",{{"action","add"},{"name",sv(m,"Gamertag")},{"realm",sv(m,"Server","ign")}},"account");return;}

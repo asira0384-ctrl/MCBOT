@@ -101,7 +101,15 @@ async function apply(web,session,d){
  if(n==='ChatQueue'){s.desktopChatQueue={interval:v['Send Interval'],maximum:Math.round(v.Maximum)};if(w?.bot){w.bot.desktopChatQueue=s.desktopChatQueue;if(w.bot.chatQueue)w.bot.chatQueue.pump();}lines.push('ChatQueue updated');}
 
  if(n==='Offhand'){const cfg=s.runtime??={};Object.assign(cfg,{offhandPacket:v.Packet,offhandSpam:v.Spam,offhandInterval:v.Interval});}
- if(c.cmd&&on!==null&&!['Speed','Timer','NoSlow','AutoKit','AutoWorld'].includes(n)){let text=c.cmd+' '+(on?'on':'off');if(n==='AntiCrystal'&&on)text='anticrystal '+v.Depth;if(n==='Velocity')text+=' '+v.Horizontal+' '+v.Vertical;if(n==='ChatLog')text='gamelogs all '+(on?'on':'off');lines.push(await cmd(id,text));}
+ if(n==='AntiCrystal'&&on===false){
+  (s.runtime??={}).anticrystal=false;
+  if(w?.runtime){w.runtime.config.anticrystal=false;w.runtime.prioritize('anticrystal',false);}
+  lines.push('AntiCrystal=false');
+ }else if(n==='AntiCrystal'&&on===true&&m.realm?.(id)==='ign'){
+  (s.runtime??={}).anticrystal=false;
+  if(w?.runtime){w.runtime.config.anticrystal=false;w.runtime.prioritize('anticrystal',false);}
+  lines.push('IGN: AntiCrystal OFF');
+ }else if(c.cmd&&on!==null&&!['Speed','Timer','NoSlow','AutoKit','AutoWorld'].includes(n)){let text=c.cmd+' '+(on?'on':'off');if(n==='AntiCrystal'&&on)text='anticrystal '+v.Depth;if(n==='Velocity')text+=' '+v.Horizontal+' '+v.Vertical;if(n==='ChatLog')text='gamelogs all '+(on?'on':'off');lines.push(await cmd(id,text));}
  if(n==='Speed')lines.push(await cmd(id,'speed '+(on===false?'off':on===null&&!((s.runtime?.chaseSpeed??.27)>0)?'off':v.Speed)));
  if(n==='Timer')lines.push(await cmd(id,'timer '+(on===false?'off':on===null&&!((s.runtime?.straightTimer??.24)>0)?'off':v.Multiplier)));
  if(n==='NoSlow'){const active=on===null?(s.runtime?.noSlow??true):on;lines.push(await cmd(id,'eatspeed '+v['Eat Speed']));lines.push(await cmd(id,'noslow '+(active?'on':'off')));}

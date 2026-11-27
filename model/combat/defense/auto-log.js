@@ -8,7 +8,7 @@ class AutoLog{
   const low=b.health!==null&&b.health>0&&b.health+(r.config.logAbsorption?(b.absorption||0):0)<=r.config.logHearts*2,mode=this.mode();
   if((mode==='health'&&low)||(mode==='empty-health'&&low&&count===0)||(mode==='empty'&&this.hadTotem&&count===0)){await this.trigger(mode==='empty'?'所持Totemが0個になりました':`体力${b.health/2}ハート`);return true;}return false;
  }
- trigger(reason){if(this.fired||this.bot.dead||!this.bot.connected)return this.promise||Promise.resolve();this.fired=true;const r=this.runtime,b=this.bot;b.localExit={kind:'AutoLog',reason,at:Date.now()};r.combatAbort?.abort();r.consumeAbort?.abort();r.abort?.abort();r.travel.cancel(false);r.safety.cancel();r.worker.stop();r.notice('AutoLog: '+reason+'で切断します',false);r.manager.watchReentry?.(r.worker.id,b,r.target);
+ trigger(reason){if(this.fired||this.bot.dead||!this.bot.connected)return this.promise||Promise.resolve();this.fired=true;const r=this.runtime,b=this.bot;require('../../../src/diagnostics/kill-log').autoLog(r.worker,reason,r.target,r.engagedAt);b.localExit={kind:'AutoLog',reason,at:Date.now()};r.combatAbort?.abort();r.consumeAbort?.abort();r.abort?.abort();r.travel.cancel(false);r.safety.cancel();r.worker.stop();r.notice('AutoLog: '+reason+'で切断します',false);r.manager.watchReentry?.(r.worker.id,b,r.target);
   this.promise=b.logout('あぶねぇwあぶねぇw死にかけたぜw').catch(e=>{r.notice('AutoLog: '+e.message,false);b.disconnect();});return this.promise;
  }
  reset(){if(!this.bot.loggingOut){this.fired=false;this.promise=null;}}

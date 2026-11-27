@@ -143,7 +143,10 @@ class Runtime {
     });
     this.bot.on('totemUsed', () => {
       this.totemsUsed++;
-      if (this.worker.running) this.worker.stop();
+      if (this.worker.running) {
+        this.resumeMining = true;
+        this.worker.stop();
+      }
       this.wakeEquipment();
       this.notice('Totemが割れました。オフハンドを補充します');
     });
@@ -632,8 +635,7 @@ class Runtime {
     if (await this.autoLog.check()) return;
     this.ignActions.tick();
     if (w.startRequested) {
-      if (!this.busy && !w.busy && b.terrainReady!==false && !b.pendingServerForm) {
-        w.controlBusy = false;
+      if (!this.busy && !w.busy && !w.controlBusy && b.terrainReady!==false && !b.pendingServerForm) {
         try {
           w.start();
         } catch (e) {
