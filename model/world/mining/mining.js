@@ -113,8 +113,24 @@ class ChunkMining{
   // Limit top-down coordination to nearby chunks, not the entire cuboid.
   const own=new Set(this.chunks),feet=b.entity.position,distance=c=>Math.hypot((c.x1+c.x2)/2-feet.x,(c.z1+c.z2)/2-feet.z);
   const remaining=this.allChunks.filter(c=>c.dirty||c.layer>w.state.floor);
-  remaining.sort((a,c)=>(w.nearbyRecoveryUntil>Date.now()?0:Number(own.has(c))-Number(own.has(a)))||distance(a)-distance(c));
-  if(this.chunk&&remaining.includes(this.chunk)&&distance(this.chunk)<48){remaining.splice(remaining.indexOf(this.chunk),1);remaining.unshift(this.chunk);}
+  const grouped=w.state.nukeGroupMode;
+  if(grouped){
+   const peers=this.peers.filter(peer=>peer!==w&&peer.state.nukeGroupMode&&peer.miningTarget);
+   const counts=new Map();
+   for(const peer of peers){
+    const p=peer.miningTarget.position,id=(p.x>>4)+','+(p.z>>4);
+    counts.set(id,(counts.get(id)||0)+1);
+   }
+   const score=c=>{
+    const id=c.x+','+c.z,load=counts.get(id)||0;
+    let blocks=this.cache.get(id)?.value.blocks.length??1;
+    if(load)for(const peer of peers)blocks=Math.max(blocks,peer.miner?.cache?.get(id)?.value.blocks.length??0);
+    const capacity=Math.max(1,Math.min(8,Math.ceil(blocks/6)));
+    return distance(c)+(load>=capacity?96+load*4:load?-24:0);
+   };
+   remaining.sort((a,b)=>score(a)-score(b));
+  }else remaining.sort((a,c)=>(w.nearbyRecoveryUntil>Date.now()?0:Number(own.has(c))-Number(own.has(a)))||distance(a)-distance(c));
+  if(!grouped&&this.chunk&&remaining.includes(this.chunk)&&distance(this.chunk)<48){remaining.splice(remaining.indexOf(this.chunk),1);remaining.unshift(this.chunk);}
   const ordered=remaining.filter(c=>!(c.deferUntil>Date.now())).slice(0,1);
   for(const c of ordered){if(!c.dirty)continue;this.request(c);
    for(;c.layer>w.state.floor;c.layer--){const found=read(c,c.layer);if(!found){this.surveying=true;break;}if(found.blocks.length||found.unknown){c.dirty=false;break;}}

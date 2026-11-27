@@ -70,7 +70,13 @@ class Travel{
  stopFollowing(){this.circleSearch?.abort();this.circleSearch=null;this.following=null;this.bot.desiredMoveSpeed=undefined;this.bot.desiredMoveWorld=null;for(const key of ['forward','back','left','right','jump','sprint'])this.bot.setControlState(key,false);}
  failedStep(from,to,reason,ttl=6000){this.failedEdges??=new Map();for(const [k,t]of this.failedEdges)if(t<=Date.now())this.failedEdges.delete(k);this.failedEdges.set(this.edgeKey(from,to),Date.now()+ttl);this.groundPlan=null;this.lastPathFailure={at:Date.now(),from:{...from},to:{...to},reason};this.bot.worldMirror?.request(to.x>>4,to.z>>4,to.y>>4,(to.y+1.8)>>4,{force:true});}
  edgeKey(from,to){const key=require('../../../src/shared/util').key;return `${this.bot.dimensionId}:${key(from)}>${key(to)}`;}
- edgeBlocked(from,to){return (this.failedEdges?.get(this.edgeKey(from,to))||0)>Date.now();}
+ edgeBlocked(from,to){
+  const w=this.runtime.worker;
+  if(w.running&&w.state.area){
+   const inside=p=>w.inArea(p.offset(0,w.state.floor+1-p.y,0));
+   if(inside(from)&&!inside(to))return true;
+  }
+  return (this.failedEdges?.get(this.edgeKey(from,to))||0)>Date.now();}
  movementSpeed(speed){if(this.recovery?.until>Date.now())return Math.min(speed||.21,this.recovery.speed);return speed;}
  dropLimit(){const n=Number(this.runtime.worker.state.maxDrop??64);return Number.isInteger(n)?Math.max(0,Math.min(384,n)):64;}
  lavaAllowed(){const w=this.runtime.worker;return !(w.running||w.cleanupRequested)&&this.runtime.config.lavaWalk!==false&&((this.bot.effects?.get(12)?.expires||0)>Date.now()+8000||!!this.bot.find?.('enchanted_golden_apple'));}
@@ -100,7 +106,7 @@ class Travel{
    jumping=grounded&&ready&&(b._jumpCooldown||0)<=0;
   }
   this.following={kind:'walk-step',destination:goal.clone(),stopRadius:.16,speed:undefined,path:null};
-  const dash=this.runtime.worker.running&&this.runtime.worker.state.nukeDash!==false&&walking.action==='walk'&&distance>.42&&!b.handUse&&!b.entity.isInWater;
+  const dash=this.runtime.worker.running&&this.runtime.worker.state.nukeDash!==false&&['walk','jump','jump-gap'].includes(walking.action)&&distance>.42&&!b.handUse&&!b.entity.isInWater;
   b.desiredMoveWorld=distance>.04?{x:delta.x/distance,z:delta.z/distance}:null;b.desiredMoveSpeed=Math.min(this.movementSpeed(gap||dash?.27:.21),distance);b.setControlState('sneak',false);
   const paused=Date.now()<(this.runtime.speedBlockedUntil||0);if(paused)walking.progressAt=Date.now();b.setControlState('forward',distance>.06&&!paused);b.setControlState('jump',jumping&&!paused);b.setControlState('sprint',dash&&!paused);
   if(!b.actionHandBusy&&!b.handUse)b.lookAt(goal.offset(0,1.62,0),false);
