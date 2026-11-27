@@ -34,3 +34,22 @@ test('nearby mining respects the floor, block filters, claims and selected chunk
  w.manager.claims.set(b.dimensionId+':14,65,5',2);
  assert.equal(w.chooseTarget(),null);
 });
+
+test('a miner crosses 10–20 blocks of cleared floor and then resumes breaking blocks',async t=>{
+ for(const distance of [10,20]){
+  const f=fixture(t);
+  const {w,b,travel,set}=f;
+  Object.assign(w.state,{area:{x1:0,z1:0,x2:31,z2:4},floor:64,ceiling:70,miningRange:3,itemDrop:false});
+  b.entity.position=new Vec3(.5,65,.5);
+  w.running=true;
+  travel.recoverCollision=async()=>false;
+  travel.moveStep=async point=>{b.entity.position=point.clone();};
+  const high=new Vec3(distance,70,0),alongTheFloor=new Vec3(distance,65,1);
+  set(high,'stone');set(alongTheFloor,'stone');
+  const breaks=peer(f);
+  for(let i=0;i<35&&!breaks.length;i++)await w.tick();
+  assert(b.entity.position.x>=distance-3,'should walk near the next group of blocks');
+  assert.equal(b.blockAt(alongTheFloor).name,'air');
+  assert.equal(breaks.length,1);
+ }
+});

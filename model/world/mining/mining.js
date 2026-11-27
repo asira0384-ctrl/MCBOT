@@ -126,6 +126,25 @@ class ChunkMining{
   borrowed.sort((a,c)=>Math.hypot((a.x1+a.x2)/2-feet.x,(a.z1+a.z2)/2-feet.z)-Math.hypot((c.x1+c.x2)/2-feet.x,(c.z1+c.z2)/2-feet.z));
   const active=[...preferred,...borrowed];if(this.chunk&&active.includes(this.chunk))active.splice(active.indexOf(this.chunk),1),active.unshift(this.chunk);
   const reserved=new Set([...w.manager.workers.values()].filter(other=>other!==w&&other.running&&other.bot.connected&&sameWorld(w,other)&&(other.busy||other.approachPlan)&&other.miningTarget&&(other.failed.get(key(other.miningTarget.position))||0)<=Date.now()).map(other=>key(other.miningTarget.position)));let waitingTerrain=null;
+  if(w.nearbyRecoveryUntil>Date.now()){
+   const nearChunks=remaining.filter(c=>distance(c)<25).sort((a,c)=>distance(a)-distance(c)).slice(0,3);
+   const preferredY=Math.min(this.top(),Math.floor(feet.y)+1);
+   for(const y of [preferredY,preferredY-1,preferredY+1]){
+    if(y<=w.state.floor||y>this.top())continue;
+    for(const c of nearChunks){
+     const found=read(c,y);
+     if(!found)continue;
+     const options=found.blocks.filter(block=>feet.distanceTo(block.position)<20&&!w.underPlayer(block.position)&&
+       (w.failed.get(key(block.position))||0)<=Date.now()&&!reserved.has(key(block.position))&&!w.manager.claims.has(`${b.dimensionId}:${key(block.position)}`));
+     options.sort((a,b)=>feet.distanceTo(a.position)-feet.distanceTo(b.position));
+     if(options.length){
+      this.layer=y;this.chunk=c;this.selection='nearby-route';
+      this.state=`行ける高さの近場から採掘再開 / Y${y}`;
+      return finish(options[0]);
+     }
+    }
+   }
+  }
   for(const c of active){const found=read(c,this.layer);if(!found)continue;if(!found.blocks.length&&!found.unknown){c.dirty=true;continue;}
    if(found.unknown){this.request(c);waitingTerrain??=c;if(!found.blocks.length)continue;}
    const targets=[];for(const block of found.blocks){if(w.underPlayer(block.position)){this.supportBlocks.push({...block.position});continue;}if((w.failed.get(key(block.position))||0)>Date.now()||w.manager.claims.has(`${b.dimensionId}:${key(block.position)}`)||reserved.has(key(block.position)))continue;targets.push(block);}

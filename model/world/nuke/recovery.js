@@ -33,7 +33,7 @@ function monitor(worker, now = Date.now()) {
   const b = worker.bot, p = b.entity?.position;
   if (!p || !worker.running || !b.connected || b.dead || worker.cleanupRequested ||
       worker.controlBusy || b.handUse || b.mining || worker.runtime?.consumeTask ||
-      worker.mobAura?.holdsMining || worker.mobAura?.busy || !['approach','retry','scan','repath','floor-recovery','lava-escape','hand-wait','falling'].includes(worker.miningPhase)) {
+      worker.mobAura?.holdsMining || worker.mobAura?.busy || !['approach','advance','retry','scan','repath','floor-recovery','lava-escape','hand-wait','falling'].includes(worker.miningPhase)) {
     worker.stallSample = null;
     return;
   }
