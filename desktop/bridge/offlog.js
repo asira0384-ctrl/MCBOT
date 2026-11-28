@@ -27,6 +27,26 @@ function connect(a){
  log(a,"Connecting");
  const client=bedrock.createClient({version,host:hosts[a.server],port:Number((a.server==='IGN'?process.env.IGN_PORT:process.env.MC_PORT)||19132),offline:true,username:a.id});
  sessions.set(k,client);
+ const players=new Map();let initialRoster=true,lastGreeting=0;
+ client.on('player_list',packet=>{
+  const group=packet.records;
+  for(const row of Array.isArray(group)?group:group?.records||[]){
+   if((row.type||group.type)==='remove'){players.delete(row.uuid);continue}
+   const name=String(row.username||'');if(!name||name===a.id)continue;
+   const fresh=!players.has(row.uuid);players.set(row.uuid,row);
+   if(name.toLowerCase()===a.skinTarget?.toLowerCase())client.applyOffSkin();
+   if(fresh&&!initialRoster&&a.greetPlayer?.toLowerCase()===name.toLowerCase()&&Date.now()-lastGreeting>30000){
+    lastGreeting=Date.now();const out=require('../../model/chat/delivery/chat-output');
+    client.queue('text',out.publicPacket({client,username:a.id},a.greeting.replaceAll('@player',name)));
+   }
+  }
+  initialRoster=false;
+ });
+ client.applyOffSkin=()=>{
+  const row=[...players.values()].find(r=>r.username?.toLowerCase()===a.skinTarget?.toLowerCase());
+  const skin=row?.skin_data||row?.skin;
+  if(skin?.skin_data&&client.profile?.uuid)client.queue('player_skin',{uuid:client.profile.uuid,skin,skin_name:skin.skin_id,old_skin_name:'',is_verified:false});
+ };
  const clear=()=>{if(sessions.get(k)===client)sessions.delete(k)};
  client.on('close',()=>{if(sessions.get(k)===client){log(a,'Closed');clear()}});client.on('disconnect',()=>{log(a,'disconnected');clear()});client.on('error',()=>{log(a,'connection error');client.close();clear()});
  let registered=false, sent=false;
@@ -72,6 +92,18 @@ exports.control = function(d) {
  if(op==='list')return {accounts:accounts.map(({server,id})=>({server,id,respawn:!!accounts.find(x=>x.server===server&&x.id===id)?.respawn,stage:progress.get(server+'/'+id)||'Saved'}))};
  if(op==='debug')return {report:{version:'1.21.2',events}};
  if(!Object.hasOwn(hosts,server)||!hosts[server])throw Error('接続先を設定してください');
+ if(op==='profiles'){
+  if(typeof id!=='string'||!id.endsWith('...')||!Number.isInteger(d.count)||d.count<1||d.count>999||typeof password!=='string'||password.length<8||password.length>30)throw Error('Aslrq... / Count 1-999 / Password 8-30');
+  const ids=Array.from({length:d.count},(_,i)=>id.slice(0,-3)+String(i+1).padStart(3,'0'));
+  if(ids.some(v=>!/^\w{1,32}$/.test(v)||accounts.some(a=>a.server===server&&a.id.toLowerCase()===v.toLowerCase())))throw Error('Invalid or duplicate ID');
+  accounts.push(...ids.map(id=>({id,server,secret:seal(password),create:true,draft:true})));save();return {result:'Profiles saved'};
+ }
+ if(op==='appearance'){
+  const a=accounts.find(a=>a.id===id&&a.server===server);if(!a)throw Error('Select one account');
+  if(d.kind==='SkinStealer')a.skinTarget=String(d.player||'').slice(0,32);
+  else {a.greetPlayer=String(d.player||'').slice(0,32);a.greeting=String(d.message||'Hello @player').slice(0,180)}
+  save();sessions.get(server+'/'+id)?.applyOffSkin?.();return {result:'Saved'};
+ }
  if(op==='create'){
   if(typeof id!=='string'||!/^[a-zA-Z0-9_]{1,32}$/.test(id)||typeof password!=='string'||password.length<8||password.length>30)throw Error('ID またはパスワードを確認してください');
   const existing=accounts.find(a=>a.server===server&&a.id.toLowerCase()===id.toLowerCase());if(existing){if(existing.create&&!sessions.has(server+'/'+existing.id)){existing.secret=seal(password);save();connect(existing);return {result:'Retrying'}}throw Error('既存IDです。Stop後に再試行してください');}
@@ -90,7 +122,7 @@ exports.control = function(d) {
   else client.queue('command_request',output.commandPacket(bot,d.kind==='PrivateChat'?'/tell "'+output.name(d.player)+'" '+msg:msg));
  }else if(op==='connect'||op==='disconnect'||op==='stop'){
   for(const a of accounts.filter(a=>a.server===server&&(!id||id===a.id))){
-   if(op==='connect')connect(a);else sessions.get(server+'/'+a.id)?.close();
+   if(op==='connect'){if(a.draft&&!id)continue;if(a.draft){delete a.draft;save()}connect(a);}else sessions.get(server+'/'+a.id)?.close();
   }
  }else throw Error('Unknown Offlog operation');
  return {result:'受付完了'};
