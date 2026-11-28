@@ -48,10 +48,14 @@ function connect(a){
   if(skin?.skin_data&&client.profile?.uuid)client.queue('player_skin',{uuid:client.profile.uuid,skin,skin_name:skin.skin_id,old_skin_name:'',is_verified:false});
  };
  const clear=()=>{if(sessions.get(k)===client)sessions.delete(k)};
- client.on('close',()=>{if(sessions.get(k)===client){log(a,'接続終了');clear()}});client.on('disconnect',()=>{log(a,'切断されました');clear()});client.on('error',()=>{log(a,'接続エラー');client.close();clear()});
+ client.on('close',()=>{if(sessions.get(k)===client){log(a,'接続終了');clear()}});client.on('disconnect',packet=>{log(a,'切断されました（理由コード：'+(Number.isInteger(packet.reason)?packet.reason:'不明')+'）');clear()});client.on('error',()=>{log(a,'接続エラー');client.close();clear()});
  let registered=false, sent=false;
  client.on('text',packet=>{
-  if(!sent||!['system','translation','raw'].includes(packet.type))return;
+  if(!(registered||sent)||!['system','translation','raw','tip','popup'].includes(packet.type))return;
+  const message=String(packet.message||'').replace(/§./g,'');
+  const reasons=[[/password.*(?:wrong|incorrect|invalid)|(?:wrong|incorrect|invalid).*password/i,'パスワードが拒否されました'],[/already (?:exists|registered|taken)/i,'このIDは登録済みです'],[/too many|rate limit|try again later/i,'サーバーの再試行制限'],[/not registered|not found/i,'登録済みIDが見つかりません']];
+  for(const [pattern,reason] of reasons)if(pattern.test(message)){log(a,reason);return;}
+  if(!sent)return;
   if(/successfully (?:logged in|authenticated)|login successful|ログインに成功/i.test(String(packet.message))){
    a.create=false;save();log(a,'ログイン成功');
   }
@@ -79,14 +83,14 @@ function connect(a){
   const reason=/incorrect password|wrong password|invalid password/i.test(notices)?'パスワードが一致しません':/unknown user|not registered|account not found/i.test(notices)?'登録したIDが見つかりません':/too many|try again later/i.test(notices)?'サーバーが再試行を制限しています':'理由の通知を識別できません';
   return log(a,'認証画面が再表示：'+reason);
  }
- if(registered && !/regist/i.test(title) && a.create){a.create=false;save();log(a,'登録送信後、ログイン画面を受信');}
+ if(registered && !/regist/i.test(title) && a.create){log(a,'登録送信後、ログイン画面を受信');}
  const fields=f.content.map(x=>String(x.text).replace(/§./g,'').trim().toLowerCase());
  if(!['username','password'].every(x=>fields.filter((v,i)=>v===x&&f.content[i].type==='input').length===1))return log(a,'入力欄を識別できません');
  value=f.content.map((x,i)=>{if(x.type==='label')return null;if(x.type==='toggle')return x.default===true;if(x.type==='input'&&fields[i]==='username')return a.id;if(x.type==='input'&&fields[i]==='password')return open(a);throw Error()});
  if(/regist/i.test(title)){registered=true;log(a,'登録情報を送信');}
  else {sent=true;}
  }else return log(a,'unrecognized form');
- client.queue('modal_form_response',{form_id:p.form_id,has_response_data:true,data:JSON.stringify(value),has_cancel_reason:false});log(a,title+' を送信');
+ client.queue('modal_form_response',{form_id:p.form_id,has_response_data:true,data:JSON.stringify(value)+'\n',has_cancel_reason:false});log(a,title+' を送信');
  }catch{log(a,'フォーム処理に失敗')}
  });
 }
@@ -114,7 +118,7 @@ exports.control = function(d) {
  }
  if(op==='create'){
   if(typeof id!=='string'||!/^[a-zA-Z0-9_]{1,32}$/.test(id)||typeof password!=='string'||password.length<8||password.length>30||!/[A-Z]/.test(password)||!/[a-z]/.test(password)||!/[0-9]/.test(password))throw Error('IDとパスワードを確認してください。パスワードは8〜30文字、英大文字・小文字・数字が必要です');
-  const existing=accounts.find(a=>a.server===server&&a.id.toLowerCase()===id.toLowerCase());if(existing){if(existing.create&&!sessions.has(server+'/'+existing.id)){existing.secret=seal(password);save();connect(existing);return {result:'Retrying'}}throw Error('既存IDです。Stop後に再試行してください');}
+  const existing=accounts.find(a=>a.server===server&&a.id.toLowerCase()===id.toLowerCase());if(existing){if(!sessions.has(server+'/'+existing.id)){existing.secret=seal(password);save();connect(existing);return {result:'Retrying'}}throw Error('既存IDです。Stop後に再試行してください');}
   const a={id,server,secret:seal(password),create:true};
   accounts.push(a);save();connect(a);
  }else if(op==='respawn'){
