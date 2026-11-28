@@ -110,11 +110,11 @@ g["Misc"].insert(g["Misc"].end(),{"KitNow","WorldNow","BackNow","TPA","AutoTPA",
 g["GUI"]={"ClickGUI","Weather","NameTags","Wallpaper","FontFile"};g["HUD"]={"HUDMap","HUDHealth","HUDBps","HUDHotbar","HUDPlayers","HUDIGNGPT"};
 auto&exp=g["Exploit"];for(auto&m:exp)if(m!="AutoTPA"&&m!="CustomCommand")g["Movement"].push_back(m);
 if(offlogView){
- g["Control"]={"Connect","Disconnect","Stop","Offline Debug"};
- g["Misc"]={"AutoRespawn","SkinStealer","Greeter","ToggleSound","Notification","PublicChat","PrivateChat","CustomCommand","ChatSuffix"};
+ g["Control"]={"Connect","Disconnect","Stop","Offline Debug","選択IDを削除"};
+ g["Misc"]={"AutoRespawn","SkinStealer","ToggleSound","Notification"};g["Chat"]={"PublicChat","PrivateChat","Greeter","ChatSuffix","CustomCommand"};
  localDefs["ChatSuffix"]=J::array({T("Suffix")});localDefs["Create Account"]=J::array({T("Username"),T("Password"),T("Count","1")});
 }
-int i=0;for(auto name:{"Account","Control","Combat","Movement","Player","HUD","GUI","World","Chat","Misc"}){if(offlogView && !std::set<std::string>{"Account","Control","GUI","Misc"}.count(name))continue;Panel p;p.title=name;p.x=(offlogView?32:12)+(i%8)*163;p.y=(offlogView?112:64)+(i>=8?350:0);p.mods=g[name];{std::set<std::string>seen;p.mods.erase(std::remove_if(p.mods.begin(),p.mods.end(),[&](auto&m){return !seen.insert(m).second||(m=="TellSpam"&&!catalog.contains(m));}),p.mods.end());}if(prefs.contains("positions")&&prefs["positions"].contains(name)){auto xy=prefs["positions"][name];if(xy.is_array()&&xy.size()==2&&xy[0].is_number()&&xy[1].is_number()){p.x=std::clamp(xy[0].get<float>(),0.f,2000.f);p.y=std::clamp(xy[1].get<float>(),45.f,1800.f);}}panels.push_back(p);i++;}}
+int i=0;for(auto name:{"Account","Control","Combat","Movement","Player","HUD","GUI","World","Chat","Misc"}){if(offlogView && !std::set<std::string>{"Account","Control","GUI","Misc","Chat"}.count(name))continue;Panel p;p.title=name;p.x=(offlogView?32:12)+(i%8)*163;p.y=(offlogView?112:64)+(i>=8?350:0);p.mods=g[name];{std::set<std::string>seen;p.mods.erase(std::remove_if(p.mods.begin(),p.mods.end(),[&](auto&m){return !seen.insert(m).second||(m=="TellSpam"&&!catalog.contains(m));}),p.mods.end());}if(prefs.contains("positions")&&prefs["positions"].contains(name)){auto xy=prefs["positions"][name];if(xy.is_array()&&xy.size()==2&&xy[0].is_number()&&xy[1].is_number()){p.x=std::clamp(xy[0].get<float>(),0.f,2000.f);p.y=std::clamp(xy[1].get<float>(),45.f,1800.f);}}panels.push_back(p);i++;}}
 void persist(){try{prefs["values"]=values;prefs["values"].erase("Login");prefs["values"].erase("Create Account");J pos=J::object();for(auto&p:panels)pos[p.title]=J::array({p.x,p.y});prefs["positions"]=pos;J hp=J::object();for(auto&[k,p]:huds)hp[k]=J::array({p.x,p.y});prefs["hud"]=hp;prefs["localEnabled"]=localOn;prefs["format"]="asira-nocturne-config";prefs["version"]=1;std::ofstream f(fs::path(configDir+(offlogView?L"\\Offlog.json":L"\\Last.json")));f<<prefs.dump(2);}catch(...){}}
 std::string applyAssistantResult(const J&);
 #include "microsoft-browser.h"
@@ -172,8 +172,8 @@ bool hiddenShaderSetting(const std::string&k){static const std::set<std::string>
 #include "nuke-status-ui.h"
 float drawSettings(Graphics&g,std::string m,float x,float y,float w){if(m=="ServerForms")return y+drawServerForms(&g,x,y,w);uiPhase="module-settings";const J& ds=settingsFor(m);for(auto&d:ds){std::string k=d[0];if(m=="ClickGUI"&&hiddenShaderSetting(k))continue;y=drawField(g,m,d,x,y,w);}
 if(m=="Create Account"){
- inlineButton(g,"Create",x,y,w,"off-submit");y+=29;inlineButton(g,"Create numbered profiles",x,y,w,"off-profiles");y+=29;
- std::string status="Ready";for(auto& a:offlineAccounts)if(str(a,"server")==offlineRealm&&str(a,"id")==sv(m,"Username"))status=str(a,"stage","Ready");
+ inlineButton(g,"Create",x,y,w,"off-submit");y+=29;inlineButton(g,"連番IDを保存",x,y,w,"off-profiles");y+=29;
+ std::string status="入力待ち";for(auto& a:offlineAccounts)if(str(a,"server")==offlineRealm&&str(a,"id")==sv(m,"Username"))status=str(a,"stage","待機中");
  txt(g,status,x,y,w,48,theme("Text"),10);y+=50;
 }
 if(m=="Nuke"){inlineButton(g,"TeamMode",x,y,w,"module","TeamMode");y+=28;if(localOn["TeamMode"])y=drawSettings(g,"TeamMode",x,y,w);inlineButton(g,"Nuke Debug Log",x,y,w,"module","NukeDebug");y+=28;y+=drawNukeStatus(&g,x,y,w);}
@@ -321,6 +321,7 @@ if(offlogView&&h.type=="off-profiles"){auto n=std::stoi(sv("Create Account","Cou
 if(offlogView&&h.type=="off-submit"){std::string name=sv("Create Account","Username");enqueue("/api/desktop/control",{{"action","offlog"},{"op","create"},{"id",name},{"server",offlineRealm},{"password",sv("Create Account","Password")}},"off-create");offlineId=name;values["Create Account"].erase("Password");return;}
 if(offlogView&&h.type=="send"&&(m=="PublicChat"||m=="PrivateChat"||m=="CustomCommand")){enqueue("/api/desktop/control",{{"action","offlog"},{"op","send"},{"server",offlineRealm},{"id",offlineId},{"kind",m},{"message",sv(m,m=="CustomCommand"?"Command":"Message")},{"player",sv(m,"Player")},{"suffix",localOn["ChatSuffix"]?sv("ChatSuffix","Suffix"):""}});return;}
 if(offlogView&&h.type=="module"&&(m=="Create Account"||m=="CustomCommand")){toggleOpen(m);return;}
+if(offlogView&&h.type=="module"&&m=="選択IDを削除"){if(offlineId.empty())throw std::runtime_error("アカウントを選択してください");if(MessageBoxW(hwnd,wide(offlineRealm+" / "+offlineId+" をこの一覧から削除しますか？").c_str(),L"削除確認",MB_YESNO|MB_DEFBUTTON2)==IDYES){enqueue("/api/desktop/control",{{"action","offlog"},{"op","remove"},{"id",offlineId},{"server",offlineRealm}},"off-create");offlineId.clear();}return;}
 if(h.type=="off-select"){offlineRealm=m;offlineId=k;return;}
 if(h.type=="toggle-mode"){if(!offlogView)enqueue("/api/desktop/control",{{"action","offlog"},{"op","list"}},"off-list");persist(); static J normalPrefs,normalValues; static decltype(localOn) normalOn;
  if(!offlogView){normalPrefs=prefs;normalValues=values;normalOn=localOn; prefs=J::object();std::ifstream f{fs::path(configDir+L"\\Offlog.json")};if(f){try{f>>prefs;}catch(...){prefs=J::object();}}values=prefs.value("values",J::object());localOn=prefs.value("localEnabled",decltype(localOn){{"ClickGUI",true},{"ToggleSound",true},{"Notification",true}});}
