@@ -47,17 +47,23 @@ function connect(a){
   const skin=row?.skin_data||row?.skin;
   if(skin?.skin_data&&client.profile?.uuid)client.queue('player_skin',{uuid:client.profile.uuid,skin,skin_name:skin.skin_id,old_skin_name:'',is_verified:false});
  };
+ let lastNotice='',authEnded=false;
+ const password=open(a);
+ const excerpt=value=>String(value??'').split(password).join('[非表示]').replace(/§./g,'').replace(/[\x00-\x1f]+/g,' ').trim().slice(0,240);
+ const note=(source,value)=>{const text=excerpt(value);if(text){lastNotice=source+'：'+text;log(a,lastNotice)}};
+ client.on('set_title',p=>{if(!authEnded)note('サーバー表示',p.text)});
  const clear=()=>{if(sessions.get(k)===client)sessions.delete(k)};
- client.on('close',()=>{if(sessions.get(k)===client){log(a,'接続終了');clear()}});client.on('disconnect',packet=>{log(a,'切断されました（理由コード：'+(Number.isInteger(packet.reason)?packet.reason:'不明')+'）');clear()});client.on('error',()=>{log(a,'接続エラー');client.close();clear()});
+ client.on('close',()=>{if(sessions.get(k)===client){log(a,'接続終了');clear()}});client.on('disconnect',packet=>{log(a,'切断：'+(excerpt(packet.message)||excerpt(packet.reason)||'サーバーから理由本文なし')+(lastNotice?' / '+lastNotice:''));clear()});client.on('error',()=>{log(a,'接続エラー');client.close();clear()});
  let registered=false, sent=false;
  client.on('text',packet=>{
-  if(!(registered||sent)||!['system','translation','raw','tip','popup'].includes(packet.type))return;
+  if(authEnded||!['system','translation','raw','tip','popup'].includes(packet.type))return;
   const message=String(packet.message||'').replace(/§./g,'');
+  note('サーバー通知',[message,...(Array.isArray(packet.parameters)?packet.parameters:[])].join(' '));
   const reasons=[[/password.*(?:wrong|incorrect|invalid)|(?:wrong|incorrect|invalid).*password/i,'パスワードが拒否されました'],[/already (?:exists|registered|taken)/i,'このIDは登録済みです'],[/too many|rate limit|try again later/i,'サーバーの再試行制限'],[/not registered|not found/i,'登録済みIDが見つかりません']];
   for(const [pattern,reason] of reasons)if(pattern.test(message)){log(a,reason);return;}
   if(!sent)return;
   if(/successfully (?:logged in|authenticated)|login successful|ログインに成功/i.test(String(packet.message))){
-   a.create=false;save();log(a,'ログイン成功');
+   authEnded=true;a.create=false;save();log(a,'ログイン成功');
   }
  });
  client.on('respawn',p=>{
@@ -70,7 +76,7 @@ function connect(a){
  const title=clean(f.title), normalized=title.toLowerCase();
  const labels=f.type==='modal'?[f.button1,f.button2]:(f.buttons||[]).map(b=>b.text);
  const options=labels.map(x=>clean(x).toLowerCase());
- log(a,'画面受信：'+clean(f.type)+' / '+title.slice(0,100)+' / '+options.join(' | ').slice(0,180));
+ log(a,'画面受信：'+clean(f.type)+' / '+title.slice(0,100)+' / '+excerpt(options.join(' | ')));
  let value;
  if(f.type==='form'||f.type==='modal'){
  const wanted=options.some(x=>x==='offline login')?'offline login':a.create&&!registered?'offline registration':'i have an account';
@@ -81,7 +87,7 @@ function connect(a){
  if(sent){
   const notices=f.content.filter(x=>x.type==='label').map(x=>clean(x.text)).join(' ');
   const reason=/incorrect password|wrong password|invalid password/i.test(notices)?'パスワードが一致しません':/unknown user|not registered|account not found/i.test(notices)?'登録したIDが見つかりません':/too many|try again later/i.test(notices)?'サーバーが再試行を制限しています':'理由の通知を識別できません';
-  return log(a,'認証画面が再表示：'+reason);
+  return log(a,'認証画面が再表示：'+reason+' / '+(lastNotice||'直前の通知なし')+' / 画面本文：'+(excerpt(notices)||'本文なし'));
  }
  if(registered && !/regist/i.test(title) && a.create){log(a,'登録送信後、ログイン画面を受信');}
  const fields=f.content.map(x=>String(x.text).replace(/§./g,'').trim().toLowerCase());
