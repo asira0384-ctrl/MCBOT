@@ -12,6 +12,7 @@ function eventReport(manager,ids,field){
  return {bots,rows};
 }
 async function apply(web,s,d){const m=web.manager,ids=()=>web.targets(d.target);switch(d.action){
+case 'offlog':return require('./offlog').control(d);
 case 'create-group':{
  const name=String(d.name||'').trim(),groups=m.store.data.botGroups??=[];
  if(!name||name.length>48||groups.some(g=>g.name===name))throw fail('グループ名を確認してください');
