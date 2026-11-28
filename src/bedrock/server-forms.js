@@ -27,6 +27,7 @@ function respond(bot,token,value,cancel=false){
    if(!Array.isArray(value)||value.length!==form.content.length)throw fail('Check every form field');
    response=form.content.map((field,index)=>{
     if(field.type==='label')return null;
+    if(field.type==='input' && typeof value[index]==='string' && Buffer.byteLength(value[index])<=4096)return value[index];
     if(field.type==='toggle'&&typeof value[index]==='boolean')return value[index];
     throw fail('This field type is not supported by the manual toggle editor');
    });

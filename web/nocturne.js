@@ -232,3 +232,33 @@ async function instant(kind,value){let r=await api('/api/control',{action:'insta
 function instantUI(m){tools(m,p=>{let input=field(p,m==='KitNow'?'Kit':'World');button(p,'Go',()=>instant(m==='KitNow'?'kit':'world',input.value))})}
 
 initAuth();
+
+// Offlog uses the signed-in desktop session and its existing Railway control route.
+const offPanel=document.createElement('section');
+offPanel.hidden=true;
+offPanel.style.cssText='position:absolute;top:65px;left:14px;z-index:5;background:#211e30;padding:16px;color:white';
+offPanel.innerHTML='<b>Account</b> <select name="realm"><option>2b2e</option><option>IGN</option></select> <select name="account"></select><p><input name="username" placeholder="Username"> <input name="password" type="password" placeholder="Password"></p><button data-op="create">Create Account</button><p>Control　<button data-op="connect">Connect</button> <button data-op="disconnect">Disconnect</button> <button data-op="debug">Offline Debug</button></p><output></output>';
+document.body.append(offPanel);
+const offField=n=>offPanel.querySelector('[name="'+n+'"]');
+const offRequest=(op,extra={})=>api('/api/control',{action:'offlog',op,server:offField('realm').value,...extra});
+async function refreshOffAccounts(){
+ const {accounts}=await offRequest('list');
+ offField('account').replaceChildren(new Option('全員',''),...accounts.filter(a=>a.server===offField('realm').value).map(a=>new Option(a.id,a.id)));
+}
+offField('realm').onchange=()=>refreshOffAccounts().catch(e=>status(e.message,true));
+document.querySelector('#offlog-mode').onclick=async function(){
+ if(!unlocked)return;
+ offPanel.hidden=!offPanel.hidden;space.style.visibility=offPanel.hidden?'':'hidden';
+ this.textContent='ToggleMode: '+(offPanel.hidden?'Normal':'Offlog');
+ if(!offPanel.hidden)try{await refreshOffAccounts()}catch(e){offPanel.querySelector('output').textContent=e.message}
+};
+offPanel.onclick=async event=>{
+ const op=event.target.dataset.op;if(!op)return;
+ try{
+ const data=op==='create'?{id:offField('username').value,password:offField('password').value}:{id:offField('account').value};
+ const result=await offRequest(op,data);
+ if(op==='debug'){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(result.report,null,2)]));a.download='Offlog-Debug.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+ if(op==='create')offField('password').value='';
+ offPanel.querySelector('output').textContent=result.result||'OK';await refreshOffAccounts();
+ }catch(e){offPanel.querySelector('output').textContent=e.message}
+};
