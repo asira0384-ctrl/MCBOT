@@ -16,34 +16,51 @@ const hosts = {'2b2e':process.env.MC_HOST||'2b2e.org',IGN:process.env.IGN_HOST};
 function save(){fs.writeFileSync(file('accounts.tmp'),JSON.stringify(accounts),{mode:0o600});fs.renameSync(file('accounts.tmp'),file('accounts'));}
 function seal(password){const iv=crypto.randomBytes(12), cipher=crypto.createCipheriv('aes-256-gcm',key,iv);const data=Buffer.concat([cipher.update(password,'utf8'),cipher.final()]);return [iv,cipher.getAuthTag(),data].map(b=>b.toString('base64'));}
 function open(account){const [iv,tag,data]=account.secret.map(s=>Buffer.from(s,'base64'));const d=crypto.createDecipheriv('aes-256-gcm',key,iv);d.setAuthTag(tag);return Buffer.concat([d.update(data),d.final()]).toString();}
-function log(a,stage){events.push({time:new Date().toISOString(),server:a.server,id:a.id,stage});if(events.length>3000)events.shift();}
+const progress=new Map();
+function log(a,stage){progress.set(a.server+"/"+a.id,stage);events.push({time:new Date().toISOString(),server:a.server,id:a.id,stage});if(events.length>3000)events.shift();}
 function connect(a){
  const k=a.server+'/'+a.id;
  if(sessions.has(k))return;
  const {Versions}=require('bedrock-protocol/src/options');
  const version=Object.keys(Versions).find(v=>Number(Versions[v])===686);
  if(!version) throw Error('Bedrock 1.21.2 (protocol 686) unsupported by installed codec');
+ log(a,"Connecting");
  const client=bedrock.createClient({version,host:hosts[a.server],port:Number((a.server==='IGN'?process.env.IGN_PORT:process.env.MC_PORT)||19132),offline:true,username:a.id});
  sessions.set(k,client);
  const clear=()=>{if(sessions.get(k)===client)sessions.delete(k)};
- client.on('close',clear);client.on('disconnect',()=>{log(a,'disconnected');clear()});client.on('error',()=>{log(a,'connection error');client.close();clear()});
+ client.on('close',()=>{if(sessions.get(k)===client){log(a,'Closed');clear()}});client.on('disconnect',()=>{log(a,'disconnected');clear()});client.on('error',()=>{log(a,'connection error');client.close();clear()});
  let registered=false, sent=false;
+ client.on('text',packet=>{
+  if(!sent||!['system','translation','raw'].includes(packet.type))return;
+  if(/successfully (?:logged in|authenticated)|login successful|ログインに成功/i.test(String(packet.message))){
+   a.create=false;save();log(a,'Login confirmed');
+  }
+ });
+ client.on('respawn',p=>{
+  if(a.respawn && p.state===1)client.queue('respawn',{position:p.position,state:2,runtime_entity_id:p.runtime_entity_id});
+ });
  client.on('modal_form_request',p=>{
  try{
- const f=JSON.parse(p.data), title=String(f.title).replace(/§./g,'').trim();
+ const f=JSON.parse(p.data);
+ const clean=x=>String(x||'').replace(/§./g,'').replace(/\s+/g,' ').trim();
+ const title=clean(f.title), normalized=title.toLowerCase();
+ const labels=f.type==='modal'?[f.button1,f.button2]:(f.buttons||[]).map(b=>b.text);
+ const options=labels.map(x=>clean(x).toLowerCase());
+ log(a,'Form: '+clean(f.type)+' / '+title.slice(0,100)+' / '+options.join(' | ').slice(0,180));
  let value;
- if(f.type==='form'){
- const label=title==='Authentication'?'Offline Login':title==='Offline Login'?(a.create&&!registered?'Offline Registration':'I have an account'):null;
- if(!label)return log(a,'unexpected menu');
- value=f.buttons.findIndex(b=>b.text.replace(/§./g,'').trim()===label);
- if(value<0)return log(a,'missing '+label);
- }else if(f.type==='custom_form'&&['Authentication','Offline Registration'].includes(title)){
- if(sent)return log(a,'repeated authentication prompt');
+ if(f.type==='form'||f.type==='modal'){
+ const wanted=options.some(x=>x==='offline login')?'offline login':a.create&&!registered?'offline registration':'i have an account';
+ const index=options.findIndex(x=>x===wanted);
+ if(index<0)return log(a,'Unknown menu: '+title.slice(0,80));
+ value=f.type==='modal'?index===0:index;
+ }else if(f.type==='custom_form'&&/authenticat|offline|log.?in|regist/i.test(title)){
+ if(sent)return log(a,'Repeated login prompt; check credentials');
+ if(registered && !/regist/i.test(title) && a.create){a.create=false;save();log(a,'Registration accepted; logging in');}
  const fields=f.content.map(x=>String(x.text).replace(/§./g,'').trim().toLowerCase());
  if(!['username','password'].every(x=>fields.filter((v,i)=>v===x&&f.content[i].type==='input').length===1))return log(a,'unexpected credential fields');
  value=f.content.map((x,i)=>{if(x.type==='label')return null;if(x.type==='toggle')return x.default===true;if(x.type==='input'&&fields[i]==='username')return a.id;if(x.type==='input'&&fields[i]==='password')return open(a);throw Error()});
- if(title==='Offline Registration')registered=true;
- else {sent=true;if(a.create){a.create=false;save()}}
+ if(/regist/i.test(title)){registered=true;log(a,'Registration submitted');}
+ else {sent=true;}
  }else return log(a,'unrecognized form');
  client.queue('modal_form_response',{form_id:p.form_id,has_response_data:true,data:JSON.stringify(value),has_cancel_reason:false});log(a,title+' submitted');
  }catch{log(a,'form processing failed')}
@@ -52,15 +69,26 @@ function connect(a){
 
 exports.control = function(d) {
  const {server,id,password,op}=d;
- if(op==='list')return {accounts:accounts.map(({server,id})=>({server,id}))};
+ if(op==='list')return {accounts:accounts.map(({server,id})=>({server,id,respawn:!!accounts.find(x=>x.server===server&&x.id===id)?.respawn,stage:progress.get(server+'/'+id)||'Saved'}))};
  if(op==='debug')return {report:{version:'1.21.2',events}};
  if(!Object.hasOwn(hosts,server)||!hosts[server])throw Error('接続先を設定してください');
  if(op==='create'){
   if(typeof id!=='string'||!/^[a-zA-Z0-9_]{1,32}$/.test(id)||typeof password!=='string'||password.length<8||password.length>30)throw Error('ID またはパスワードを確認してください');
-  if(accounts.some(a=>a.server===server&&a.id.toLowerCase()===id.toLowerCase()))throw Error('登録済みです。Connect で再試行してください');
+  const existing=accounts.find(a=>a.server===server&&a.id.toLowerCase()===id.toLowerCase());if(existing){if(existing.create&&!sessions.has(server+'/'+existing.id)){existing.secret=seal(password);save();connect(existing);return {result:'Retrying'}}throw Error('既存IDです。Stop後に再試行してください');}
   const a={id,server,secret:seal(password),create:true};
   accounts.push(a);save();connect(a);
- }else if(op==='connect'||op==='disconnect'){
+ }else if(op==='respawn'){
+  for(const a of accounts.filter(a=>a.server===server&&(!id||a.id===id)))a.respawn=d.enabled===true;
+  save();
+ }else if(op==='send'){
+  if(!id)throw Error('アカウントを1つ選択してください');
+  const client=sessions.get(server+'/'+id);if(!client)throw Error('未接続');
+  const output=require('../../model/chat/delivery/chat-output');
+  const bot={client,username:id,registry:require('minecraft-data')('bedrock_'+client.options.version)};
+  const msg=output.message(d.message+(d.kind==='CustomCommand'?'':(d.suffix||'')));
+  if(d.kind==='PublicChat')client.queue('text',output.publicPacket(bot,msg));
+  else client.queue('command_request',output.commandPacket(bot,d.kind==='PrivateChat'?'/tell "'+output.name(d.player)+'" '+msg:msg));
+ }else if(op==='connect'||op==='disconnect'||op==='stop'){
   for(const a of accounts.filter(a=>a.server===server&&(!id||id===a.id))){
    if(op==='connect')connect(a);else sessions.get(server+'/'+a.id)?.close();
   }
